@@ -264,8 +264,8 @@ class neuron:
         epochs_until_reset = self.subtensor.validator_epochs_per_reset if self.config.neuron.epochs_until_reset == -1 else self.config.neuron.epochs_until_reset
 
         # === Update dataset size ===
-        if (batch_size != self.dataset.batch_size) or (sequence_length != self.dataset.block_size):
-            self.dataset.set_data_size(self.dataset.batch_size, self.dataset.block_size)
+        if (batch_size != self.config.dataset.batch_size) or (sequence_length != self.config.dataset.block_size):
+            self.dataset.set_data_size(self.config.dataset.batch_size, self.config.dataset.block_size)
 
         # === Logs ===
         print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
