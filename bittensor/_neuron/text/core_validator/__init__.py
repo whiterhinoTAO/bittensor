@@ -256,16 +256,16 @@ class neuron:
         # === Get params for epoch ===
         # Pulling the latest chain parameters.
         current_block = self.subtensor.block
-        batch_size = self.subtensor.validator_batch_size 
-        sequence_length = self.subtensor.validator_sequence_length + 1  # add validation token
+        batch_size = self.config.dataset.batch_size
+        sequence_length = self.config.dataset.block_size + 1  # add validation token
         n_topk_peer_weights = self.subtensor.min_allowed_weights
         max_allowed_ratio = self.subtensor.max_allowed_min_max_ratio
         blocks_per_epoch = self.subtensor.validator_epoch_length if self.config.neuron.blocks_per_epoch == -1 else self.config.neuron.blocks_per_epoch
         epochs_until_reset = self.subtensor.validator_epochs_per_reset if self.config.neuron.epochs_until_reset == -1 else self.config.neuron.epochs_until_reset
 
         # === Update dataset size ===
-        if (batch_size != self.config.dataset.batch_size) or (sequence_length != self.config.dataset.block_size):
-            self.dataset.set_data_size(self.config.dataset.batch_size, self.config.dataset.block_size)
+        if (batch_size != self.dataset.batch_size) or (sequence_length != self.dataset.block_size):
+            self.dataset.set_data_size(batch_size, sequence_length)
 
         # === Logs ===
         print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
