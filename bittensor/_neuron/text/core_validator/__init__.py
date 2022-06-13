@@ -35,6 +35,7 @@ import random
 import traceback
 from rich import print
 from rich.console import Console
+from rich.table import Table
 from rich.traceback import install
 from ..neuron_utilities import joining_context, partial_contexts, ThreadQueue
 import torch.nn as nn
@@ -690,4 +691,16 @@ class nucleus( torch.nn.Module ):
                 output += '\t{}: {:.3f}'.format(key, s[key])
 
             print(output)
+
+        if len(stats):
+            table = Table(title='Server stats (epoch step)')
+
+            for key in stats[0]:
+                table.add_column(key)
+
+            for s in stats:
+                table.add_row(*('{:.3f}' % v for v in s.values()))
+
+            console.print(table)
+
         return routing_loss, stats
