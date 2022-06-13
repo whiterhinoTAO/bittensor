@@ -699,7 +699,7 @@ class nucleus( torch.nn.Module ):
                 table.add_column(key)
 
             for s in stats:
-                table.add_row(*('{:.3f}' % v for v in s.values()))
+                table.add_row(*('{:.3f}'.format(v) for v in s.values()))
 
             console.print(table)
 
