@@ -679,11 +679,6 @@ class nucleus( torch.nn.Module ):
                         first['synergy' + ext] += synergy_share  # share synergy amongst coalition members
                         second['synergy' + ext] += synergy_share
 
-        table = Table(title='Server stats (epoch step)')
-        if len(stats):
-            for key in stats[0]:
-                table.add_column(key)
-
         # === Shapley value combination ===
         # Combine base values with synergy approximation to get final Shapley values.
         for s in stats:
@@ -698,6 +693,12 @@ class nucleus( torch.nn.Module ):
                 if hasattr(s[key], 'item'):
                     s[key] = s[key].item()
 
+        table = Table(title='Server stats (epoch step)')
+        if len(stats):
+            for key in stats[0]:
+                table.add_column(key)
+
+        for s in stats:
             table.add_row(*('{:.3f}'.format(v) for v in s.values()))
 
         console.print(table)
