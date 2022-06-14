@@ -679,6 +679,11 @@ class nucleus( torch.nn.Module ):
                         first['synergy' + ext] += synergy_share  # share synergy amongst coalition members
                         second['synergy' + ext] += synergy_share
 
+        table = Table(title='Server stats (epoch step)')
+        if len(stats):
+            for key in stats[0]:
+                table.add_column(key)
+
         # === Shapley value combination ===
         # Combine base values with synergy approximation to get final Shapley values.
         for s in stats:
@@ -693,21 +698,8 @@ class nucleus( torch.nn.Module ):
                 if hasattr(s[key], 'item'):
                     s[key] = s[key].item()
 
-            output = 'Shapely\t|\tuid: {}'.format(s['uid'])
-            for key in ['routing_loss', 'loss', 'loss_val', 'base_params', 'synergy_loss_diff', 'shapley_values_val']:
-                output += '\t{}: {:.3f}'.format(key, s[key])
+            table.add_row(*('{:.3f}'.format(v) for v in s.values()))
 
-            print(output)
-
-        if len(stats):
-            table = Table(title='Server stats (epoch step)')
-
-            for key in stats[0]:
-                table.add_column(key)
-
-            for s in stats:
-                table.add_row(*('{:.3f}'.format(v) for v in s.values()))
-
-            console.print(table)
+        console.print(table)
 
         return routing_loss, stats
