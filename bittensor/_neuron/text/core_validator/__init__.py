@@ -693,6 +693,7 @@ class nucleus( torch.nn.Module ):
                 if hasattr(s[key], 'item'):
                     s[key] = s[key].item()
 
+        print(stats)  # dev debug
         table = Table(title='Server stats (epoch step)')
         if len(stats):
             for key in stats[0]:
