@@ -291,12 +291,6 @@ class neuron:
 
             print('Start new step', start_time)
 
-            table = Table(width=self.config.get('width', None), pad_edge=False, box=box.SIMPLE)
-            table.title = f'[bold]Validator[/bold]: [gray]UID[/gray] {self.uid} ' \
-                          f'[dim yellow]\[{self.dendrite.receptor_pool.external_ip}][/dim yellow]' \
-                          f'({self.wallet.name}/{self.config.wallet.hotkey}) ' \
-                          f'{self.wallet.coldkeypub.ss58_address}, {self.wallet.hotkey.ss58_address}'
-
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
@@ -324,6 +318,12 @@ class neuron:
             step_time = time.time() - start_time
 
             # === Stats table (step) ===
+            table = Table(width=self.config.get('width', None), pad_edge=False, box=box.SIMPLE)
+            table.title = f'[bold]Validator[/bold]: [gray]UID[/gray] {self.uid} ' \
+                          f'[italic]\[{self.dendrite.receptor_pool.external_ip}][/italic] ' \
+                          f'({self.wallet.name}/{self.config.wallet.hotkey}) ' \
+                          f'{self.wallet.coldkeypub.ss58_address[:7]}/{self.wallet.hotkey.ss58_address[:7]}'
+
             columns = [('UID', 'uid', '{:.0f}'),
                        ('Route', 'routing_score', '{:.2f}'),
                        ('mShap', 'shapley_values_min', '{:.0f}'),
@@ -339,8 +339,8 @@ class neuron:
                        ('SynD', 'synergy_loss_diff', '{:.2f}'),
                        ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
 
-            for column, _, _ in columns:
-                table.add_column(column)
+            for col, _, _ in columns:
+                table.add_column(col)
 
             rows = [[txt.format(s[key]) for _, key, txt in columns] for s in stats]
             rows = sorted(rows, reverse=True, key=lambda _row: int(_row[2]))  # sort according to mShap column
