@@ -319,10 +319,14 @@ class neuron:
 
             # === Stats table (step) ===
             table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
-            table.title = f'[white]Validator (neuron stats)[/white] | [bold]UID {self.uid}[/bold] ' \
+            table.title = f'[white]Validator (stats)[/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
-                          f'({self.wallet.name}: [bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold] / ' \
-                          f'{self.config.wallet.hotkey}: [bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+                          f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+                          f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+            table.caption = f'#{current_block} ' \
+                            f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} blocks remain | ' \
+                            f'[white]\[{int(step_time)}s] step {epoch_steps} ({self.global_step} global)[/white] | ' \
+                            f'Epoch {self.epoch} loss {loss.item()}'
 
             columns = [('UID', 'uid', '{:.0f}'),
                        ('Route', 'routing_score', '{:.2f}'),
