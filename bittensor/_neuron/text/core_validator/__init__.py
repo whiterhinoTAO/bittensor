@@ -290,6 +290,14 @@ class neuron:
             while self.subtensor.block < start_block + blocks_per_epoch:
                 start_time = time.time()
 
+                table = Table(width=self.config.get('width', None), pad_edge=False, box=box.SIMPLE)
+                table.title = f'[bold]Validator[/bold]: [gray]UID[/gray] {self.uid} ' \
+                              f'[dim yellow]\[{self.dendrite.receptor_pool.external_ip}][/dim yellow]' \
+                              f'({self.wallet.name}/{self.config.wallet.hotkey}) ' \
+                              f'{self.wallet.coldkeypub.ss58_address}, {self.wallet.hotkey.ss58_address}'
+
+                live.update(table, refresh=True)
+
                 # === Forward ===
                 # Forwards inputs through the network and returns the loss
                 # and endpoint scores using shapely approximation of salience.
@@ -315,12 +323,6 @@ class neuron:
                 step_time = time.time() - start_time
 
                 # === Stats table (step) ===
-                table = Table(width=self.config.get('width', None), pad_edge=False, box=box.SIMPLE)
-                table.title = f'[bold]Validator[/bold]: [gray]UID[/gray] {self.uid} ' \
-                              f'[dim yellow]\[{self.dendrite.receptor_pool.external_ip}][/dim yellow]' \
-                              f'({self.wallet.name}/{self.config.wallet.hotkey}) ' \
-                              f'{self.wallet.coldkeypub.ss58_address}, {self.wallet.hotkey.ss58_address}'
-
                 columns = [('UID', 'uid', '{}'),
                            ('Route', 'routing_score', '{:.2f}'),
                            ('mShap', 'shapley_values_min', '{:.0f}'),
@@ -339,7 +341,7 @@ class neuron:
                 for column, _, _ in columns:
                     table.add_column(column)
 
-                rows = [[s[key] for _, key, _ in columns] for s in stats]
+                rows = [[txt.format(s[key]) for _, key, txt in columns] for s in stats]
                 rows = sorted(rows, reverse=True, key=lambda _row: _row[2])  # sort according to mShap column
 
                 for row in rows:
