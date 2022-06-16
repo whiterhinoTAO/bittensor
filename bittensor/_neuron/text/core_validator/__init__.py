@@ -323,10 +323,10 @@ class neuron:
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                           f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-            table.caption = f'#{current_block} ' \
-                            f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} blocks remain | ' \
-                            f'[white]\[{int(step_time)}s] step {epoch_steps} ({self.global_step} global)[/white] | ' \
-                            f'Epoch {self.epoch} loss {loss.item()}'
+            table.caption = f'#{current_block}: ' \
+                            f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
+                            f'Epoch {self.epoch} | ' \
+                            f'[white]\[{step_time:.2f}s] step {epoch_steps} ({self.global_step} global)[/white]'
 
             columns = [('UID', 'uid', '{:.0f}'),
                        ('Route', 'routing_score', '{:.2f}'),
