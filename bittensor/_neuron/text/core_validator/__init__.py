@@ -372,7 +372,7 @@ class neuron:
 
             # === Stats table (scoring) ===
             table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
-            table.title = f'[white]Stats update[/white] | [bold]UID {self.uid}[/bold] ' \
+            table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                           f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
@@ -402,7 +402,9 @@ class neuron:
                 table.add_column(col)
 
             rows = []
-            for _score, _uid in zip(topk_scores, topk_uids):
+            for i in range(topk_uids):
+                _score = topk_scores[i].item()
+                _uid = topk_uids[i].item()
                 if _uid in self.server_stats:
                     _stats = {k: v for k, v in self.server_stats[_uid].items()}
                     _stats['score'] = _score
