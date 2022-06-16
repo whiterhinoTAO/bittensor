@@ -409,7 +409,7 @@ class neuron:
                     _stats = {k: v for k, v in self.server_stats[_uid].items()}
                     _stats['score'] = _score
                     rows += [[txt.format(_stats[key]) for _, key, txt in columns]]
-            rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
+            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[3]))  # sort according to mShap column
 
             for row in rows:
                 table.add_row(*row)
