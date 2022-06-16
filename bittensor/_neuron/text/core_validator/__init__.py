@@ -366,9 +366,6 @@ class neuron:
             topk_scores, topk_uids = bittensor.unbiased_topk(moving_avg_scores, k=n_topk_peer_weights)
             topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
-            for _score, _uid in zip(topk_scores, topk_uids):
-                self.server_stats[_uid]['score'] = _score
-
             print('\nScores:', '\n\t weights:', topk_scores.sort()[0].tolist(), '\n\t sum:', topk_scores.sum().item(),
                   '\n\t min:', topk_scores.min().item(), '\n\t max:', topk_scores.max().item(), '\n\t max/min:',
                   (topk_scores.max() / topk_scores.min()).item())
@@ -405,6 +402,11 @@ class neuron:
                 table.add_column(col)
 
             rows = [[txt.format(s[key]) for _, key, txt in columns] for s in self.server_stats[topk_uids]]
+            for _score, _uid in zip(topk_scores, topk_uids):
+                if _uid in self.server_stats:
+                    _stats = {k: v for k, v in self.server_stats[_uid].items()}
+                    _stats['score'] = _score
+                    rows += [[txt.format(_stats[key]) for _, key, txt in columns]]
             rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
 
             for row in rows:
@@ -448,10 +450,6 @@ class neuron:
         # Find the n_topk_peer_weights peers to set weights to.
         topk_scores, topk_uids = bittensor.unbiased_topk(moving_avg_scores, k=n_topk_peer_weights)
         topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
-
-        for _score, _uid in zip(topk_scores, topk_uids):
-            self.server_stats[_uid]['score'] = _score
-
         print( '\nScores:', '\n\t weights:', topk_scores.sort()[0].tolist(), '\n\t sum:', topk_scores.sum().item(), 
                 '\n\t min:', topk_scores.min().item(), '\n\t max:', topk_scores.max().item(), '\n\t max/min:', (topk_scores.max()/topk_scores.min()).item() )
         self.subtensor.set_weights(
@@ -460,45 +458,6 @@ class neuron:
             wallet = self.wallet,
             wait_for_finalization = self.config.neuron.wait_for_finalization,
         )
-
-        # === Stats table (scoring) ===
-        table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
-        table.title = f'[white]Stats update[/white] | [bold]UID {self.uid}[/bold] ' \
-                      f'\[{self.dendrite.receptor_pool.external_ip}] ' \
-                      f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
-                      f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-        table.caption = f'#{current_block}: ' \
-                        f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
-                        f'Epoch {self.epoch} | ' \
-                        f'[white]\[{step_time:.2f}s] step {epoch_steps} ({self.global_step} global)[/white]'
-
-        columns = [('UID', 'uid', '{:.0f}'),
-                   ('Upd', 'updates', '{}'),
-                   ('Route', 'score', '{:.3f}'),
-                   ('Score', 'routing_score', '{:.3f}'),
-                   ('mShap', 'shapley_values_min', '{:.0f}'),
-                   ('Loss', 'loss', '{:.2f}'),
-                   ('vLoss', 'loss_val', '{:.2f}'),
-                   ('RLoss', 'routing_loss', '{:.3f}'),
-                   ('Shap', 'shapley_values', '{:.0f}'),
-                   ('vShap', 'shapley_values_val', '{:.0f}'),
-                   ('Base', 'base_params', '{:.0f}'),
-                   ('vBase', 'base_params_val', '{:.0f}'),
-                   ('Syn', 'synergy', '{:.0f}'),
-                   ('vSyn', 'synergy_val', '{:.0f}'),
-                   ('SynD', 'synergy_loss_diff', '{:.2f}'),
-                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
-
-        for col, _, _ in columns:
-            table.add_column(col)
-
-        rows = [[txt.format(s[key]) for _, key, txt in columns] for s in self.server_stats[topk_uids]]
-        rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
-
-        for row in rows:
-            table.add_row(*row)
-
-        print(table)
 
         # === Wandb Logs ===
         # Optionally send validator logs to wandb.
