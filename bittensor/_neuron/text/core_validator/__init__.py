@@ -651,10 +651,10 @@ class nucleus( torch.nn.Module ):
             else:
                 unsuccessful += [(_uid, return_ops[index][index_s])]
 
-        print('Unsuccessful UID[return_op]: ', end='')
+        console.print('Unsuccessful UID\[[purple]return_op[\purple]]: ', end='')
         for _uid, _return_op in unsuccessful:
-            print('{}[{}], '.format(_uid, _return_op), end='')
-        print()
+            console.print('{}[[purple]{}[\purple]], '.format(_uid, _return_op), end='')
+        console.print()
 
         # === Shapley synergy approximation ===
         # Shapley values - second level - coalition size 2
