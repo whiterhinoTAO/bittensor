@@ -212,8 +212,10 @@ class neuron:
         # === Backward ===
         # Backwards gradients through model to train gating and remote endpoints.
         if hasattr(loss, 'grad_fn') and loss.grad_fn is not None:
-            print('Loss: {}'.format(loss))
+            print(f'Loss: {loss:.3f} ... backpropagation ... ', end='')
+            start_time = time.time()
             (loss / self.config.neuron.forward_num).backward()
+            print(f'complete [{time.time() - start_time:.2f}s]')
 
         return loss, stats
 
@@ -289,13 +291,10 @@ class neuron:
         while self.subtensor.block < start_block + blocks_per_epoch:
             start_time = time.time()
 
-            print('Start new step', start_time)
-
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
             loss, stats = self.forward_thread_queue.get()
-            print(f'Run\t| Got forward result in {round(time.time() - start_time, 3)}')
 
             # === Scoring ===
             # Updates moving averages and history.
@@ -307,8 +306,6 @@ class neuron:
                 for key in s:  # detailed server evaluation fields, e.g. loss, shapley_values, synergy
                     if key not in ['updates']:
                         history[key] = (1 - sum_ratio) * history[key] + sum_ratio * s[key]  # update EMA
-
-            print('Server moving averages updated.')
 
             # === State update ===
             # Prints step logs to screen.
@@ -692,6 +689,9 @@ class nucleus( torch.nn.Module ):
                 scores (torch.FloatTensor, [ metagraph.n ]):
                     Scores per endpoint for this batch.
         """
+
+        start_time = time.time()
+
         inputs_seq = inputs[..., :-1]  # input sequence without last token [batch_size, sequence_len]
         inputs_val = inputs[..., -1]  # input validation with last token [batch_size]
 
@@ -856,7 +856,7 @@ class nucleus( torch.nn.Module ):
         # === Stats table (step) ===
         table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
         table.title = f'[white]Neuron stats[/white]'
-        table.caption = f'Validator forward'
+        table.caption = f'Validator forward [white]\[{time.time() - start_time:.2f}s]'
 
         columns = [('UID', 'uid', '{:.0f}'),
                    ('Route', 'routing_score', '{:.3f}'),
