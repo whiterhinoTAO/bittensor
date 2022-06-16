@@ -402,7 +402,7 @@ class neuron:
                 table.add_column(col)
 
             rows = []
-            for i in range(topk_uids):
+            for i in range(len(topk_uids)):
                 _score = topk_scores[i].item()
                 _uid = topk_uids[i].item()
                 if _uid in self.server_stats:
