@@ -285,7 +285,7 @@ class neuron:
         self.metagraph_sync() # Reset metagraph.
         epoch_steps = 0
 
-        with Live(console=console, auto_refresh=False, transient=True) as live:
+        with Live(console=console, auto_refresh=False) as live:
             start_block = self.subtensor.block
             while self.subtensor.block < start_block + blocks_per_epoch:
                 start_time = time.time()
