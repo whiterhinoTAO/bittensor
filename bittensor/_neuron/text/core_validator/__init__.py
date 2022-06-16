@@ -290,6 +290,8 @@ class neuron:
             while self.subtensor.block < start_block + blocks_per_epoch:
                 start_time = time.time()
 
+                print('Start new step', start_time)
+
                 table = Table(width=self.config.get('width', None), pad_edge=False, box=box.SIMPLE)
                 table.title = f'[bold]Validator[/bold]: [gray]UID[/gray] {self.uid} ' \
                               f'[dim yellow]\[{self.dendrite.receptor_pool.external_ip}][/dim yellow]' \
