@@ -269,6 +269,7 @@ class neuron:
 
         print(self.config)
         print(self.uid, self.wallet.name, self.wallet.coldkeypub.ss58_address, self.config.wallet.hotkey, self.wallet.hotkey.ss58_address)
+        print(self.dendrite.receptor_pool.external_ip)
         print(console, console._live, console.is_interactive)
         # === Logs ===
         print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
@@ -284,7 +285,6 @@ class neuron:
         # This gives us a consistent network wide timer.
         # Here we run until blocks_per_epochs have progressed.
         self.metagraph_sync() # Reset metagraph.
-        print(self.metagraph._endpoint_objs[self.uid])
         epoch_steps = 0
 
         start_block = self.subtensor.block
