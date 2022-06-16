@@ -318,9 +318,9 @@ class neuron:
             step_time = time.time() - start_time
 
             # === Stats table (step) ===
-            table = Table(width=self.config.get('width', None), pad_edge=False, box=box.SIMPLE)
-            table.title = f'[bold]Validator[/bold]: [gray on white]UID[/gray on white] {self.uid} ' \
-                          f'[gray on white]\[{self.dendrite.receptor_pool.external_ip}][/gray on white] ' \
+            table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
+            table.title = f'[white]Validator (server stats):[\white] [bold]UID {self.uid}[/bold] ' \
+                          f'[yellow on white]\[{self.dendrite.receptor_pool.external_ip}][/yellow on white] ' \
                           f'({self.wallet.name}: {self.wallet.coldkeypub.ss58_address[:7]} / ' \
                           f'{self.config.wallet.hotkey}: {self.wallet.hotkey.ss58_address[:7]})'
 
