@@ -457,6 +457,58 @@ class neuron:
         # Find the n_topk_peer_weights peers to set weights to.
         topk_scores, topk_uids = bittensor.unbiased_topk(moving_avg_scores, k=n_topk_peer_weights)
         topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
+
+        # === Stats table (scoring) ===
+        table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
+        table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
+                      f'\[{self.dendrite.receptor_pool.external_ip}] ' \
+                      f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+                      f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+        table.caption = f'[white]sum:{topk_scores.sum().item():.2g}[/white] | ' \
+                        f'max:{topk_scores.max().item():.4g} / ' \
+                        f'min:{topk_scores.min().item():.4g} ' \
+                        f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
+                        f'({max_allowed_ratio}:1 allowed)'
+
+        columns = [('UID', 'uid', '{:.0f}'),
+                   ('Upd', 'updates', '{}'),
+                   ('Route', 'routing_score', '{:.3f}'),
+                   ('Weight', 'weight', '{:.4f}'),
+                   ('mShap', 'shapley_values_min', '{:.0f}'),
+                   ('Loss', 'loss', '{:.2f}'),
+                   ('vLoss', 'loss_val', '{:.2f}'),
+                   ('RLoss', 'routing_loss', '{:.3f}'),
+                   ('Shap', 'shapley_values', '{:.0f}'),
+                   ('vShap', 'shapley_values_val', '{:.0f}'),
+                   ('Base', 'base_params', '{:.0f}'),
+                   ('vBase', 'base_params_val', '{:.0f}'),
+                   ('Syn', 'synergy', '{:.0f}'),
+                   ('vSyn', 'synergy_val', '{:.0f}'),
+                   ('SynD', 'synergy_loss_diff', '{:.2f}'),
+                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
+
+        for col, _, _ in columns:
+            table.add_column(col)
+
+        rows = []
+        not_validated = []
+        for i in range(len(topk_uids)):
+            _weight = topk_scores[i].item()
+            _uid = topk_uids[i].item()
+            if _uid in self.server_stats:
+                _stats = {k: v for k, v in self.server_stats[_uid].items()}
+                _stats['weight'] = _weight
+                rows += [[txt.format(_stats[key]) for _, key, txt in columns]]
+            else:
+                not_validated += [_uid]
+        rows = sorted(rows, reverse=True, key=lambda _row: float(_row[3]))  # sort according to weights
+
+        for row in rows:
+            table.add_row(*row)
+
+        print(table)
+        print('Not validated (min weight):', not_validated)
+
         print( '\nScores:', '\n\t weights:', topk_scores.sort()[0].tolist(), '\n\t sum:', topk_scores.sum().item(), 
                 '\n\t min:', topk_scores.min().item(), '\n\t max:', topk_scores.max().item(), '\n\t max/min:', (topk_scores.max()/topk_scores.min()).item() )
         self.subtensor.set_weights(
