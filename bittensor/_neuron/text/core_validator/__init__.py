@@ -33,7 +33,9 @@ import math
 import pandas
 import random
 import traceback
-from rich import print
+from rich import print, box
+from rich.live import Live
+from rich.table import Table
 from rich.console import Console
 from rich.traceback import install
 from ..neuron_utilities import joining_context, partial_contexts, ThreadQueue
@@ -267,10 +269,6 @@ class neuron:
         if (batch_size != self.dataset.batch_size) or (sequence_length != self.dataset.block_size):
             self.dataset.set_data_size(batch_size, sequence_length)
 
-        print(self.config)
-        print(self.uid, self.wallet.name, self.wallet.coldkeypub.ss58_address, self.config.wallet.hotkey, self.wallet.hotkey.ss58_address)
-        print(self.dendrite.receptor_pool.external_ip)
-        print(console, console._live, console.is_interactive)
         # === Logs ===
         print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
                 '\n\t max_allowed_ratio:', max_allowed_ratio, '\n\t blocks_per_epoch:', blocks_per_epoch, '\n\t epochs_until_reset:', epochs_until_reset, 
@@ -287,57 +285,91 @@ class neuron:
         self.metagraph_sync() # Reset metagraph.
         epoch_steps = 0
 
-        start_block = self.subtensor.block
-        while self.subtensor.block < start_block + blocks_per_epoch:
-            start_time = time.time()
+        with Live(console=console, auto_refresh=False, transient=True) as live:
+            start_block = self.subtensor.block
+            while self.subtensor.block < start_block + blocks_per_epoch:
+                start_time = time.time()
 
-            # === Forward ===
-            # Forwards inputs through the network and returns the loss
-            # and endpoint scores using shapely approximation of salience.
-            loss, stats = self.forward_thread_queue.get()
-            print(f'Run\t| Got forward result in {round(time.time() - start_time, 3)}')
+                # === Forward ===
+                # Forwards inputs through the network and returns the loss
+                # and endpoint scores using shapely approximation of salience.
+                loss, stats = self.forward_thread_queue.get()
+                print(f'Run\t| Got forward result in {round(time.time() - start_time, 3)}')
 
-            # === Scoring ===
-            # Updates moving averages and history.
-            for s in stats:
-                history = self.server_stats.setdefault(s['uid'], s)
-                history.setdefault('updates', 0)  # add updates fields for new uid entries
-                history['updates'] += 1  # increase number of updates made
-                sum_ratio = 1. / min(20, history['updates'])  # moving average window size of 20 max
-                for key in s:  # detailed server evaluation fields, e.g. loss, shapley_values, synergy
-                    if key not in ['updates']:
-                        history[key] = (1 - sum_ratio) * history[key] + sum_ratio * s[key]  # update EMA
+                # === Scoring ===
+                # Updates moving averages and history.
+                for s in stats:
+                    history = self.server_stats.setdefault(s['uid'], s)
+                    history.setdefault('updates', 0)  # add updates fields for new uid entries
+                    history['updates'] += 1  # increase number of updates made
+                    sum_ratio = 1. / min(20, history['updates'])  # moving average window size of 20 max
+                    for key in s:  # detailed server evaluation fields, e.g. loss, shapley_values, synergy
+                        if key not in ['updates']:
+                            history[key] = (1 - sum_ratio) * history[key] + sum_ratio * s[key]  # update EMA
 
-            # === State update ===
-            # Prints step logs to screen.
-            epoch_steps += 1
-            self.global_step += 1
-            current_block = self.subtensor.block
-            step_time = time.time() - start_time
+                # === State update ===
+                # Prints step logs to screen.
+                epoch_steps += 1
+                self.global_step += 1
+                current_block = self.subtensor.block
+                step_time = time.time() - start_time
 
-            # === Logs ===
-            print( '\nStep:', '\n\t epoch:', self.epoch, '\n\t epoch_steps:', epoch_steps, '\n\t global_steps:', self.global_step, '\n\t step_time:', step_time, '\n\t loss:', loss.item(),
-                   '\n\t current_block', current_block, '\n\t blocks remaining:', current_block - start_block, '/', blocks_per_epoch, '\n')
-            if self.config.using_wandb:
-                wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
-                           'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
-                           'epoch/time': step_time}, step=current_block)
-                for uid, vals in self.server_stats.items():
-                    for key in vals:  # detailed server evaluation fields, e.g. loss, shapley_values, synergy
-                        wandb.log({'stats/{}_{}'.format(key, uid): vals[key]}, step=current_block)
+                # === Stats table (step) ===
+                table = Table(width=self.config.get('width', None), pad_edge=False, box=box.SIMPLE)
+                table.title = f'[bold]Validator[/bold]: [gray]UID[/gray] {self.uid} ' \
+                              f'[dim yellow]\[{self.dendrite.receptor_pool.external_ip}][/dim yellow]' \
+                              f'({self.wallet.name}/{self.config.wallet.hotkey}) ' \
+                              f'{self.wallet.coldkeypub.ss58_address}, {self.wallet.hotkey.ss58_address}'
 
-            # Do the backward request after the a queue of forward requests got finished.  
-            if self.forward_thread_queue.paused() and self.forward_thread_queue.is_empty():
-                print('Run\t| Model update')
+                columns = [('UID', 'uid', '{}'),
+                           ('Route', 'routing_score', '{:.2f}'),
+                           ('mShap', 'shapley_values_min', '{:.0f}'),
+                           ('Loss', 'loss', '{:.2f}'),
+                           ('vLoss', 'loss_val', '{:.2f}'),
+                           ('RLoss', 'routing_loss', '{:.2f}'),
+                           ('Shap', 'shapley_values', '{:.0f}'),
+                           ('vShap', 'shapley_values_val', '{:.0f}'),
+                           ('Base', 'base_params', '{:.0f}'),
+                           ('vBase', 'base_params_val', '{:.0f}'),
+                           ('Syn', 'synergy', '{:.0f}'),
+                           ('vSyn', 'synergy_val', '{:.0f}'),
+                           ('SynD', 'synergy_loss_diff', '{:.2f}'),
+                           ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
 
-                # === Apply gradients ===
-                # Applies local gradients to parameters.
-                clip_grad_norm_(self.nucleus.parameters(), self.config.neuron.clip_gradients)
-                self.optimizer.step()
-                self.optimizer.zero_grad()   
-                
-                # === Get another round of forward requests ===
-                self.forward_thread_queue.resume()
+                for column, _, _ in columns:
+                    table.add_column(column)
+
+                rows = [(s[key] for _, key, _ in columns) for s in stats]
+                rows = sorted(rows, reverse=True, key=lambda tup: tup[2])  # sort according to mShap column
+
+                for row in rows:
+                    table.add_row(*row)
+
+                live.update(table, refresh=True)
+
+                # === Logs ===
+                print( '\nStep:', '\n\t epoch:', self.epoch, '\n\t epoch_steps:', epoch_steps, '\n\t global_steps:', self.global_step, '\n\t step_time:', step_time, '\n\t loss:', loss.item(),
+                       '\n\t current_block', current_block, '\n\t blocks remaining:', current_block - start_block, '/', blocks_per_epoch, '\n')
+                if self.config.using_wandb:
+                    wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
+                               'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
+                               'epoch/time': step_time}, step=current_block)
+                    for uid, vals in self.server_stats.items():
+                        for key in vals:  # detailed server evaluation fields, e.g. loss, shapley_values, synergy
+                            wandb.log({'stats/{}_{}'.format(key, uid): vals[key]}, step=current_block)
+
+                # Do the backward request after the a queue of forward requests got finished.
+                if self.forward_thread_queue.paused() and self.forward_thread_queue.is_empty():
+                    print('Run\t| Model update')
+
+                    # === Apply gradients ===
+                    # Applies local gradients to parameters.
+                    clip_grad_norm_(self.nucleus.parameters(), self.config.neuron.clip_gradients)
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+
+                    # === Get another round of forward requests ===
+                    self.forward_thread_queue.resume()
 
         # Iterate epochs.
         self.epoch += 1
@@ -653,10 +685,10 @@ class nucleus( torch.nn.Module ):
             else:
                 unsuccessful += [(_uid, return_ops[index][index_s])]
 
-        console.print('Unsuccessful [cyan]UID[/cyan]\[[purple]return_op[/purple]]: ', end='')
+        print('Unsuccessful [cyan]UID[/cyan]\[[purple]return_op[/purple]]: ', end='')
         for _uid, _return_op in unsuccessful:
-            console.print('{}[[dim purple]{}[/dim purple]] '.format(_uid, _return_op), end='')
-        console.print()
+            print('{}[[dim purple]{}[/dim purple]] '.format(_uid, _return_op), end='')
+        print()
 
         # === Shapley synergy approximation ===
         # Shapley values - second level - coalition size 2
