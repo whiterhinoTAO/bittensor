@@ -376,15 +376,16 @@ class neuron:
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                           f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-            table.caption = f'#{current_block}: ' \
-                            f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
-                            f'Epoch {self.epoch} | ' \
-                            f'[white]\[{step_time:.2f}s] step {epoch_steps} ({self.global_step} global)[/white]'
+            table.caption = f'[white]sum:{topk_scores.sum().item():.2g}[/white] ' \
+                            f'min:{topk_scores.min().item():.2g} ' \
+                            f'max:{topk_scores.max().item():.2g} ' \
+                            f'\[{topk_scores.max().item()/topk_scores.min().item()}:1] ' \
+                            f'({max_allowed_ratio}:1 allowed)'
 
             columns = [('UID', 'uid', '{:.0f}'),
                        ('Upd', 'updates', '{}'),
-                       ('Route', 'score', '{:.3f}'),
-                       ('Score', 'routing_score', '{:.3f}'),
+                       ('Route', 'routing_score', '{:.3f}'),
+                       ('Weight', 'weight', '{:.3f}'),
                        ('mShap', 'shapley_values_min', '{:.0f}'),
                        ('Loss', 'loss', '{:.2f}'),
                        ('vLoss', 'loss_val', '{:.2f}'),
@@ -403,11 +404,11 @@ class neuron:
 
             rows = []
             for i in range(len(topk_uids)):
-                _score = topk_scores[i].item()
+                _weight = topk_scores[i].item()
                 _uid = topk_uids[i].item()
                 if _uid in self.server_stats:
                     _stats = {k: v for k, v in self.server_stats[_uid].items()}
-                    _stats['score'] = _score
+                    _stats['weight'] = _weight
                     rows += [[txt.format(_stats[key]) for _, key, txt in columns]]
             rows = sorted(rows, reverse=True, key=lambda _row: float(_row[3]))  # sort according to mShap column
 
