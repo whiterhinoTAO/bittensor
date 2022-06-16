@@ -328,7 +328,7 @@ class neuron:
                 step_time = time.time() - start_time
 
                 # === Stats table (step) ===
-                columns = [('UID', 'uid', '{}'),
+                columns = [('UID', 'uid', '{:.0f}'),
                            ('Route', 'routing_score', '{:.2f}'),
                            ('mShap', 'shapley_values_min', '{:.0f}'),
                            ('Loss', 'loss', '{:.2f}'),
