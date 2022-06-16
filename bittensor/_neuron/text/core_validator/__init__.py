@@ -342,7 +342,7 @@ class neuron:
                     table.add_column(column)
 
                 rows = [[txt.format(s[key]) for _, key, txt in columns] for s in stats]
-                rows = sorted(rows, reverse=True, key=lambda _row: _row[2])  # sort according to mShap column
+                rows = sorted(rows, reverse=True, key=lambda _row: int(_row[2]))  # sort according to mShap column
 
                 for row in rows:
                     table.add_row(*row)
