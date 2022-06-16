@@ -272,13 +272,11 @@ class neuron:
             self.dataset.set_data_size(batch_size, sequence_length)
 
         # === Logs ===
-        print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
-                '\n\t max_allowed_ratio:', max_allowed_ratio, '\n\t blocks_per_epoch:', blocks_per_epoch, '\n\t epochs_until_reset:', epochs_until_reset, 
-                '\n\t until_reset:', self.epoch % epochs_until_reset, '\n\t current_block:', current_block, '\n')
         if self.config.using_wandb:
-            wandb.log( {    'era/batch_size': batch_size, 'era/sequence_length': sequence_length, 'era/n_topk_peer_weights': n_topk_peer_weights, 
-                            'era/max_allowed_ratio': max_allowed_ratio, 'era/blocks_per_epoch': blocks_per_epoch, 'era/epochs_until_reset': epochs_until_reset, 
-                }, step = current_block )
+            wandb.log({'era/batch_size': batch_size, 'era/sequence_length': sequence_length,
+                       'era/n_topk_peer_weights': n_topk_peer_weights, 'era/max_allowed_ratio': max_allowed_ratio,
+                       'era/blocks_per_epoch': blocks_per_epoch, 'era/epochs_until_reset': epochs_until_reset},
+                      step=current_block)
 
         # === Run Epoch ===
         # Each block length lasts blocks_per_epoch blocks.
@@ -363,10 +361,6 @@ class neuron:
             topk_scores, topk_uids = bittensor.unbiased_topk(moving_avg_scores, k=n_topk_peer_weights)
             topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
-            print('\nScores:', '\n\t weights:', topk_scores.sort()[0].tolist(), '\n\t sum:', topk_scores.sum().item(),
-                  '\n\t min:', topk_scores.min().item(), '\n\t max:', topk_scores.max().item(), '\n\t max/min:',
-                  (topk_scores.max() / topk_scores.min()).item())
-
             # === Stats table (scoring) ===
             table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
             table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
@@ -419,8 +413,6 @@ class neuron:
             print('Not validated (min weight):', not_validated)
 
             # === Logs ===
-            print( '\nStep:', '\n\t epoch:', self.epoch, '\n\t epoch_steps:', epoch_steps, '\n\t global_steps:', self.global_step, '\n\t step_time:', step_time, '\n\t loss:', loss.item(),
-                   '\n\t current_block', current_block, '\n\t blocks remaining:', current_block - start_block, '/', blocks_per_epoch, '\n')
             if self.config.using_wandb:
                 wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
                            'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
@@ -506,8 +498,6 @@ class neuron:
         print(table)
         print('Not validated (min weight):', not_validated)
 
-        print( '\nScores:', '\n\t weights:', topk_scores.sort()[0].tolist(), '\n\t sum:', topk_scores.sum().item(), 
-                '\n\t min:', topk_scores.min().item(), '\n\t max:', topk_scores.max().item(), '\n\t max/min:', (topk_scores.max()/topk_scores.min()).item() )
         self.subtensor.set_weights(
             uids = topk_uids.detach().to('cpu'),
             weights = topk_scores.detach().to('cpu'),
