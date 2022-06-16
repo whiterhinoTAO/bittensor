@@ -401,7 +401,7 @@ class neuron:
             for col, _, _ in columns:
                 table.add_column(col)
 
-            rows = [[txt.format(s[key]) for _, key, txt in columns] for s in self.server_stats[topk_uids]]
+            rows = []
             for _score, _uid in zip(topk_scores, topk_uids):
                 if _uid in self.server_stats:
                     _stats = {k: v for k, v in self.server_stats[_uid].items()}
