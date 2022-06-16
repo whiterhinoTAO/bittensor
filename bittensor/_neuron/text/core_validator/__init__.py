@@ -267,6 +267,8 @@ class neuron:
         if (batch_size != self.dataset.batch_size) or (sequence_length != self.dataset.block_size):
             self.dataset.set_data_size(batch_size, sequence_length)
 
+        print(self.config)
+        print(console, console._live, console.is_interactive)
         # === Logs ===
         print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
                 '\n\t max_allowed_ratio:', max_allowed_ratio, '\n\t blocks_per_epoch:', blocks_per_epoch, '\n\t epochs_until_reset:', epochs_until_reset, 
