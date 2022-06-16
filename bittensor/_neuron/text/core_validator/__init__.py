@@ -347,7 +347,7 @@ class neuron:
             for col, _, _ in columns:
                 table.add_column(col)
 
-            rows = [[txt.format(self.server_stats[s['uid']]) for _, key, txt in columns] for s in stats]
+            rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt in columns] for s in stats]
             rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
 
             for row in rows:
