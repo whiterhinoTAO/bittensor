@@ -329,7 +329,7 @@ class neuron:
                             f'[white]\[{step_time:.2f}s] step {epoch_steps} ({self.global_step} global)[/white]'
 
             columns = [('UID', 'uid', '{:.0f}'),
-                       ('Upd', 'updates', '{:.0f}'),
+                       ('Upd', 'updates', '{}'),
                        ('Route', 'routing_score', '{:.3f}'),
                        ('mShap', 'shapley_values_min', '{:.0f}'),
                        ('Loss', 'loss', '{:.2f}'),
@@ -738,6 +738,7 @@ class nucleus( torch.nn.Module ):
         # === Stats table (step) ===
         table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
         table.title = f'[white]Neuron stats[/white]'
+        table.caption = f'Validator forward'
 
         columns = [('UID', 'uid', '{:.0f}'),
                    ('Route', 'routing_score', '{:.3f}'),
