@@ -329,7 +329,7 @@ class neuron:
                             f'[white]\[{step_time:.2f}s] step {epoch_steps} ({self.global_step} global)[/white]'
 
             columns = [('UID', 'uid', '{:.0f}'),
-                       ('Route', 'routing_score', '{:.2f}'),
+                       ('Route', 'routing_score', '{:.3f}'),
                        ('mShap', 'shapley_values_min', '{:.0f}'),
                        ('Loss', 'loss', '{:.2f}'),
                        ('vLoss', 'loss_val', '{:.2f}'),
@@ -734,9 +734,34 @@ class nucleus( torch.nn.Module ):
                 if hasattr(s[key], 'item'):
                     s[key] = s[key].item()
 
-            output = 'Shapely\t|\tuid: {}'.format(s['uid'])
-            for key in ['routing_loss', 'loss', 'loss_val', 'base_params', 'synergy_loss_diff', 'shapley_values_val']:
-                output += '\t{}: {:.3f}'.format(key, s[key])
+        # === Stats table (step) ===
+        table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
+        table.title = f'[white]Neuron stats[/white]'
 
-            print(output)
+        columns = [('UID', 'uid', '{:.0f}'),
+                   ('Route', 'routing_score', '{:.3f}'),
+                   ('mShap', 'shapley_values_min', '{:.0f}'),
+                   ('Loss', 'loss', '{:.2f}'),
+                   ('vLoss', 'loss_val', '{:.2f}'),
+                   ('RLoss', 'routing_loss', '{:.2f}'),
+                   ('Shap', 'shapley_values', '{:.0f}'),
+                   ('vShap', 'shapley_values_val', '{:.0f}'),
+                   ('Base', 'base_params', '{:.0f}'),
+                   ('vBase', 'base_params_val', '{:.0f}'),
+                   ('Syn', 'synergy', '{:.0f}'),
+                   ('vSyn', 'synergy_val', '{:.0f}'),
+                   ('SynD', 'synergy_loss_diff', '{:.2f}'),
+                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
+
+        for col, _, _ in columns:
+            table.add_column(col)
+
+        rows = [[txt.format(s[key]) for _, key, txt in columns] for s in stats]
+        rows = sorted(rows, reverse=True, key=lambda _row: int(_row[2]))  # sort according to mShap column
+
+        for row in rows:
+            table.add_row(*row)
+
+        print(table)
+
         return routing_loss, stats
