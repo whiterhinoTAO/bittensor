@@ -319,10 +319,10 @@ class neuron:
 
             # === Stats table (step) ===
             table = Table(width=self.config.get('width', None), pad_edge=False, box=box.SIMPLE)
-            table.title = f'[bold]Validator[/bold]: [gray]UID[/gray] {self.uid} ' \
-                          f'[italic]\[{self.dendrite.receptor_pool.external_ip}][/italic] ' \
-                          f'({self.wallet.name}/{self.config.wallet.hotkey}) ' \
-                          f'{self.wallet.coldkeypub.ss58_address[:7]}/{self.wallet.hotkey.ss58_address[:7]}'
+            table.title = f'[bold]Validator[/bold]: [gray on white]UID[/gray on white] {self.uid} ' \
+                          f'[gray on white]\[{self.dendrite.receptor_pool.external_ip}][/gray on white] ' \
+                          f'({self.wallet.name}: {self.wallet.coldkeypub.ss58_address[:7]} / ' \
+                          f'{self.config.wallet.hotkey}: {self.wallet.hotkey.ss58_address[:7]})'
 
             columns = [('UID', 'uid', '{:.0f}'),
                        ('Route', 'routing_score', '{:.2f}'),
