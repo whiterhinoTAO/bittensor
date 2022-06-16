@@ -403,6 +403,7 @@ class neuron:
                 table.add_column(col)
 
             rows = []
+            not_validated = []
             for i in range(len(topk_uids)):
                 _weight = topk_scores[i].item()
                 _uid = topk_uids[i].item()
@@ -410,12 +411,15 @@ class neuron:
                     _stats = {k: v for k, v in self.server_stats[_uid].items()}
                     _stats['weight'] = _weight
                     rows += [[txt.format(_stats[key]) for _, key, txt in columns]]
-            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[3]))  # sort according to mShap column
+                else:
+                    not_validated += [_uid]
+            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[3]))  # sort according to weights
 
             for row in rows:
                 table.add_row(*row)
 
             print(table)
+            print('Not validated (min weight):', not_validated)
 
             # === Logs ===
             print( '\nStep:', '\n\t epoch:', self.epoch, '\n\t epoch_steps:', epoch_steps, '\n\t global_steps:', self.global_step, '\n\t step_time:', step_time, '\n\t loss:', loss.item(),
