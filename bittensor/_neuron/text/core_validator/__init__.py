@@ -284,6 +284,7 @@ class neuron:
         # This gives us a consistent network wide timer.
         # Here we run until blocks_per_epochs have progressed.
         self.metagraph_sync() # Reset metagraph.
+        print(self.metagraph.endpoints[self.uid])
         epoch_steps = 0
 
         start_block = self.subtensor.block
