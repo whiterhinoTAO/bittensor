@@ -268,6 +268,7 @@ class neuron:
             self.dataset.set_data_size(batch_size, sequence_length)
 
         print(self.config)
+        print(self.uid, self.wallet.name, self.wallet.coldkeypub.ss58_address, self.wallet.hotkey, self.wallet.hotkey.ss58_address)
         print(console, console._live, console.is_interactive)
         # === Logs ===
         print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
