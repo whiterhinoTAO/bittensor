@@ -46,7 +46,7 @@ from loguru import logger
 from threading import Lock
 
 logger = logger.opt( colors=True )
-console = Console()
+console = bittensor.__console__
 install(show_locals=True)
 
 class neuron:
