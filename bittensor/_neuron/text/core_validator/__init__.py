@@ -297,6 +297,7 @@ class neuron:
                               f'{self.wallet.coldkeypub.ss58_address}, {self.wallet.hotkey.ss58_address}'
 
                 live.update(table, refresh=True)
+                print('Live updated.')
 
                 # === Forward ===
                 # Forwards inputs through the network and returns the loss
@@ -314,6 +315,8 @@ class neuron:
                     for key in s:  # detailed server evaluation fields, e.g. loss, shapley_values, synergy
                         if key not in ['updates']:
                             history[key] = (1 - sum_ratio) * history[key] + sum_ratio * s[key]  # update EMA
+
+                print('Server moving averages updated.')
 
                 # === State update ===
                 # Prints step logs to screen.
@@ -348,6 +351,7 @@ class neuron:
                     table.add_row(*row)
 
                 live.update(table, refresh=True)
+                print('Live updated again.')
 
                 # === Logs ===
                 print( '\nStep:', '\n\t epoch:', self.epoch, '\n\t epoch_steps:', epoch_steps, '\n\t global_steps:', self.global_step, '\n\t step_time:', step_time, '\n\t loss:', loss.item(),
