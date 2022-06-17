@@ -217,6 +217,7 @@ class neuron:
             start_time = time.time()
             (loss / self.config.neuron.forward_num).backward()
             print(f'complete [{time.time() - start_time:.2g}s]')
+            print()
 
         return loss, stats
 
@@ -343,7 +344,8 @@ class neuron:
             for col, _, _ in columns:
                 table.add_column(col)
 
-            table.columns[0].style = "cyan"
+            table.columns[0].style = 'cyan'
+            table.columns[1].style = 'yellow'
             table.columns[3].style = 'green'
 
             rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt in columns] for s in stats]
@@ -353,6 +355,7 @@ class neuron:
                 table.add_row(*row)
 
             print(table)
+            print()
 
             # === Calculate weights ===
             score_key = 'shapley_values_min'  # server score based on Shapley value approximation
@@ -397,8 +400,10 @@ class neuron:
             for col, _, _ in columns:
                 table.add_column(col)
 
-            table.columns[0].style = "cyan"
-            table.columns[3].style = 'green'
+            table.columns[0].style = 'cyan'
+            table.columns[1].style = 'yellow'
+            table.columns[3].style = 'magenta'
+            table.columns[4].style = 'green'
 
             rows = []
             not_validated = []
@@ -416,9 +421,11 @@ class neuron:
             for row in rows:
                 table.add_row(*row)
 
-            print()
             print(table)
+            print()
             print(f'Not validated [dim](min weight)[/dim] | {not_validated}')
+            print()
+
 
             # === Logs ===
             if self.config.using_wandb:
@@ -489,8 +496,10 @@ class neuron:
         for col, _, _ in columns:
             table.add_column(col)
 
-        table.columns[0].style = "cyan"
-        table.columns[3].style = 'green'
+        table.columns[0].style = 'cyan'
+        table.columns[1].style = 'yellow'
+        table.columns[3].style = 'magenta'
+        table.columns[4].style = 'green'
 
         rows = []
         not_validated = []
@@ -508,9 +517,10 @@ class neuron:
         for row in rows:
             table.add_row(*row)
 
-        print()
         print(table)
+        print()
         print(f'Not validated [dim](min weight)[/dim] | {not_validated}')
+        print()
 
         self.subtensor.set_weights(
             uids = topk_uids.detach().to('cpu'),
@@ -815,12 +825,6 @@ class nucleus( torch.nn.Module ):
             else:
                 unsuccessful += [(_uid, return_ops[index][index_s])]
 
-        unsuccess_txt = f'Unsuccessful responses | [cyan]UID[/cyan]\[[purple]return_op[/purple]]: '
-        for _uid, _return_op in unsuccessful:
-            unsuccess_txt += f'{_uid}[[purple]{_return_op}[/purple]] '
-
-        print(unsuccess_txt)
-
         # === Shapley synergy approximation ===
         # Shapley values - second level - coalition size 2
         # Synergy = measured performance above expected performance
@@ -891,5 +895,12 @@ class nucleus( torch.nn.Module ):
             table.add_row(*row)
 
         print(table)
+        print()
+
+        unsuccess_txt = f'Unsuccessful responses | [cyan]UID[/cyan]\[[purple]return_op[/purple]]: '
+        for _uid, _return_op in unsuccessful:
+            unsuccess_txt += f'{_uid}[[purple]{_return_op}[/purple]] '
+        print(unsuccess_txt)
+        print()
 
         return routing_loss, stats
