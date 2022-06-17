@@ -328,8 +328,8 @@ class neuron:
                        ('Upd', 'updates', '{}', 'yellow'),
                        ('Route', 'routing_score', '{:.3f}', 'grey30'),
                        ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
-                       ('Loss', 'loss', '{:.2f}', 'blue'),
-                       ('vLoss', 'loss_val', '{:.2f}', 'blue'),
+                       ('Loss', 'loss', '{:.2f}', 'sky_blue1'),
+                       ('vLoss', 'loss_val', '{:.2f}', 'sky_blue1'),
                        ('RLoss', 'routing_loss', '{:.3f}', ''),
                        ('Shap', 'shapley_values', '{:.0f}', ''),
                        ('vShap', 'shapley_values_val', '{:.0f}', ''),
@@ -380,8 +380,8 @@ class neuron:
                        ('Route', 'routing_score', '{:.3f}', 'grey30'),
                        ('Weight', 'weight', '{:.4f}', 'magenta'),
                        ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
-                       ('Loss', 'loss', '{:.2f}', 'blue'),
-                       ('vLoss', 'loss_val', '{:.2f}', 'blue'),
+                       ('Loss', 'loss', '{:.2f}', 'sky_blue1'),
+                       ('vLoss', 'loss_val', '{:.2f}', 'sky_blue1'),
                        ('RLoss', 'routing_loss', '{:.3f}', ''),
                        ('Shap', 'shapley_values', '{:.0f}', ''),
                        ('vShap', 'shapley_values_val', '{:.0f}', ''),
@@ -413,6 +413,7 @@ class neuron:
 
             print(table)
             print(f'Not validated \t| [dim](min weight)[/dim] | {not_validated}')
+            print()
 
 
             # === Logs ===
@@ -469,8 +470,8 @@ class neuron:
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
                    ('Weight', 'weight', '{:.4f}', 'magenta'),
                    ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
-                   ('Loss', 'loss', '{:.2f}', 'blue'),
-                   ('vLoss', 'loss_val', '{:.2f}', 'blue'),
+                   ('Loss', 'loss', '{:.2f}', 'sky_blue1'),
+                   ('vLoss', 'loss_val', '{:.2f}', 'sky_blue1'),
                    ('RLoss', 'routing_loss', '{:.3f}', ''),
                    ('Shap', 'shapley_values', '{:.0f}', ''),
                    ('vShap', 'shapley_values_val', '{:.0f}', ''),
@@ -502,6 +503,7 @@ class neuron:
 
         print(table)
         print(f'Not validated \t| [dim](min weight)[/dim] | {not_validated}')
+        print()
 
         self.subtensor.set_weights(
             uids = topk_uids.detach().to('cpu'),
@@ -851,8 +853,8 @@ class nucleus( torch.nn.Module ):
         columns = [('UID', 'uid', '{:.0f}', 'cyan'),
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
                    ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
-                   ('Loss', 'loss', '{:.2f}', 'blue'),
-                   ('vLoss', 'loss_val', '{:.2f}', 'blue'),
+                   ('Loss', 'loss', '{:.2f}', 'sky_blue1'),
+                   ('vLoss', 'loss_val', '{:.2f}', 'sky_blue1'),
                    ('RLoss', 'routing_loss', '{:.3f}', ''),
                    ('Shap', 'shapley_values', '{:.0f}', ''),
                    ('vShap', 'shapley_values_val', '{:.0f}', ''),
