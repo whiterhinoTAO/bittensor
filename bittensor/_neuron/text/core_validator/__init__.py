@@ -35,6 +35,7 @@ import random
 import traceback
 from rich import print, box
 from rich.live import Live
+from rich.style import Style
 from rich.table import Table
 from rich.console import Console
 from rich.traceback import install
@@ -313,7 +314,7 @@ class neuron:
             step_time = time.time() - start_time
 
             # === Stats table (avg) ===
-            table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=['dim', ''])
+            table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ''])
             table.title = f'[white]Stats update[/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
@@ -365,7 +366,7 @@ class neuron:
             topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
             # === Stats table (scoring) ===
-            table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=["dim", ""])
+            table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
             table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
@@ -417,7 +418,7 @@ class neuron:
 
             print()
             print(table)
-            print('Not validated (min weight):', not_validated)
+            print(f'Not validated [dim](min weight)[/dim] | {not_validated}')
 
             # === Logs ===
             if self.config.using_wandb:
@@ -430,7 +431,8 @@ class neuron:
 
             # Do the backward request after the a queue of forward requests got finished.
             if self.forward_thread_queue.paused() and self.forward_thread_queue.is_empty():
-                print('Run\t| Model update')
+                start_time = time.time()
+                print('Run\t| Model update ... ', end='')
 
                 # === Apply gradients ===
                 # Applies local gradients to parameters.
@@ -440,6 +442,7 @@ class neuron:
 
                 # === Get another round of forward requests ===
                 self.forward_thread_queue.resume()
+                print(f'complete [{time.time() - start_time:.2g}s]')
 
         # Iterate epochs.
         self.epoch += 1
@@ -455,7 +458,7 @@ class neuron:
         topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
         # === Stats table (scoring) ===
-        table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=["dim", ""])
+        table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
         table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
                       f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                       f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
@@ -507,7 +510,7 @@ class neuron:
 
         print()
         print(table)
-        print('Not validated (min weight):', not_validated)
+        print(f'Not validated [dim](min weight)[/dim] | {not_validated}')
 
         self.subtensor.set_weights(
             uids = topk_uids.detach().to('cpu'),
@@ -816,7 +819,7 @@ class nucleus( torch.nn.Module ):
         for _uid, _return_op in unsuccessful:
             unsuccess_txt += f'{_uid}[[purple]{_return_op}[/purple]] '
 
-        console.log(unsuccess_txt)
+        print(unsuccess_txt)
 
         # === Shapley synergy approximation ===
         # Shapley values - second level - coalition size 2
@@ -856,9 +859,9 @@ class nucleus( torch.nn.Module ):
                     s[key] = s[key].item()
 
         # === Stats table (step) ===
-        table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=["dim", ""])
+        table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
         table.title = f'[white]Neuron stats[/white]'
-        table.caption = f'Validator forward [white]\[{time.time() - start_time:.2f}s]'
+        table.caption = f'Validator forward [white]\[{time.time() - start_time:.2g}s]'
 
         columns = [('UID', 'uid', '{:.0f}'),
                    ('Route', 'routing_score', '{:.3f}'),
