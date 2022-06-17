@@ -213,11 +213,10 @@ class neuron:
         # === Backward ===
         # Backwards gradients through model to train gating and remote endpoints.
         if hasattr(loss, 'grad_fn') and loss.grad_fn is not None:
-            print(f'Loss: {loss:.3f} ... backpropagation ... ', end='')
+            print(f'Backward \t| Loss: {loss:.3f} ... backpropagation ... ', end='')
             start_time = time.time()
             (loss / self.config.neuron.forward_num).backward()
             print(f'complete [{time.time() - start_time:.2g}s]')
-            print()
 
         return loss, stats
 
@@ -325,28 +324,24 @@ class neuron:
                             f'Epoch {self.epoch} | ' \
                             f'[white]\[{step_time:.2f}s] step {epoch_steps} ({self.global_step} global)[/white]'
 
-            columns = [('UID', 'uid', '{:.0f}'),
-                       ('Upd', 'updates', '{}'),
-                       ('Route', 'routing_score', '{:.3f}'),
-                       ('mShap', 'shapley_values_min', '{:.0f}'),
-                       ('Loss', 'loss', '{:.2f}'),
-                       ('vLoss', 'loss_val', '{:.2f}'),
-                       ('RLoss', 'routing_loss', '{:.3f}'),
-                       ('Shap', 'shapley_values', '{:.0f}'),
-                       ('vShap', 'shapley_values_val', '{:.0f}'),
-                       ('Base', 'base_params', '{:.0f}'),
-                       ('vBase', 'base_params_val', '{:.0f}'),
-                       ('Syn', 'synergy', '{:.0f}'),
-                       ('vSyn', 'synergy_val', '{:.0f}'),
-                       ('SynD', 'synergy_loss_diff', '{:.2f}'),
-                       ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
+            columns = [('UID', 'uid', '{:.0f}', 'cyan'),
+                       ('Upd', 'updates', '{}', 'yellow'),
+                       ('Route', 'routing_score', '{:.3f}', 'grey30'),
+                       ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
+                       ('Loss', 'loss', '{:.2f}', 'blue'),
+                       ('vLoss', 'loss_val', '{:.2f}', 'blue'),
+                       ('RLoss', 'routing_loss', '{:.3f}', ''),
+                       ('Shap', 'shapley_values', '{:.0f}', ''),
+                       ('vShap', 'shapley_values_val', '{:.0f}', ''),
+                       ('Base', 'base_params', '{:.0f}', ''),
+                       ('vBase', 'base_params_val', '{:.0f}', ''),
+                       ('Syn', 'synergy', '{:.0f}', ''),
+                       ('vSyn', 'synergy_val', '{:.0f}', ''),
+                       ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
+                       ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
 
-            for col, _, _ in columns:
-                table.add_column(col)
-
-            table.columns[0].style = 'cyan'
-            table.columns[1].style = 'yellow'
-            table.columns[3].style = 'green'
+            for col, _, _, stl in columns:
+                table.add_column(col, style=stl)
 
             rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt in columns] for s in stats]
             rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
@@ -380,30 +375,25 @@ class neuron:
                             f'\[{topk_scores.max().item()/topk_scores.min().item():.2f}:1] ' \
                             f'({max_allowed_ratio}:1 allowed)'
 
-            columns = [('UID', 'uid', '{:.0f}'),
-                       ('Upd', 'updates', '{}'),
-                       ('Route', 'routing_score', '{:.3f}'),
-                       ('Weight', 'weight', '{:.4f}'),
-                       ('mShap', 'shapley_values_min', '{:.0f}'),
-                       ('Loss', 'loss', '{:.2f}'),
-                       ('vLoss', 'loss_val', '{:.2f}'),
-                       ('RLoss', 'routing_loss', '{:.3f}'),
-                       ('Shap', 'shapley_values', '{:.0f}'),
-                       ('vShap', 'shapley_values_val', '{:.0f}'),
-                       ('Base', 'base_params', '{:.0f}'),
-                       ('vBase', 'base_params_val', '{:.0f}'),
-                       ('Syn', 'synergy', '{:.0f}'),
-                       ('vSyn', 'synergy_val', '{:.0f}'),
-                       ('SynD', 'synergy_loss_diff', '{:.2f}'),
-                       ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
+            columns = [('UID', 'uid', '{:.0f}', 'cyan'),
+                       ('Upd', 'updates', '{}', 'yellow'),
+                       ('Route', 'routing_score', '{:.3f}', 'grey30'),
+                       ('Weight', 'weight', '{:.4f}', 'magenta'),
+                       ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
+                       ('Loss', 'loss', '{:.2f}', 'blue'),
+                       ('vLoss', 'loss_val', '{:.2f}', 'blue'),
+                       ('RLoss', 'routing_loss', '{:.3f}', ''),
+                       ('Shap', 'shapley_values', '{:.0f}', ''),
+                       ('vShap', 'shapley_values_val', '{:.0f}', ''),
+                       ('Base', 'base_params', '{:.0f}', ''),
+                       ('vBase', 'base_params_val', '{:.0f}', ''),
+                       ('Syn', 'synergy', '{:.0f}', ''),
+                       ('vSyn', 'synergy_val', '{:.0f}', ''),
+                       ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
+                       ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
 
-            for col, _, _ in columns:
-                table.add_column(col)
-
-            table.columns[0].style = 'cyan'
-            table.columns[1].style = 'yellow'
-            table.columns[3].style = 'magenta'
-            table.columns[4].style = 'green'
+            for col, _, _, stl in columns:
+                table.add_column(col, style=stl)
 
             rows = []
             not_validated = []
@@ -422,9 +412,7 @@ class neuron:
                 table.add_row(*row)
 
             print(table)
-            print()
-            print(f'Not validated [dim](min weight)[/dim] | {not_validated}')
-            print()
+            print(f'Not validated \t| [dim](min weight)[/dim] | {not_validated}')
 
 
             # === Logs ===
@@ -476,30 +464,25 @@ class neuron:
                         f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
                         f'({max_allowed_ratio}:1 allowed)'
 
-        columns = [('UID', 'uid', '{:.0f}'),
-                   ('Upd', 'updates', '{}'),
-                   ('Route', 'routing_score', '{:.3f}'),
-                   ('Weight', 'weight', '{:.4f}'),
-                   ('mShap', 'shapley_values_min', '{:.0f}'),
-                   ('Loss', 'loss', '{:.2f}'),
-                   ('vLoss', 'loss_val', '{:.2f}'),
-                   ('RLoss', 'routing_loss', '{:.3f}'),
-                   ('Shap', 'shapley_values', '{:.0f}'),
-                   ('vShap', 'shapley_values_val', '{:.0f}'),
-                   ('Base', 'base_params', '{:.0f}'),
-                   ('vBase', 'base_params_val', '{:.0f}'),
-                   ('Syn', 'synergy', '{:.0f}'),
-                   ('vSyn', 'synergy_val', '{:.0f}'),
-                   ('SynD', 'synergy_loss_diff', '{:.2f}'),
-                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
+        columns = [('UID', 'uid', '{:.0f}', 'cyan'),
+                   ('Upd', 'updates', '{}', 'yellow'),
+                   ('Route', 'routing_score', '{:.3f}', 'grey30'),
+                   ('Weight', 'weight', '{:.4f}', 'magenta'),
+                   ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
+                   ('Loss', 'loss', '{:.2f}', 'blue'),
+                   ('vLoss', 'loss_val', '{:.2f}', 'blue'),
+                   ('RLoss', 'routing_loss', '{:.3f}', ''),
+                   ('Shap', 'shapley_values', '{:.0f}', ''),
+                   ('vShap', 'shapley_values_val', '{:.0f}', ''),
+                   ('Base', 'base_params', '{:.0f}', ''),
+                   ('vBase', 'base_params_val', '{:.0f}', ''),
+                   ('Syn', 'synergy', '{:.0f}', ''),
+                   ('vSyn', 'synergy_val', '{:.0f}', ''),
+                   ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
+                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
 
-        for col, _, _ in columns:
-            table.add_column(col)
-
-        table.columns[0].style = 'cyan'
-        table.columns[1].style = 'yellow'
-        table.columns[3].style = 'magenta'
-        table.columns[4].style = 'green'
+        for col, _, _, stl in columns:
+            table.add_column(col, style=stl)
 
         rows = []
         not_validated = []
@@ -518,9 +501,7 @@ class neuron:
             table.add_row(*row)
 
         print(table)
-        print()
-        print(f'Not validated [dim](min weight)[/dim] | {not_validated}')
-        print()
+        print(f'Not validated \t| [dim](min weight)[/dim] | {not_validated}')
 
         self.subtensor.set_weights(
             uids = topk_uids.detach().to('cpu'),
@@ -867,26 +848,23 @@ class nucleus( torch.nn.Module ):
         table.title = f'[white]Neuron stats[/white]'
         table.caption = f'Validator forward [white]\[{time.time() - start_time:.2g}s]'
 
-        columns = [('UID', 'uid', '{:.0f}'),
-                   ('Route', 'routing_score', '{:.3f}'),
-                   ('mShap', 'shapley_values_min', '{:.0f}'),
-                   ('Loss', 'loss', '{:.2f}'),
-                   ('vLoss', 'loss_val', '{:.2f}'),
-                   ('RLoss', 'routing_loss', '{:.3f}'),
-                   ('Shap', 'shapley_values', '{:.0f}'),
-                   ('vShap', 'shapley_values_val', '{:.0f}'),
-                   ('Base', 'base_params', '{:.0f}'),
-                   ('vBase', 'base_params_val', '{:.0f}'),
-                   ('Syn', 'synergy', '{:.0f}'),
-                   ('vSyn', 'synergy_val', '{:.0f}'),
-                   ('SynD', 'synergy_loss_diff', '{:.2f}'),
-                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}')]
+        columns = [('UID', 'uid', '{:.0f}', 'cyan'),
+                   ('Route', 'routing_score', '{:.3f}', 'grey30'),
+                   ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
+                   ('Loss', 'loss', '{:.2f}', 'blue'),
+                   ('vLoss', 'loss_val', '{:.2f}', 'blue'),
+                   ('RLoss', 'routing_loss', '{:.3f}', ''),
+                   ('Shap', 'shapley_values', '{:.0f}', ''),
+                   ('vShap', 'shapley_values_val', '{:.0f}', ''),
+                   ('Base', 'base_params', '{:.0f}', ''),
+                   ('vBase', 'base_params_val', '{:.0f}', ''),
+                   ('Syn', 'synergy', '{:.0f}', ''),
+                   ('vSyn', 'synergy_val', '{:.0f}', ''),
+                   ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
+                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
 
-        for col, _, _ in columns:
-            table.add_column(col)
-
-        table.columns[0].style = "cyan"
-        table.columns[2].style = 'green'
+        for col, _, _, stl in columns:
+            table.add_column(col, style=stl)
 
         rows = [[txt.format(s[key]) for _, key, txt in columns] for s in stats]
         rows = sorted(rows, reverse=True, key=lambda _row: int(_row[2]))  # sort according to mShap column
@@ -895,12 +873,10 @@ class nucleus( torch.nn.Module ):
             table.add_row(*row)
 
         print(table)
-        print()
 
         unsuccess_txt = f'Unsuccessful responses | [cyan]UID[/cyan]\[[purple]return_op[/purple]]: '
         for _uid, _return_op in unsuccessful:
             unsuccess_txt += f'{_uid}[[purple]{_return_op}[/purple]] '
         print(unsuccess_txt)
-        print()
 
         return routing_loss, stats
