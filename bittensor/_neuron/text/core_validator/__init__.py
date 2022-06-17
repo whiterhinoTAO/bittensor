@@ -215,7 +215,7 @@ class neuron:
             print(f'Loss: {loss:.3f} ... backpropagation ... ', end='')
             start_time = time.time()
             (loss / self.config.neuron.forward_num).backward()
-            print(f'complete [{time.time() - start_time:.2f}s]')
+            print(f'complete [{time.time() - start_time:.2g}s]')
 
         return loss, stats
 
@@ -313,7 +313,7 @@ class neuron:
             step_time = time.time() - start_time
 
             # === Stats table (avg) ===
-            table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
+            table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=['dim', ''])
             table.title = f'[white]Stats update[/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
@@ -342,6 +342,9 @@ class neuron:
             for col, _, _ in columns:
                 table.add_column(col)
 
+            table.columns[0].style = "cyan"
+            table.columns[3].style = 'green'
+
             rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt in columns] for s in stats]
             rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
 
@@ -362,7 +365,7 @@ class neuron:
             topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
             # === Stats table (scoring) ===
-            table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
+            table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=["dim", ""])
             table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
@@ -393,6 +396,9 @@ class neuron:
             for col, _, _ in columns:
                 table.add_column(col)
 
+            table.columns[0].style = "cyan"
+            table.columns[3].style = 'green'
+
             rows = []
             not_validated = []
             for i in range(len(topk_uids)):
@@ -409,6 +415,7 @@ class neuron:
             for row in rows:
                 table.add_row(*row)
 
+            print()
             print(table)
             print('Not validated (min weight):', not_validated)
 
@@ -448,7 +455,7 @@ class neuron:
         topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
         # === Stats table (scoring) ===
-        table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
+        table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=["dim", ""])
         table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
                       f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                       f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
@@ -479,6 +486,9 @@ class neuron:
         for col, _, _ in columns:
             table.add_column(col)
 
+        table.columns[0].style = "cyan"
+        table.columns[3].style = 'green'
+
         rows = []
         not_validated = []
         for i in range(len(topk_uids)):
@@ -495,6 +505,7 @@ class neuron:
         for row in rows:
             table.add_row(*row)
 
+        print()
         print(table)
         print('Not validated (min weight):', not_validated)
 
@@ -801,10 +812,11 @@ class nucleus( torch.nn.Module ):
             else:
                 unsuccessful += [(_uid, return_ops[index][index_s])]
 
-        print('Unsuccessful [cyan]UID[/cyan]\[[purple]return_op[/purple]]: ', end='')
+        unsuccess_txt = f'Unsuccessful responses | [cyan]UID[/cyan]\[[purple]return_op[/purple]]: '
         for _uid, _return_op in unsuccessful:
-            print('{}[[dim purple]{}[/dim purple]] '.format(_uid, _return_op), end='')
-        print()
+            unsuccess_txt += f'{_uid}[[purple]{_return_op}[/purple]] '
+
+        console.log(unsuccess_txt)
 
         # === Shapley synergy approximation ===
         # Shapley values - second level - coalition size 2
@@ -844,7 +856,7 @@ class nucleus( torch.nn.Module ):
                     s[key] = s[key].item()
 
         # === Stats table (step) ===
-        table = Table(width=self.config.get('width', None), pad_edge=False, box=None)
+        table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=["dim", ""])
         table.title = f'[white]Neuron stats[/white]'
         table.caption = f'Validator forward [white]\[{time.time() - start_time:.2f}s]'
 
@@ -865,6 +877,9 @@ class nucleus( torch.nn.Module ):
 
         for col, _, _ in columns:
             table.add_column(col)
+
+        table.columns[0].style = "cyan"
+        table.columns[2].style = 'green'
 
         rows = [[txt.format(s[key]) for _, key, txt in columns] for s in stats]
         rows = sorted(rows, reverse=True, key=lambda _row: int(_row[2]))  # sort according to mShap column
