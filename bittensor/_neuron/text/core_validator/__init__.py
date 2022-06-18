@@ -315,14 +315,14 @@ class neuron:
 
             # === Stats table (avg) ===
             table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ''])
-            table.title = f'[white]Stats update[/white] | [bold]UID {self.uid}[/bold] ' \
+            table.title = f'[white] Stats update [/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                           f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
             table.caption = f'#{current_block}: ' \
                             f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
                             f'Epoch {self.epoch} | ' \
-                            f'[white]Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s][/white]'
+                            f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]'
 
             columns = [('UID', 'uid', '{:.0f}', 'cyan'),
                        ('Upd', 'updates', '{}', 'yellow'),
@@ -335,8 +335,8 @@ class neuron:
                        ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
                        ('Base', 'base_params', '{:.0f}', ''),
                        ('vBase', 'base_params_val', '{:.0f}', ''),
-                       ('Syn', 'synergy', '{:.0f}', ''),
-                       ('vSyn', 'synergy_val', '{:.0f}', ''),
+                       ('Syn', 'synergy', '{:.0f}', 'white'),
+                       ('vSyn', 'synergy_val', '{:.0f}', 'white'),
                        ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
                        ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
 
@@ -365,13 +365,13 @@ class neuron:
 
             # === Stats table (scoring) ===
             table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
-            table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
+            table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                           f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
             table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
-                            f'[white]max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
-                            f'min:[bold]{topk_scores.min().item():.4g}[/bold][/white] ' \
+                            f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
+                            f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
                             f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
                             f'({max_allowed_ratio}:1 allowed)'
 
@@ -387,8 +387,8 @@ class neuron:
                        ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
                        ('Base', 'base_params', '{:.0f}', ''),
                        ('vBase', 'base_params_val', '{:.0f}', ''),
-                       ('Syn', 'synergy', '{:.0f}', ''),
-                       ('vSyn', 'synergy_val', '{:.0f}', ''),
+                       ('Syn', 'synergy', '{:.0f}', 'white'),
+                       ('vSyn', 'synergy_val', '{:.0f}', 'white'),
                        ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
                        ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
 
@@ -455,13 +455,13 @@ class neuron:
 
         # === Stats table (scoring) ===
         table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
-        table.title = f'[white]Set weights[/white] | [bold]UID {self.uid}[/bold] ' \
+        table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
                       f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                       f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                       f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
         table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
-                        f'[white]max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
-                        f'min:[bold]{topk_scores.min().item():.4g}[/bold][/white] ' \
+                        f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
+                        f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
                         f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
                         f'({max_allowed_ratio}:1 allowed)'
 
@@ -477,8 +477,8 @@ class neuron:
                    ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
                    ('Base', 'base_params', '{:.0f}', ''),
                    ('vBase', 'base_params_val', '{:.0f}', ''),
-                   ('Syn', 'synergy', '{:.0f}', ''),
-                   ('vSyn', 'synergy_val', '{:.0f}', ''),
+                   ('Syn', 'synergy', '{:.0f}', 'white'),
+                   ('vSyn', 'synergy_val', '{:.0f}', 'white'),
                    ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
                    ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
 
@@ -848,10 +848,10 @@ class nucleus( torch.nn.Module ):
 
         # === Stats table (step) ===
         table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
-        table.title = f'[white]Neuron stats[/white] | Validator forward'
+        table.title = f'[white] Neuron stats [/white] | Validator forward'
         table.caption = f'[bold]TextCausalLM[/bold] | ' \
-                        f'[white]{len(stats)} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ' \
-                        f'\[{time.time() - start_time:.3g}s][/white]'
+                        f'[white] {len(stats)} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ' \
+                        f'\[{time.time() - start_time:.3g}s] [/white]'
 
         columns = [('UID', 'uid', '{:.0f}', 'cyan'),
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
