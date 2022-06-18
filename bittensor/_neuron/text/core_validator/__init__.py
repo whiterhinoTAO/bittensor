@@ -792,7 +792,7 @@ class nucleus( torch.nn.Module ):
 
         print(table)
 
-        unsuccess_txt = f'Unsuccessful responses | [cyan]UID[/cyan]\[[yellow]return_op[/yellow]]: '
+        unsuccess_txt = f'Unsuccessful \t| [cyan]UID[/cyan]\[[yellow]return_op[/yellow]]: '
         for _uid, _return_op in unsuccessful:
             unsuccess_txt += f'{_uid}[[yellow]{_return_op}[/yellow]] '
         print(unsuccess_txt)
