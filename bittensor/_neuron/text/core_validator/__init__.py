@@ -52,6 +52,27 @@ logger = logger.opt( colors=True )
 console = bittensor.__console__
 install(show_locals=True)
 
+# Neuron stats recorded by validator neuron/nucleus
+# (Column_name, key_name, format_string, rich_style)
+neuron_stats_columns = [('UID', 'uid', '{:.0f}', 'cyan'),  # neuron UID
+                        ('Upd', 'updates', '{}', 'bright_yellow'),  # number of exponential moving average updates
+                        ('Time', 'response_time', '{:.2g}', 'yellow'),  # response time to forward requests
+                        ('Route', 'routing_score', '{:.3f}', 'grey30'),  # validator routing score (higher preferred)
+                        ('Weight', 'weight', '{:.4f}', 'magenta'),  # weight set on substrate (each epoch)
+                        ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),  # min of sequence and validation Shapley vals
+                        ('Loss', 'loss', '{:.2f}', 'bright_cyan'),  # next token prediction loss average over sequence
+                        ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),  # next token prediction loss for validation task
+                        ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),  # MSE between routing_score and conditioned loss
+                        ('Shap', 'shapley_values', '{:.0f}', 'green'),  # Shapley value (Base+Syn) over sequence
+                        ('vShap', 'shapley_values_val', '{:.0f}', 'green'),  # Shapley value (Base+Syn) for validation
+                        ('Base', 'base_params', '{:.0f}', ''),  # parameter count estimate via adjusted scaling law
+                        ('vBase', 'base_params_val', '{:.0f}', ''),  # parameter count estimate for validation task
+                        ('Syn', 'synergy', '{:.0f}', 'white'),  # Shapley pairwise synergy over sequence loss (parameter count estimate)
+                        ('vSyn', 'synergy_val', '{:.0f}', 'white'),  # Shapley pairwise synergy over validation loss (parameter count estimate)
+                        ('SynD', 'synergy_loss_diff', '{:.2f}', ''),  # Shapley pairwise synergy over sequence loss (loss difference)
+                        ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]  # Shapley pairwise synergy over validation loss (loss difference)
+
+
 class neuron:
     r"""
     Creates a bittensor neuron that specializes validating other peers. The core validator
@@ -313,8 +334,13 @@ class neuron:
             current_block = self.subtensor.block
             step_time = time.time() - start_time
 
-            # === Stats table (avg) ===
-            table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ''])
+            # === Stats update table (exponential moving avg) ===
+            columns = [_ for _ in neuron_stats_columns if _[0] not in ['Weight']]
+            sort_col = [_[0] for _ in columns].index('mShap')
+            rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt, _ in columns] for s in stats]
+            rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_col]))  # sort according to mShap column
+
+            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ''])
             table.title = f'[white] Stats update [/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
@@ -324,29 +350,8 @@ class neuron:
                             f'Epoch {self.epoch} | ' \
                             f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]'
 
-            columns = [('UID', 'uid', '{:.0f}', 'cyan'),
-                       ('Upd', 'updates', '{}', 'bright_yellow'),
-                       ('Time', 'response_time', '{:.2g}', 'yellow'),
-                       ('Route', 'routing_score', '{:.3f}', 'grey30'),
-                       ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
-                       ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
-                       ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
-                       ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),
-                       ('Shap', 'shapley_values', '{:.0f}', 'green'),
-                       ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
-                       ('Base', 'base_params', '{:.0f}', ''),
-                       ('vBase', 'base_params_val', '{:.0f}', ''),
-                       ('Syn', 'synergy', '{:.0f}', 'white'),
-                       ('vSyn', 'synergy_val', '{:.0f}', 'white'),
-                       ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
-                       ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
-
             for col, _, _, stl in columns:
                 table.add_column(col, style=stl)
-
-            rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt, _ in columns] for s in stats]
-            rows = sorted(rows, reverse=True, key=lambda _row: int(_row[4]))  # sort according to mShap column
-
             for row in rows:
                 table.add_row(*row)
 
@@ -365,38 +370,7 @@ class neuron:
             topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
             # === Stats table (scoring) ===
-            table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
-            table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
-                          f'\[{self.dendrite.receptor_pool.external_ip}] ' \
-                          f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
-                          f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-            table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
-                            f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
-                            f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
-                            f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
-                            f'({max_allowed_ratio}:1 allowed)'
-
-            columns = [('UID', 'uid', '{:.0f}', 'cyan'),
-                       ('Upd', 'updates', '{}', 'bright_yellow'),
-                       ('Time', 'response_time', '{:.2g}', 'yellow'),
-                       ('Route', 'routing_score', '{:.3f}', 'grey30'),
-                       ('Weight', 'weight', '{:.4f}', 'magenta'),
-                       ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
-                       ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
-                       ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
-                       ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),
-                       ('Shap', 'shapley_values', '{:.0f}', 'green'),
-                       ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
-                       ('Base', 'base_params', '{:.0f}', ''),
-                       ('vBase', 'base_params_val', '{:.0f}', ''),
-                       ('Syn', 'synergy', '{:.0f}', 'white'),
-                       ('vSyn', 'synergy_val', '{:.0f}', 'white'),
-                       ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
-                       ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
-
-            for col, _, _, stl in columns:
-                table.add_column(col, style=stl)
-
+            columns = neuron_stats_columns
             rows = []
             not_validated = []
             for i in range(len(topk_uids)):
@@ -408,15 +382,29 @@ class neuron:
                     rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
                 else:
                     not_validated += [_uid]
-            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[4]))  # sort according to weights
 
+            sort_col = [_[0] for _ in columns].index('Weight')
+            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
+
+            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
+            table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
+                          f'\[{self.dendrite.receptor_pool.external_ip}] ' \
+                          f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+                          f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+            table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
+                            f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
+                            f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
+                            f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
+                            f'({max_allowed_ratio}:1 allowed)'
+
+            for col, _, _, stl in columns:
+                table.add_column(col, style=stl)
             for row in rows:
                 table.add_row(*row)
 
             print(table)
             print(f'Not validated \t| [dim]\[min weight][/dim] | {not_validated}')
             print()
-
 
             # === Logs ===
             if self.config.using_wandb:
@@ -456,38 +444,7 @@ class neuron:
         topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
         # === Stats table (scoring) ===
-        table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
-        table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
-                      f'\[{self.dendrite.receptor_pool.external_ip}] ' \
-                      f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
-                      f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-        table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
-                        f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
-                        f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
-                        f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
-                        f'({max_allowed_ratio}:1 allowed)'
-
-        columns = [('UID', 'uid', '{:.0f}', 'cyan'),
-                   ('Upd', 'updates', '{}', 'bright_yellow'),
-                   ('Time', 'response_time', '{:.2g}', 'yellow'),
-                   ('Route', 'routing_score', '{:.3f}', 'grey30'),
-                   ('Weight', 'weight', '{:.4f}', 'magenta'),
-                   ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
-                   ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
-                   ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
-                   ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),
-                   ('Shap', 'shapley_values', '{:.0f}', 'green'),
-                   ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
-                   ('Base', 'base_params', '{:.0f}', ''),
-                   ('vBase', 'base_params_val', '{:.0f}', ''),
-                   ('Syn', 'synergy', '{:.0f}', 'white'),
-                   ('vSyn', 'synergy_val', '{:.0f}', 'white'),
-                   ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
-                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
-
-        for col, _, _, stl in columns:
-            table.add_column(col, style=stl)
-
+        columns = neuron_stats_columns
         rows = []
         not_validated = []
         for i in range(len(topk_uids)):
@@ -499,8 +456,23 @@ class neuron:
                 rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
             else:
                 not_validated += [_uid]
-        rows = sorted(rows, reverse=True, key=lambda _row: float(_row[4]))  # sort according to weights
 
+        sort_col = [_[0] for _ in columns].index('Weight')
+        rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
+
+        table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
+        table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
+                      f'\[{self.dendrite.receptor_pool.external_ip}] ' \
+                      f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+                      f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+        table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
+                        f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
+                        f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
+                        f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
+                        f'({max_allowed_ratio}:1 allowed)'
+
+        for col, _, _, stl in columns:
+            table.add_column(col, style=stl)
         for row in rows:
             table.add_row(*row)
 
@@ -850,34 +822,19 @@ class nucleus( torch.nn.Module ):
                     s[key] = s[key].item()
 
         # === Stats table (step) ===
-        table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
+        columns = [_ for _ in neuron_stats_columns if _[0] not in ['Upd', 'Weight']]
+        sort_col = [_[0] for _ in columns].index('mShap')
+        rows = [[txt.format(s[key]) for _, key, txt, _ in columns] for s in stats]
+        rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_col]))  # sort according to mShap column
+
+        table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
         table.title = f'[white] Neuron stats [/white] | Validator forward'
         table.caption = f'[bold]{num_servers}[/bold]/{metagraph.n} (topk/total) | [bold]TextCausalLM[/bold] | ' \
                         f'[white] {len(stats)} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ' \
                         f'\[{time.time() - start_time:.3g}s] [/white]'
 
-        columns = [('UID', 'uid', '{:.0f}', 'cyan'),
-                   ('Time', 'response_time', '{:.2g}', 'yellow'),
-                   ('Route', 'routing_score', '{:.3f}', 'grey30'),
-                   ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
-                   ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
-                   ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
-                   ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),
-                   ('Shap', 'shapley_values', '{:.0f}', 'green'),
-                   ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
-                   ('Base', 'base_params', '{:.0f}', ''),
-                   ('vBase', 'base_params_val', '{:.0f}', ''),
-                   ('Syn', 'synergy', '{:.0f}', 'white'),
-                   ('vSyn', 'synergy_val', '{:.0f}', 'white'),
-                   ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
-                   ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
-
         for col, _, _, stl in columns:
             table.add_column(col, style=stl)
-
-        rows = [[txt.format(s[key]) for _, key, txt, _ in columns] for s in stats]
-        rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
-
         for row in rows:
             table.add_row(*row)
 
