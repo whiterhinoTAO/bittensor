@@ -294,13 +294,11 @@ class neuron:
             self.dataset.set_data_size(batch_size, sequence_length)
 
         # === Logs ===
-        print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
-                '\n\t max_allowed_ratio:', max_allowed_ratio, '\n\t blocks_per_epoch:', blocks_per_epoch, '\n\t epochs_until_reset:', epochs_until_reset, 
-                '\n\t until_reset:', self.epoch % epochs_until_reset, '\n\t current_block:', current_block, '\n')
         if self.config.using_wandb:
-            wandb.log( {    'era/batch_size': batch_size, 'era/sequence_length': sequence_length, 'era/n_topk_peer_weights': n_topk_peer_weights, 
-                            'era/max_allowed_ratio': max_allowed_ratio, 'era/blocks_per_epoch': blocks_per_epoch, 'era/epochs_until_reset': epochs_until_reset, 
-                }, step = current_block )
+            wandb.log({'era/batch_size': batch_size, 'era/sequence_length': sequence_length,
+                       'era/n_topk_peer_weights': n_topk_peer_weights, 'era/max_allowed_ratio': max_allowed_ratio,
+                       'era/blocks_per_epoch': blocks_per_epoch, 'era/epochs_until_reset': epochs_until_reset},
+                      step=current_block)
 
         # === Run Epoch ===
         # Each block length lasts blocks_per_epoch blocks.
@@ -317,7 +315,6 @@ class neuron:
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
             loss, stats = self.forward_thread_queue.get()
-            print(f'Run\t| Got forward result in {round(time.time() - start_time, 3)}')
 
             # === Scoring ===
             # Updates moving averages and history.
@@ -337,16 +334,38 @@ class neuron:
             current_block = self.subtensor.block
             step_time = time.time() - start_time
 
+            # === Stats update table (exponential moving avg) ===
+            columns = [_ for _ in neuron_stats_columns if _[0] not in ['Weight']]
+            sort_col = [_[0] for _ in columns].index('mShap')
+            rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt, _ in columns] for s in stats]
+            rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_col]))  # sort according to mShap column
+
+            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ''])
+            table.title = f'[white] Stats update [/white] | [bold]UID {self.uid}[/bold] ' \
+                          f'\[{self.dendrite.receptor_pool.external_ip}] ' \
+                          f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+                          f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+            table.caption = f'#{current_block}: ' \
+                            f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
+                            f'Epoch {self.epoch} | ' \
+                            f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]'
+
+            for col, _, _, stl in columns:
+                table.add_column(col, style=stl)
+            for row in rows:
+                table.add_row(*row)
+
+            print(table)
+            print()
+
             # === Logs ===
-            print( '\nStep:', '\n\t epoch:', self.epoch, '\n\t epoch_steps:', epoch_steps, '\n\t global_steps:', self.global_step, '\n\t step_time:', step_time, '\n\t loss:', loss.item(),
-                   '\n\t current_block', current_block, '\n\t blocks remaining:', current_block - start_block, '/', blocks_per_epoch, '\n')
             if self.config.using_wandb:
                 wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
                            'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
                            'epoch/time': step_time}, step=current_block)
                 for uid, vals in self.server_stats.items():
                     for key in vals:  # detailed server evaluation fields, e.g. loss, shapley_values, synergy
-                        wandb.log({'stats/{}_{}'.format(key, uid): vals[key]}, step=current_block)
+                        wandb.log({f'stats/{key}_{uid}': vals[key]}, step=current_block)
 
             # Do the backward request after the a queue of forward requests got finished.  
             if self.forward_thread_queue.paused() and self.forward_thread_queue.is_empty():
