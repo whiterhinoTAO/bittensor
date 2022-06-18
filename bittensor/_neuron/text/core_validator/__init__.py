@@ -335,7 +335,7 @@ class neuron:
             step_time = time.time() - start_time
 
             # === Stats update table (exponential moving avg) ===
-            columns = [_ for _ in neuron_stats_columns if _[0] not in ['Weight']]
+            columns = [_[:] for _ in neuron_stats_columns if _[0] not in ['Weight']]
             sort_col = [_[0] for _ in columns].index('mShap')
             columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
             rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt, _ in columns] for s in stats]
@@ -396,7 +396,7 @@ class neuron:
                                                                               multiple=max_allowed_ratio)
 
             # === Stats table (weighting) ===
-            columns = [_ for _ in neuron_stats_columns]
+            columns = [_[:] for _ in neuron_stats_columns]
             rows = []
             not_validated = []
             for i in range(len(topk_uids)):
@@ -447,7 +447,7 @@ class neuron:
         topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
 
         # === Stats table (weighting) ===
-        columns = [_ for _ in neuron_stats_columns]
+        columns = [_[:] for _ in neuron_stats_columns]  # clone neuron_stats_columns
         rows = []
         not_validated = []
         for i in range(len(topk_uids)):
@@ -825,7 +825,7 @@ class nucleus( torch.nn.Module ):
                     s[key] = s[key].item()
 
         # === Stats table (step) ===
-        columns = [_ for _ in neuron_stats_columns if _[0] not in ['Upd', 'Weight']]
+        columns = [_[:] for _ in neuron_stats_columns if _[0] not in ['Upd', 'Weight']]
         sort_col = [_[0] for _ in columns].index('mShap')
         columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
         rows = [[txt.format(s[key]) for _, key, txt, _ in columns] for s in stats]
