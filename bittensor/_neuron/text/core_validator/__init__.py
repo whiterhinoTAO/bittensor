@@ -345,7 +345,7 @@ class neuron:
                 table.add_column(col, style=stl)
 
             rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt, _ in columns] for s in stats]
-            rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
+            rows = sorted(rows, reverse=True, key=lambda _row: int(_row[4]))  # sort according to mShap column
 
             for row in rows:
                 table.add_row(*row)
@@ -408,7 +408,7 @@ class neuron:
                     rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
                 else:
                     not_validated += [_uid]
-            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[3]))  # sort according to weights
+            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[4]))  # sort according to weights
 
             for row in rows:
                 table.add_row(*row)
@@ -499,7 +499,7 @@ class neuron:
                 rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
             else:
                 not_validated += [_uid]
-        rows = sorted(rows, reverse=True, key=lambda _row: float(_row[3]))  # sort according to weights
+        rows = sorted(rows, reverse=True, key=lambda _row: float(_row[4]))  # sort according to weights
 
         for row in rows:
             table.add_row(*row)
@@ -876,7 +876,7 @@ class nucleus( torch.nn.Module ):
             table.add_column(col, style=stl)
 
         rows = [[txt.format(s[key]) for _, key, txt, _ in columns] for s in stats]
-        rows = sorted(rows, reverse=True, key=lambda _row: int(_row[2]))  # sort according to mShap column
+        rows = sorted(rows, reverse=True, key=lambda _row: int(_row[3]))  # sort according to mShap column
 
         for row in rows:
             table.add_row(*row)
