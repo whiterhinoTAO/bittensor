@@ -863,8 +863,8 @@ class nucleus( torch.nn.Module ):
                    ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
                    ('Base', 'base_params', '{:.0f}', ''),
                    ('vBase', 'base_params_val', '{:.0f}', ''),
-                   ('Syn', 'synergy', '{:.0f}', ''),
-                   ('vSyn', 'synergy_val', '{:.0f}', ''),
+                   ('Syn', 'synergy', '{:.0f}', 'white'),
+                   ('vSyn', 'synergy_val', '{:.0f}', 'white'),
                    ('SynD', 'synergy_loss_diff', '{:.2f}', ''),
                    ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]
 
