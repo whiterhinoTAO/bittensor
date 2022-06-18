@@ -689,7 +689,7 @@ class nucleus( torch.nn.Module ):
 
         start_time = time.time()
 
-        inputs_seq = inputs[..., :-1]  # input sequence without last token [batch_size, sequence_len]
+        inputs_seq = inputs[..., :-1]  # input sequence without last token [batch_size, sequence_len-1]
         inputs_val = inputs[..., -1]  # input validation with last token [batch_size]
 
         # === Create the local context used to select endpoints ===
