@@ -413,7 +413,7 @@ class neuron:
             columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
             rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
 
-            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
+            table = Table(width=self.config.get('width', None), box=None, row_styles=['dim', ''])
             table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
@@ -500,7 +500,7 @@ class neuron:
                 self.dendrite.to_dataframe( metagraph = self.metagraph )
             ], axis = 1); df['uid'] = df.index
             wandb_data_dend = self.dendrite.to_wandb()
-            wandb_data = { 'stake': self.metagraph.S[ self.uid ].item(), 'dividends': self.metagraph.D[ self.uid ].item() } 
+            wandb_data = { 'stake': self.metagraph.S[ self.uid ].item(), 'dividends': self.metagraph.D[ self.uid ].item() }
             wandb.log( { 'stats': wandb.Table( dataframe = df ) }, step = current_block )
             wandb.log( { **wandb_data, **wandb_data_dend }, step = current_block )
 
