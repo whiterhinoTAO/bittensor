@@ -216,7 +216,7 @@ class neuron:
             print(f'Backward \t| Loss: {loss:.3f} ... backpropagation ... ', end='')
             start_time = time.time()
             (loss / self.config.neuron.forward_num).backward()
-            print(f'complete [{time.time() - start_time:.2g}s]')
+            print(f'complete [{time.time() - start_time:.3g}s]')
 
         return loss, stats
 
@@ -322,17 +322,17 @@ class neuron:
             table.caption = f'#{current_block}: ' \
                             f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
                             f'Epoch {self.epoch} | ' \
-                            f'[white]Step {epoch_steps} ({self.global_step} global) \[{step_time:.2f}s][/white]'
+                            f'[white]Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s][/white]'
 
             columns = [('UID', 'uid', '{:.0f}', 'cyan'),
                        ('Upd', 'updates', '{}', 'yellow'),
                        ('Route', 'routing_score', '{:.3f}', 'grey30'),
-                       ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
+                       ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
                        ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
                        ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
-                       ('RLoss', 'routing_loss', '{:.3f}', ''),
-                       ('Shap', 'shapley_values', '{:.0f}', ''),
-                       ('vShap', 'shapley_values_val', '{:.0f}', ''),
+                       ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),
+                       ('Shap', 'shapley_values', '{:.0f}', 'green'),
+                       ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
                        ('Base', 'base_params', '{:.0f}', ''),
                        ('vBase', 'base_params_val', '{:.0f}', ''),
                        ('Syn', 'synergy', '{:.0f}', ''),
@@ -379,12 +379,12 @@ class neuron:
                        ('Upd', 'updates', '{}', 'yellow'),
                        ('Route', 'routing_score', '{:.3f}', 'grey30'),
                        ('Weight', 'weight', '{:.4f}', 'magenta'),
-                       ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
+                       ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
                        ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
                        ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
-                       ('RLoss', 'routing_loss', '{:.3f}', ''),
-                       ('Shap', 'shapley_values', '{:.0f}', ''),
-                       ('vShap', 'shapley_values_val', '{:.0f}', ''),
+                       ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),
+                       ('Shap', 'shapley_values', '{:.0f}', 'green'),
+                       ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
                        ('Base', 'base_params', '{:.0f}', ''),
                        ('vBase', 'base_params_val', '{:.0f}', ''),
                        ('Syn', 'synergy', '{:.0f}', ''),
@@ -438,7 +438,7 @@ class neuron:
 
                 # === Get another round of forward requests ===
                 self.forward_thread_queue.resume()
-                print(f'complete [{time.time() - start_time:.2g}s]')
+                print(f'complete [{time.time() - start_time:.3g}s]')
 
         # Iterate epochs.
         self.epoch += 1
@@ -469,12 +469,12 @@ class neuron:
                    ('Upd', 'updates', '{}', 'yellow'),
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
                    ('Weight', 'weight', '{:.4f}', 'magenta'),
-                   ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
+                   ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
                    ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
                    ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
-                   ('RLoss', 'routing_loss', '{:.3f}', ''),
-                   ('Shap', 'shapley_values', '{:.0f}', ''),
-                   ('vShap', 'shapley_values_val', '{:.0f}', ''),
+                   ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),
+                   ('Shap', 'shapley_values', '{:.0f}', 'green'),
+                   ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
                    ('Base', 'base_params', '{:.0f}', ''),
                    ('vBase', 'base_params_val', '{:.0f}', ''),
                    ('Syn', 'synergy', '{:.0f}', ''),
@@ -850,17 +850,17 @@ class nucleus( torch.nn.Module ):
         table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
         table.title = f'[white]Neuron stats[/white] | Validator forward'
         table.caption = f'[bold]TextCausalLM[/bold] | ' \
-                        f'[white]\[{batch_size}, {sequence_len}, {bittensor.__network_dim__}] ' \
-                        f'\[{time.time() - start_time:.2g}s][/white]'
+                        f'[white]{len(stats)} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ' \
+                        f'\[{time.time() - start_time:.3g}s][/white]'
 
         columns = [('UID', 'uid', '{:.0f}', 'cyan'),
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
-                   ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
+                   ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
                    ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
                    ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
-                   ('RLoss', 'routing_loss', '{:.3f}', ''),
-                   ('Shap', 'shapley_values', '{:.0f}', ''),
-                   ('vShap', 'shapley_values_val', '{:.0f}', ''),
+                   ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),
+                   ('Shap', 'shapley_values', '{:.0f}', 'green'),
+                   ('vShap', 'shapley_values_val', '{:.0f}', 'green'),
                    ('Base', 'base_params', '{:.0f}', ''),
                    ('vBase', 'base_params_val', '{:.0f}', ''),
                    ('Syn', 'synergy', '{:.0f}', ''),
