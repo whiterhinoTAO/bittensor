@@ -58,19 +58,19 @@ neuron_stats_columns = [
     ('Upd', 'updates', '{}', 'bright_yellow'),  # number of exponential moving average updates
     ('Time', 'response_time', '{:.2g}', 'yellow'),  # response time to forward requests
     ('Route', 'routing_score', '{:.3f}', 'grey30'),  # validator routing score (higher preferred)
-    ('Weight', 'weight', '{:.4f}', 'magenta'),  # weight set on substrate (each epoch)
-    ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),  # min(Shap, vShap) of sequence and validation Shapley
+    ('Weight', 'weight', '{:.4f}', 'green'),  # weight set on substrate (each epoch)
+    ('mShap', 'shapley_values_min', '{:.0f}', 'bright_magenta'),  # min(Shap, vShap) of sequence and validation Shapley
     ('Loss', 'loss', '{:.2f}', 'bright_cyan'),  # next token prediction loss average over sequence
     ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),  # next token prediction loss for validation task
     ('RLoss', 'routing_loss', '{:.3f}', 'grey30'),  # MSE between routing_score and conditioned loss
-    ('Shap', 'shapley_values', '{:.0f}', 'green'),  # Shapley value (=Base+Syn) over sequence
-    ('vShap', 'shapley_values_val', '{:.0f}', 'green'),  # Shapley value (=vBase+vSyn) for validation
+    ('Shap', 'shapley_values', '{:.0f}', 'magenta'),  # Shapley value (=Base+Syn) over sequence
+    ('vShap', 'shapley_values_val', '{:.0f}', 'magenta'),  # Shapley value (=vBase+vSyn) for validation
     ('Base', 'base_params', '{:.0f}', ''),  # parameter count estimate via adjusted scaling law
     ('vBase', 'base_params_val', '{:.0f}', ''),  # parameter count estimate for validation task
     ('Syn', 'synergy', '{:.0f}', 'white'),  # Shapley pairwise synergy over sequence loss (parameter count estimate)
     ('vSyn', 'synergy_val', '{:.0f}', 'white'),  # Shapley pairwise synergy over validation loss (count estimate)
-    ('SynD', 'synergy_loss_diff', '{:.2f}', ''),  # Shapley pairwise synergy over sequence loss (loss difference)
-    ('vSynD', 'synergy_loss_diff_val', '{:.2f}', '')]  # Shapley pairwise synergy over validation loss (loss difference)
+    ('SynD', 'synergy_loss_diff', '{:.2f}', 'bright_blue'),  # Shapley pairwise synergy over sequence loss (loss difference)
+    ('vSynD', 'synergy_loss_diff_val', '{:.2f}', 'bright_blue')]  # Shapley pairwise synergy over validation loss (loss difference)
 
 
 class neuron:
