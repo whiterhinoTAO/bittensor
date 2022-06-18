@@ -412,7 +412,7 @@ class neuron:
                 table.add_row(*row)
 
             print(table)
-            print(f'Not validated \t| [dim][min weight][/dim] | {not_validated}')
+            print(f'Not validated \t| [dim]\[min weight][/dim] | {not_validated}')
             print()
 
 
@@ -502,7 +502,7 @@ class neuron:
             table.add_row(*row)
 
         print(table)
-        print(f'Not validated \t| [dim][min weight][/dim] | {not_validated}')
+        print(f'Not validated \t| [dim]\[min weight][/dim] | {not_validated}')
         print()
 
         self.subtensor.set_weights(
