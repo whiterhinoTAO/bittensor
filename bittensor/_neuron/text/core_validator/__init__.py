@@ -337,6 +337,7 @@ class neuron:
             # === Stats update table (exponential moving avg) ===
             columns = [_ for _ in neuron_stats_columns if _[0] not in ['Weight']]
             sort_col = [_[0] for _ in columns].index('mShap')
+            columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
             rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt, _ in columns] for s in stats]
             rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_col]))  # sort according to mShap column
 
@@ -410,6 +411,7 @@ class neuron:
                 not_validated += [_uid]
 
         sort_col = [_[0] for _ in columns].index('Weight')
+        columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
         rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
 
         table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
@@ -775,6 +777,7 @@ class nucleus( torch.nn.Module ):
         # === Stats table (step) ===
         columns = [_ for _ in neuron_stats_columns if _[0] not in ['Upd', 'Weight']]
         sort_col = [_[0] for _ in columns].index('mShap')
+        columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
         rows = [[txt.format(s[key]) for _, key, txt, _ in columns] for s in stats]
         rows = sorted(rows, reverse=True,
                       key=lambda _row: int(_row[sort_col]))  # sort according to mShap column
