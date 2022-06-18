@@ -322,7 +322,7 @@ class neuron:
             table.caption = f'#{current_block}: ' \
                             f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
                             f'Epoch {self.epoch} | ' \
-                            f'[white]\[{step_time:.2f}s] step {epoch_steps} ({self.global_step} global)[/white]'
+                            f'[white]Step {epoch_steps} ({self.global_step} global) \[{step_time:.2f}s][/white]'
 
             columns = [('UID', 'uid', '{:.0f}', 'cyan'),
                        ('Upd', 'updates', '{}', 'yellow'),
@@ -369,10 +369,10 @@ class neuron:
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                           f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-            table.caption = f'[white]sum:{topk_scores.sum().item():.2g}[/white] | ' \
-                            f'max:{topk_scores.max().item():.4g} / ' \
-                            f'min:{topk_scores.min().item():.4g} ' \
-                            f'\[{topk_scores.max().item()/topk_scores.min().item():.2f}:1] ' \
+            table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
+                            f'[white]max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
+                            f'min:[bold]{topk_scores.min().item():.4g}[/bold][/white] ' \
+                            f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
                             f'({max_allowed_ratio}:1 allowed)'
 
             columns = [('UID', 'uid', '{:.0f}', 'cyan'),
@@ -459,9 +459,9 @@ class neuron:
                       f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                       f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                       f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-        table.caption = f'[white]sum:{topk_scores.sum().item():.2g}[/white] | ' \
-                        f'max:{topk_scores.max().item():.4g} / ' \
-                        f'min:{topk_scores.min().item():.4g} ' \
+        table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
+                        f'[white]max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
+                        f'min:[bold]{topk_scores.min().item():.4g}[/bold][/white] ' \
                         f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
                         f'({max_allowed_ratio}:1 allowed)'
 
@@ -688,6 +688,7 @@ class nucleus( torch.nn.Module ):
         """
 
         start_time = time.time()
+        batch_size, sequence_len = inputs.shape
 
         inputs_seq = inputs[..., :-1]  # input sequence without last token [batch_size, sequence_len-1]
         inputs_val = inputs[..., -1]  # input validation with last token [batch_size]
@@ -847,8 +848,10 @@ class nucleus( torch.nn.Module ):
 
         # === Stats table (step) ===
         table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
-        table.title = f'[white]Neuron stats[/white]'
-        table.caption = f'Validator forward [white]\[{time.time() - start_time:.2g}s]'
+        table.title = f'[white]Neuron stats[/white] | Validator forward'
+        table.caption = f'[bold]TextCausalLM[/bold] | ' \
+                        f'[white]\[{batch_size}, {sequence_len}, {bittensor.__network_dim__}] ' \
+                        f'\[{time.time() - start_time:.2g}s][/white]'
 
         columns = [('UID', 'uid', '{:.0f}', 'cyan'),
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
