@@ -325,7 +325,8 @@ class neuron:
                             f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]'
 
             columns = [('UID', 'uid', '{:.0f}', 'cyan'),
-                       ('Upd', 'updates', '{}', 'yellow'),
+                       ('Upd', 'updates', '{}', 'bright_yellow'),
+                       ('Time', 'response_time', '{:.2g}', 'yellow'),
                        ('Route', 'routing_score', '{:.3f}', 'grey30'),
                        ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
                        ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
@@ -376,7 +377,8 @@ class neuron:
                             f'({max_allowed_ratio}:1 allowed)'
 
             columns = [('UID', 'uid', '{:.0f}', 'cyan'),
-                       ('Upd', 'updates', '{}', 'yellow'),
+                       ('Upd', 'updates', '{}', 'bright_yellow'),
+                       ('Time', 'response_time', '{:.2g}', 'yellow'),
                        ('Route', 'routing_score', '{:.3f}', 'grey30'),
                        ('Weight', 'weight', '{:.4f}', 'magenta'),
                        ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
@@ -466,7 +468,8 @@ class neuron:
                         f'({max_allowed_ratio}:1 allowed)'
 
         columns = [('UID', 'uid', '{:.0f}', 'cyan'),
-                   ('Upd', 'updates', '{}', 'yellow'),
+                   ('Upd', 'updates', '{}', 'bright_yellow'),
+                   ('Time', 'response_time', '{:.2g}', 'yellow'),
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
                    ('Weight', 'weight', '{:.4f}', 'magenta'),
                    ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
@@ -784,7 +787,7 @@ class nucleus( torch.nn.Module ):
         for index in range(num_servers):
             _uid = random_uids[index]
             if return_ops[index][index_s] == bittensor.proto.ReturnCode.Success:
-                _stats = {'uid': _uid, 'routing_score': routing_score[_uid]}
+                _stats = {'uid': _uid, 'response_time': times[index][index_s], 'routing_score': routing_score[_uid]}
 
                 _stats.update({'logits': query_responses[index][index_s],
                                 'logits_val': query_responses[index][index_s][:, -1:, :]})
@@ -854,6 +857,7 @@ class nucleus( torch.nn.Module ):
                         f'\[{time.time() - start_time:.3g}s] [/white]'
 
         columns = [('UID', 'uid', '{:.0f}', 'cyan'),
+                   ('Time', 'response_time', '{:.2g}', 'yellow'),
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
                    ('mShap', 'shapley_values_min', '{:.0f}', 'bright_green'),
                    ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
