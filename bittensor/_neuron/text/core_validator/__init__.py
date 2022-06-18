@@ -328,8 +328,8 @@ class neuron:
                        ('Upd', 'updates', '{}', 'yellow'),
                        ('Route', 'routing_score', '{:.3f}', 'grey30'),
                        ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
-                       ('Loss', 'loss', '{:.2f}', 'bright_blue'),
-                       ('vLoss', 'loss_val', '{:.2f}', 'bright_blue'),
+                       ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
+                       ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
                        ('RLoss', 'routing_loss', '{:.3f}', ''),
                        ('Shap', 'shapley_values', '{:.0f}', ''),
                        ('vShap', 'shapley_values_val', '{:.0f}', ''),
@@ -380,8 +380,8 @@ class neuron:
                        ('Route', 'routing_score', '{:.3f}', 'grey30'),
                        ('Weight', 'weight', '{:.4f}', 'magenta'),
                        ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
-                       ('Loss', 'loss', '{:.2f}', 'bright_blue'),
-                       ('vLoss', 'loss_val', '{:.2f}', 'bright_blue'),
+                       ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
+                       ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
                        ('RLoss', 'routing_loss', '{:.3f}', ''),
                        ('Shap', 'shapley_values', '{:.0f}', ''),
                        ('vShap', 'shapley_values_val', '{:.0f}', ''),
@@ -470,8 +470,8 @@ class neuron:
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
                    ('Weight', 'weight', '{:.4f}', 'magenta'),
                    ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
-                   ('Loss', 'loss', '{:.2f}', 'bright_blue'),
-                   ('vLoss', 'loss_val', '{:.2f}', 'bright_blue'),
+                   ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
+                   ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
                    ('RLoss', 'routing_loss', '{:.3f}', ''),
                    ('Shap', 'shapley_values', '{:.0f}', ''),
                    ('vShap', 'shapley_values_val', '{:.0f}', ''),
@@ -853,8 +853,8 @@ class nucleus( torch.nn.Module ):
         columns = [('UID', 'uid', '{:.0f}', 'cyan'),
                    ('Route', 'routing_score', '{:.3f}', 'grey30'),
                    ('mShap', 'shapley_values_min', '{:.0f}', 'green'),
-                   ('Loss', 'loss', '{:.2f}', 'bright_blue'),
-                   ('vLoss', 'loss_val', '{:.2f}', 'bright_blue'),
+                   ('Loss', 'loss', '{:.2f}', 'bright_cyan'),
+                   ('vLoss', 'loss_val', '{:.2f}', 'bright_cyan'),
                    ('RLoss', 'routing_loss', '{:.3f}', ''),
                    ('Shap', 'shapley_values', '{:.0f}', ''),
                    ('vShap', 'shapley_values_val', '{:.0f}', ''),
@@ -876,9 +876,9 @@ class nucleus( torch.nn.Module ):
 
         print(table)
 
-        unsuccess_txt = f'Unsuccessful responses | [cyan]UID[/cyan]\[[purple]return_op[/purple]]: '
+        unsuccess_txt = f'Unsuccessful responses | [cyan]UID[/cyan]\[[yellow]return_op[/yellow]]: '
         for _uid, _return_op in unsuccessful:
-            unsuccess_txt += f'{_uid}[[purple]{_return_op}[/purple]] '
+            unsuccess_txt += f'{_uid}[[yellow]{_return_op}[/yellow]] '
         print(unsuccess_txt)
 
         return routing_loss, stats
