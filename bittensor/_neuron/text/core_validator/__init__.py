@@ -412,7 +412,7 @@ class neuron:
                 table.add_row(*row)
 
             print(table)
-            print(f'Not validated \t| [dim](min weight)[/dim] | {not_validated}')
+            print(f'Not validated \t| [dim][min weight][/dim] | {not_validated}')
             print()
 
 
@@ -502,7 +502,7 @@ class neuron:
             table.add_row(*row)
 
         print(table)
-        print(f'Not validated \t| [dim](min weight)[/dim] | {not_validated}')
+        print(f'Not validated \t| [dim][min weight][/dim] | {not_validated}')
         print()
 
         self.subtensor.set_weights(
@@ -849,7 +849,7 @@ class nucleus( torch.nn.Module ):
         # === Stats table (step) ===
         table = Table(width=self.config.get('width', None), pad_edge=False, box=None, row_styles=[Style(bgcolor='grey15'), ""])
         table.title = f'[white] Neuron stats [/white] | Validator forward'
-        table.caption = f'[bold]TextCausalLM[/bold] | ' \
+        table.caption = f'[bold]{num_servers}[/bold]/{metagraph.n} (topk/total) | [bold]TextCausalLM[/bold] | ' \
                         f'[white] {len(stats)} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ' \
                         f'\[{time.time() - start_time:.3g}s] [/white]'
 
