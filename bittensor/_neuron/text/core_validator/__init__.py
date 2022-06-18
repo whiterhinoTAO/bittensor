@@ -413,7 +413,7 @@ class neuron:
             columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
             rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
 
-            table = Table(width=self.config.get('width', None), box=None, row_styles=['dim', ''])
+            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
             table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
