@@ -56,7 +56,7 @@ install(show_locals=True)
 neuron_stats_columns = [
     ('UID', 'uid', '{:.0f}', 'cyan'),  # neuron UID
     ('Upd', 'updates', '{}', 'bright_yellow'),  # number of exponential moving average updates
-    ('Time', 'response_time', '{:.2g}', 'yellow'),  # response time to forward requests
+    ('Time', 'response_time', '{:.2f}', 'yellow'),  # response time to forward requests
     ('Route', 'routing_score', '{:.3f}', 'grey30'),  # validator routing score (higher preferred)
     ('Weight', 'weight', '{:.4f}', 'green'),  # weight set on substrate (each epoch)
     ('mShap', 'shapley_values_min', '{:.0f}', 'bright_magenta'),  # min(Shap, vShap) of sequence and validation Shapley
@@ -351,7 +351,7 @@ class neuron:
                             f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]'
 
             for col, _, _, stl in columns:
-                table.add_column(col, style=stl)
+                table.add_column(col, style=stl, justify='right')
             for row in rows:
                 table.add_row(*row)
 
@@ -424,7 +424,7 @@ class neuron:
                         f'({max_allowed_ratio}:1 allowed)'
 
         for col, _, _, stl in columns:
-            table.add_column(col, style=stl)
+            table.add_column(col, style=stl, justify='right')
         for row in rows:
             table.add_row(*row)
 
@@ -786,7 +786,7 @@ class nucleus( torch.nn.Module ):
                         f'\[{time.time() - start_time:.3g}s] [/white]'
 
         for col, _, _, stl in columns:
-            table.add_column(col, style=stl)
+            table.add_column(col, style=stl, justify='right')
         for row in rows:
             table.add_row(*row)
 
