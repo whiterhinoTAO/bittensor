@@ -418,7 +418,9 @@ class neuron:
                           f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                           f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                           f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-            table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
+            table.caption = f'Validated [bold]{(n_topk_peer_weights-len(unvalidated))}[/bold]' \
+                            f'/{n_topk_peer_weights}/{self.metagraph.n} (valid/min_set/metagraph) | ' \
+                            f'sum:{topk_scores.sum().item():.2g} | ' \
                             f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
                             f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
                             f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
@@ -469,7 +471,9 @@ class neuron:
                       f'\[{self.dendrite.receptor_pool.external_ip}] ' \
                       f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
                       f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-        table.caption = f'sum:{topk_scores.sum().item():.2g} | ' \
+        table.caption = f'Validated [bold]{(n_topk_peer_weights - len(unvalidated))}[/bold]' \
+                        f'/{n_topk_peer_weights}/{self.metagraph.n} (valid/min_set/metagraph) | ' \
+                        f'sum:{topk_scores.sum().item():.2g} | ' \
                         f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
                         f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
                         f'\[{topk_scores.max().item() / topk_scores.min().item():.2f}:1] ' \
