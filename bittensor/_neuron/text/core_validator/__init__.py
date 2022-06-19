@@ -769,7 +769,7 @@ class nucleus( torch.nn.Module ):
         # Measured in effective number of model parameters, according to OpenAI scaling laws.
         index_s = 0  # synapse = bittensor.synapse.TextCausalLM()
         for index in range(num_servers):
-            _uid = random_uids[index]
+            _uid = random_uids[index].item()
             if return_ops[index][index_s] == bittensor.proto.ReturnCode.Success:
                 _stats = {'uid': _uid, 'response_time': times[index][index_s], 'routing_score': routing_score[_uid]}
 
