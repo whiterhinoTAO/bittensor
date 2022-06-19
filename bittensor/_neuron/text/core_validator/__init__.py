@@ -798,7 +798,7 @@ class nucleus( torch.nn.Module ):
                 with torch.no_grad():
                     for target, ext in [(inputs_seq, ''), (inputs_val, '_val')]:
                         # expected_loss = (first['loss' + ext] + second['loss' + ext]) / 2  # expecting mean loss
-                        expected_loss = torch.max(first['loss' + ext], second['loss' + ext])  # expecting max loss
+                        expected_loss = torch.min(first['loss' + ext], second['loss' + ext])  # expecting min loss
                         combined_logits = (first['logits' + ext] + second['logits' + ext]) / 2  # combined logits
                         measured_loss = self.get_target_loss_casuallm(combined_logits, target, eval_type=ext)  # actual loss
 
