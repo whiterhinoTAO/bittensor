@@ -58,7 +58,7 @@ neuron_stats_columns = [
     ['Upd', 'updates', '{}', 'bright_yellow'],  # number of exponential moving average updates
     ['Time', 'response_time', '{:.2f}', 'yellow'],  # response time to forward requests
     ['Route', 'routing_score', '{:.3f}', 'grey30'],  # validator routing score (higher preferred)
-    ['Weight', 'weight', '{:.4f}', 'green'],  # weight set on substrate (each epoch)
+    ['Weight', 'weight', '{:.5f}', 'green'],  # weight set on substrate (each epoch)
     ['mShap', 'shapley_values_min', '{:.0f}', 'bright_magenta'],  # min(Shap, vShap) of sequence and validation Shapley
     ['Loss', 'loss', '{:.2f}', 'bright_cyan'],  # next token prediction loss average over sequence
     ['vLoss', 'loss_val', '{:.2f}', 'bright_cyan'],  # next token prediction loss for validation task
