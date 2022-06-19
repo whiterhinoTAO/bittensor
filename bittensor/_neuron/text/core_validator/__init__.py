@@ -800,8 +800,10 @@ class nucleus( torch.nn.Module ):
         # Shapley values - second level - coalition size 2
         # Synergy = measured performance above expected performance
         # Measured in effective number of model parameters, just like base Shapley values.
+        synergy_loss_diff = {}
         for _first in range(len(stats) - 1):
             first = stats[_first]
+            synergy_loss_diff[first['uid']] = {first['uid']: torch.min(first['loss'], first['loss_val'])}
             for _second in range(_first + 1, len(stats)):
                 second = stats[_second]
                 with torch.no_grad():
@@ -814,6 +816,11 @@ class nucleus( torch.nn.Module ):
                         loss_diff_share = torch.clamp(expected_loss - measured_loss, 0) / 2  # record direct loss diff
                         first['synergy_loss_diff' + ext] += loss_diff_share
                         second['synergy_loss_diff' + ext] += loss_diff_share
+
+                        if second['uid'] in synergy_loss_diff[first['uid']]:
+                            synergy_loss_diff[first['uid']][second['uid']] = torch.min(loss_diff_share, synergy_loss_diff[first['uid']][second['uid']])
+                        else:
+                            synergy_loss_diff[first['uid']][second['uid']] = loss_diff_share
 
                         synergy_share = torch.clamp(get_num_params(measured_loss) -
                                                     get_num_params(expected_loss), 0) / 2
@@ -833,6 +840,27 @@ class nucleus( torch.nn.Module ):
             for key in s:
                 if hasattr(s[key], 'item'):
                     s[key] = s[key].item()
+
+        # === Synergy table ===
+        sort = sorted([(s['uid'], s['shapley_values_min']) for s in stats], reverse=True, key=lambda _row: _row[1])
+        columns = [neuron_stats_columns[0][:]] + [[f'{s[0]}', '', '{:.2f}', ''] for s in sort]
+        rows = [[neuron_stats_columns[0][2].format(s[0])] +
+                [('{:.2f}' if t == s
+                  else '[magenta]{:.2f}[/magenta]').format(synergy_loss_diff[s[0]][t[0]]) for t in sort] for s in sort]
+
+        table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
+        table.title = f'[white] Synergy loss decrease [/white] | Validator forward'
+        table.caption = f'[bold]{num_servers}[/bold]/{metagraph.n} (topk/total) | [bold]TextCausalLM[/bold] | ' \
+                        f'[white] {len(stats)} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ' \
+                        f'\[{time.time() - start_time:.3g}s] [/white]'
+
+        for col, _, _, stl in columns:
+            table.add_column(col, style=stl, justify='right')
+        for row in rows:
+            table.add_row(*row)
+
+        print(table)
+        print()
 
         # === Stats table (step) ===
         columns = [_[:] for _ in neuron_stats_columns if _[0] not in ['Upd', 'Weight']]
