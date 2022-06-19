@@ -398,7 +398,7 @@ class neuron:
             # === Stats table (weighting) ===
             columns = [_[:] for _ in neuron_stats_columns]
             rows = []
-            not_validated = []
+            unvalidated = []
             for i in range(len(topk_uids)):
                 _weight = topk_scores[i].item()
                 _uid = topk_uids[i].item()
@@ -407,7 +407,7 @@ class neuron:
                     _stats['weight'] = _weight
                     rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
                 else:
-                    not_validated += [_uid]
+                    unvalidated += [_uid]
 
             sort_col = [_[0] for _ in columns].index('Weight')
             columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
@@ -430,7 +430,7 @@ class neuron:
                 table.add_row(*row)
 
             print(table)
-            print(f'Not validated \t| [dim]\[min weight][/dim] | {not_validated}')
+            print(f'Unvalidated \t| [dim]\[weight={topk_scores.min().item():.4g}][/dim]: {unvalidated}')
             print()
 
         # Iterate epochs.
@@ -449,7 +449,7 @@ class neuron:
         # === Stats table (weighting) ===
         columns = [_[:] for _ in neuron_stats_columns]  # clone neuron_stats_columns
         rows = []
-        not_validated = []
+        unvalidated = []
         for i in range(len(topk_uids)):
             _weight = topk_scores[i].item()
             _uid = topk_uids[i].item()
@@ -458,7 +458,7 @@ class neuron:
                 _stats['weight'] = _weight
                 rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
             else:
-                not_validated += [_uid]
+                unvalidated += [_uid]
 
         sort_col = [_[0] for _ in columns].index('Weight')
         columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
@@ -481,7 +481,7 @@ class neuron:
             table.add_row(*row)
 
         print(table)
-        print(f'Not validated \t| [dim]\[min weight][/dim] | {not_validated}')
+        print(f'Unvalidated \t| [dim]\[weight={topk_scores.min().item():.4g}][/dim]: {unvalidated}')
         print()
 
         self.subtensor.set_weights(
