@@ -356,7 +356,10 @@ class neuron:
             for row in rows:
                 table.add_row(*row)
 
-            print([(var, getattr(self.metagraph, var)[self.uid]) for var in ['uids', 'active', 'stake', 'ranks', 'trust', 'consensus', 'incentive', 'dividends', 'emission', 'last_update']])
+            print(f'UID {self.uid} [dim]\[#{start_block}][/dim] \t| '
+                  f'Updated {current_block-self.metagraph.last_update[self.uid]} blocks ago | '
+                  f'Dividends {self.metagraph.dividends[self.uid]} | '
+                  f'Stake \u03C4{self.metagraph.stake[self.uid]}')
             print(table)
             print()
 
