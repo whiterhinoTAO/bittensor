@@ -801,12 +801,15 @@ class nucleus( torch.nn.Module ):
         # Synergy = measured performance above expected performance
         # Measured in effective number of model parameters, just like base Shapley values.
         synergy_loss_diff = {}
-        for _first in range(len(stats) - 1):
+        for _first in range(len(stats)):
             first = stats[_first]
-            synergy_loss_diff[first['uid']] = {first['uid']: torch.max(first['loss'], first['loss_val'])}
+            synergy_loss_diff.setdefault(first['uid'], {})
+            synergy_loss_diff[first['uid']][first['uid']] = torch.max(first['loss'], first['loss_val'])
             for _second in range(_first + 1, len(stats)):
                 second = stats[_second]
+                synergy_loss_diff.setdefault(second['uid'], {})
                 synergy_loss_diff[first['uid']][second['uid']] = torch.tensor(0.)
+                synergy_loss_diff[second['uid']][first['uid']] = torch.tensor(0.)
                 with torch.no_grad():
                     for target, ext in [(inputs_seq, ''), (inputs_val, '_val')]:
                         # expected_loss = (first['loss' + ext] + second['loss' + ext]) / 2  # expecting mean loss
@@ -818,8 +821,8 @@ class nucleus( torch.nn.Module ):
                         first['synergy_loss_diff' + ext] += loss_diff_share
                         second['synergy_loss_diff' + ext] += loss_diff_share
 
-                        synergy_loss_diff[first['uid']][second['uid']] = torch.min(loss_diff_share,
-                                                                                   synergy_loss_diff[first['uid']][second['uid']])
+                        synergy_loss_diff[first['uid']][second['uid']] = torch.min(loss_diff_share, synergy_loss_diff[first['uid']][second['uid']])
+                        synergy_loss_diff[second['uid']][first['uid']] = torch.min(loss_diff_share, synergy_loss_diff[second['uid']][first['uid']])
 
                         synergy_share = torch.clamp(get_num_params(measured_loss) -
                                                     get_num_params(expected_loss), 0) / 2
