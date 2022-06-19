@@ -847,11 +847,11 @@ class nucleus( torch.nn.Module ):
         sort = sorted([(s['uid'], s['shapley_values_min']) for s in stats], reverse=True, key=lambda _row: _row[1])
         columns = [neuron_stats_columns[0][:]] + [[f'{s[0]}', '', '{:.2f}', ''] for s in sort]
         rows = [[neuron_stats_columns[0][2].format(s[0])] +
-                [('[white]{:.2f}[/white]' if t == s
-                  else '[magenta]{:.2f}[/magenta]' if synergy_loss_diff[s[0]][t[0]] > 0
+                [('[bright_cyan]{:.2f}[/bright_cyan]' if t == s
+                  else '[bright_blue]{:.2f}[/bright_blue]' if synergy_loss_diff[s[0]][t[0]] > 0
                   else '[dim]{:.0f}[/dim]').format(synergy_loss_diff[s[0]][t[0]]) for t in sort] for s in sort]
 
-        table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
+        table = Table(width=self.config.get('width', None), box=None)
         table.title = f'Synergy'
         table.caption = f'loss decrease'
         for col, _, _, stl in columns:
