@@ -356,10 +356,11 @@ class neuron:
             for row in rows:
                 table.add_row(*row)
 
-            print(f'UID {self.uid} [dim]\[#{start_block}][/dim] \t| '
-                  f'Updated {current_block-self.metagraph.last_update[self.uid]} blocks ago | '
+            print(f'UID {self.uid} \t| '
+                  f'Updated {current_block-self.metagraph.last_update[self.uid]} [white]blocks ago[/white] | '
                   f'Dividends {self.metagraph.dividends[self.uid]} | '
-                  f'Stake \u03C4{self.metagraph.stake[self.uid]}')
+                  f'[white]Stake \u03C4{self.metagraph.stake[self.uid]}[/white] | '
+                  f'[dim](refreshed {current_block-start_block} blocks ago)[/dim]')
             print(table)
             print()
 
