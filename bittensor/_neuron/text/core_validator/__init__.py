@@ -841,8 +841,10 @@ class nucleus( torch.nn.Module ):
                     s[key] = s[key].item()
 
         # === Synergy table ===
-        print(synergy_loss_diff)
         sort = sorted([(s['uid'], s['shapley_values_min']) for s in stats], reverse=True, key=lambda _row: _row[1])
+        print(stats)
+        print(sort)
+        print(synergy_loss_diff)
         columns = [neuron_stats_columns[0][:]] + [[f'{s[0]}', '', '{:.2f}', ''] for s in sort]
         rows = [[neuron_stats_columns[0][2].format(s[0])] +
                 [('{:.2f}' if t == s
