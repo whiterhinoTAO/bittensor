@@ -803,9 +803,10 @@ class nucleus( torch.nn.Module ):
         synergy_loss_diff = {}
         for _first in range(len(stats) - 1):
             first = stats[_first]
-            synergy_loss_diff[first['uid']] = {first['uid']: torch.min(first['loss'], first['loss_val'])}
+            synergy_loss_diff[first['uid']] = {first['uid']: torch.max(first['loss'], first['loss_val'])}
             for _second in range(_first + 1, len(stats)):
                 second = stats[_second]
+                synergy_loss_diff[first['uid']][second['uid']] = torch.tensor(0.)
                 with torch.no_grad():
                     for target, ext in [(inputs_seq, ''), (inputs_val, '_val')]:
                         # expected_loss = (first['loss' + ext] + second['loss' + ext]) / 2  # expecting mean loss
@@ -817,10 +818,8 @@ class nucleus( torch.nn.Module ):
                         first['synergy_loss_diff' + ext] += loss_diff_share
                         second['synergy_loss_diff' + ext] += loss_diff_share
 
-                        if second['uid'] in synergy_loss_diff[first['uid']]:
-                            synergy_loss_diff[first['uid']][second['uid']] = torch.min(loss_diff_share, synergy_loss_diff[first['uid']][second['uid']])
-                        else:
-                            synergy_loss_diff[first['uid']][second['uid']] = loss_diff_share
+                        synergy_loss_diff[first['uid']][second['uid']] = torch.min(loss_diff_share,
+                                                                                   synergy_loss_diff[first['uid']][second['uid']])
 
                         synergy_share = torch.clamp(get_num_params(measured_loss) -
                                                     get_num_params(expected_loss), 0) / 2
@@ -842,6 +841,7 @@ class nucleus( torch.nn.Module ):
                     s[key] = s[key].item()
 
         # === Synergy table ===
+        print(synergy_loss_diff)
         sort = sorted([(s['uid'], s['shapley_values_min']) for s in stats], reverse=True, key=lambda _row: _row[1])
         columns = [neuron_stats_columns[0][:]] + [[f'{s[0]}', '', '{:.2f}', ''] for s in sort]
         rows = [[neuron_stats_columns[0][2].format(s[0])] +
