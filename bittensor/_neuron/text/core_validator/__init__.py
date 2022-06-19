@@ -852,7 +852,8 @@ class nucleus( torch.nn.Module ):
                   else '[dim]{:.0f}[/dim]').format(synergy_loss_diff[s[0]][t[0]]) for t in sort] for s in sort]
 
         table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
-        table.title = f'[white] Synergy [/white] | loss decrease'
+        table.title = f'Synergy'
+        table.caption = f'loss decrease'
         for col, _, _, stl in columns:
             table.add_column(col, style=stl, justify='right')
         for row in rows:
