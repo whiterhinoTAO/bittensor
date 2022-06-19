@@ -821,8 +821,8 @@ class nucleus( torch.nn.Module ):
                         first['synergy_loss_diff' + ext] += loss_diff_share
                         second['synergy_loss_diff' + ext] += loss_diff_share
 
-                        synergy_loss_diff[first['uid']][second['uid']] = torch.min(loss_diff_share, synergy_loss_diff[first['uid']][second['uid']])
-                        synergy_loss_diff[second['uid']][first['uid']] = torch.min(loss_diff_share, synergy_loss_diff[second['uid']][first['uid']])
+                        synergy_loss_diff[first['uid']][second['uid']] = torch.max(loss_diff_share, synergy_loss_diff[first['uid']][second['uid']])
+                        synergy_loss_diff[second['uid']][first['uid']] = torch.max(loss_diff_share, synergy_loss_diff[second['uid']][first['uid']])
 
                         synergy_share = torch.clamp(get_num_params(measured_loss) -
                                                     get_num_params(expected_loss), 0) / 2
@@ -845,20 +845,13 @@ class nucleus( torch.nn.Module ):
 
         # === Synergy table ===
         sort = sorted([(s['uid'], s['shapley_values_min']) for s in stats], reverse=True, key=lambda _row: _row[1])
-        print(stats)
-        print(sort)
-        print(synergy_loss_diff)
         columns = [neuron_stats_columns[0][:]] + [[f'{s[0]}', '', '{:.2f}', ''] for s in sort]
         rows = [[neuron_stats_columns[0][2].format(s[0])] +
                 [('{:.2f}' if t == s
-                  else '[magenta]{:.2f}[/magenta]').format(synergy_loss_diff[s[0]][t[0]]) for t in sort] for s in sort]
+                  else '[magenta]{:.2f}[/magenta]' if synergy_loss_diff[s[0]][t[0]] > 0
+                  else '[dim]{:.0f}[/dim]').format(synergy_loss_diff[s[0]][t[0]]) for t in sort] for s in sort]
 
         table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
-        table.title = f'[white] Synergy loss decrease [/white] | Validator forward'
-        table.caption = f'[bold]{num_servers}[/bold]/{metagraph.n} (topk/total) | [bold]TextCausalLM[/bold] | ' \
-                        f'[white] {len(stats)} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ' \
-                        f'\[{time.time() - start_time:.3g}s] [/white]'
-
         for col, _, _, stl in columns:
             table.add_column(col, style=stl, justify='right')
         for row in rows:
