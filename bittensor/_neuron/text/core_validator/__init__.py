@@ -848,11 +848,11 @@ class nucleus( torch.nn.Module ):
         columns = [neuron_stats_columns[0][:]] + [[f'{s[0]}', '', '{:.2f}', ''] for s in sort]
         rows = [[neuron_stats_columns[0][2].format(s[0])] +
                 [('[bright_cyan]{:.2f}[/bright_cyan]' if t == s
-                  else '[bright_blue]{:.2f}[/bright_blue]' if synergy_loss_diff[s[0]][t[0]] > 0
+                  else '[magenta]{:.2f}[/magenta]' if synergy_loss_diff[s[0]][t[0]] > 0
                   else '[dim]{:.0f}[/dim]').format(synergy_loss_diff[s[0]][t[0]]) for t in sort] for s in sort]
 
         table = Table(width=self.config.get('width', None), box=None)
-        table.title = f'Synergy'
+        table.title = f'[white] Synergy [/white]'
         table.caption = f'loss decrease'
         for col, _, _, stl in columns:
             table.add_column(col, style=stl, justify='right')
