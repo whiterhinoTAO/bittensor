@@ -356,7 +356,7 @@ class neuron:
             for row in rows:
                 table.add_row(*row)
 
-            print(self.metagraph[self.uid])
+            print([(var, getattr(self.metagraph, var)[self.uid]) for var in ['uid', 'active', 'stake', 'rank', 'trust', 'consensus', 'incentive', 'dividends', 'emission', 'last_update']])
             print(table)
             print()
 
