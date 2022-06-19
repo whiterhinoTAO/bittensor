@@ -356,6 +356,7 @@ class neuron:
             for row in rows:
                 table.add_row(*row)
 
+            print(self.metagraph[self.uid])
             print(table)
             print()
 
