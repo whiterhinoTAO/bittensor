@@ -209,9 +209,7 @@ class Dendrite(torch.autograd.Function):
         # output_grads is a list of gradients per synapse. They need to be packed (unflattened)
         # into a list of lists.
         packed_grads: List[ List [ torch.FloatTensor ] ] = [ output_grads[ s : s + len(ctx.synapses) ] for s in range (0, len(output_grads), len( ctx.synapses )) ]
-
         if ctx.does_requires_grad:
-            grads_cpu = [x.cpu().clone().detach() for x in output_grads]
             input_grads, _, _ = ctx.receptor_pool.backward(
                 endpoints = ctx.endpoints,
                 inputs = ctx.inputs,
@@ -292,7 +290,7 @@ class Dendrite(torch.autograd.Function):
 
         # Split times into num_synapse lists of codes
         # split_times is a list of tensors times each with length num_synapses
-        times: torch.FloatTensor  = forward_response[0]
+        times: torch.FloatTensor  = forward_response[1]
         packed_times: List[torch.FloatTensor] = torch.split( times, len( synapses ) )
 
         # Output responses is a list with length num_endpoints num_synapses
@@ -352,7 +350,7 @@ class Dendrite(torch.autograd.Function):
                     times (:obj:`List [ torch.FloatTensor ]` of shape :obj:`[ num_endpoints ]`, `required`):
                         Times per call per synapse.
             """
-        formatted_endpoints, formatted_inputs = self.__format_text_inputs ( 
+        formatted_endpoints, formatted_inputs = self.format_text_inputs ( 
             endpoints = endpoints, 
             inputs = inputs
         )
@@ -420,7 +418,7 @@ class Dendrite(torch.autograd.Function):
             raise ValueError( "Passed synapse must have type: {} got {} instead".formate( bittensor.proto.Synapse.SynapseType.TextCausalLM, synapses.synapse_type ) )
 
         # Format inputs.
-        formatted_endpoints, formatted_inputs = self.__format_text_inputs ( 
+        formatted_endpoints, formatted_inputs = self.format_text_inputs ( 
             endpoints = endpoints, 
             inputs = inputs
         )
@@ -490,7 +488,7 @@ class Dendrite(torch.autograd.Function):
             raise ValueError( "Passed synapse must have type:{} got:{} instead".formate( bittensor.proto.Synapse.SynapseType.TextLastHiddenState, synapses.synapse_type ) )
 
         # Format inputs.
-        formatted_endpoints, formatted_inputs = self.__format_text_inputs ( 
+        formatted_endpoints, formatted_inputs = self.format_text_inputs ( 
             endpoints = endpoints, 
             inputs = inputs
         )
@@ -508,7 +506,7 @@ class Dendrite(torch.autograd.Function):
         return outputs[0], codes[0], times[0]
 
 
-    def __format_text_inputs (
+    def format_text_inputs (
         self,
         endpoints: Union[ torch.LongTensor, List[torch.LongTensor], List['bittensor.Endpoint'], 'bittensor.Endpoint' ],
         inputs: Union[str, List[str], List[torch.LongTensor], torch.LongTensor],
@@ -538,7 +536,6 @@ class Dendrite(torch.autograd.Function):
                 formatted_inputs (:obj:`Union[str,  List[str], List[torch.LongTensor], torch.LongTensor]` of shape :obj:`(num_endpoints * [batch_size, sequence_len])`, `required`):
                     A list of tensor of type long each representing a tokenized sentence to be sent to each endpoint.
         """
-
         # To be filled. Inputs and endpoint must be list with the same number of elements.
         formatted_inputs = []
         formatted_endpoints = []
@@ -616,7 +613,7 @@ class Dendrite(torch.autograd.Function):
         elif isinstance(inputs, list) and len(inputs) > 0 and isinstance(inputs[0], str):
             # Encode to tensors.
             tokenizer = bittensor.tokenizer()
-            tokenized_sentences = tokenizer(inputs, truncation=True)['input_ids']
+            tokenized_sentences = tokenizer(inputs, padding = True, truncation=True)['input_ids']
             tokenizer_tensor = cast_and_check_tensor_input(torch.tensor(tokenized_sentences, dtype=torch.int64))
             formatted_inputs = [tokenizer_tensor for _ in formatted_endpoints]
 
@@ -793,40 +790,3 @@ class Dendrite(torch.autograd.Function):
             bittensor.logging.error( prefix='failed dendrite.to_wandb()', sufix = str(e))
             return {}
 
-
-    def forward_text_seq2seq(
-            self,
-            endpoints,
-            inputs,
-            synapses_args,
-            timeout: int = None,
-            requires_grad: bool = None,
-            ):
-
-        self.forward_text(
-                    endpoints= endpoints,
-                    inputs = inputs,
-                    syanpse = [bittensor.proto.SynapseType.TEXT_SEQ_2_SEQ],
-                    synapse_args = synapse_args,
-                    timeout=timeout,
-                    requires_grad = requires_grad
-                    )
-
-    
-    def forward_text_causal_LM(
-            self,
-            endpoints,
-            inputs,
-            synapses_args,
-            timeout: int = None,
-            requires_grad: bool = None,
-            ):
-
-        self.forward_text(
-                    endpoints= endpoints,
-                    inputs = inputs,
-                    syanpse = [bittensor.proto.SynapseType.TEXT_CAUSAL_LM],
-                    synapse_args = synapse_args,
-                    timeout=timeout,
-                    requires_grad = requires_grad
-                    )

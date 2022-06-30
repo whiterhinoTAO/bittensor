@@ -54,6 +54,7 @@ class axon:
             synapse_last_hidden: 'Callable' = None,
             synapse_causal_lm: 'Callable' = None,
             synapse_seq_2_seq: 'Callable' = None,
+            synapse_checks: 'Callable' = None,
             thread_pool: 'futures.ThreadPoolExecutor' = None,
             server: 'grpc._Server' = None,
             port: int = None,
@@ -81,7 +82,9 @@ class axon:
                 synapse_causal_lm (:obj:`callable`, `optional`):
                     function which is called by the causal lm synapse
                 synapse_seq_2_seq (:obj:`callable`, `optional`):
-                    function which is called by the seq2seq synapse           
+                    function which is called by the seq2seq synapse   
+                synapse_checks (:obj:`callable`, 'optional'):
+                    function which is called before each synapse to check for stake        
                 thread_pool (:obj:`ThreadPoolExecutor`, `optional`):
                     Threadpool used for processing server queries.
                 server (:obj:`grpc._Server`, `required`):
@@ -141,6 +144,8 @@ class axon:
         synapses[bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM] = synapse_causal_lm
         synapses[bittensor.proto.Synapse.SynapseType.TEXT_SEQ_2_SEQ] = synapse_seq_2_seq
         
+        synapse_check_function = synapse_checks if synapse_checks != None else axon.default_synapse_check
+
         if priority != None:
             priority_threadpool = bittensor.prioritythreadpool(config=config)
         else: 
@@ -154,6 +159,7 @@ class axon:
             forward = forward_text,
             backward = backward_text,
             synapses = synapses,
+            synapse_checks = synapse_check_function,
             priority = priority,
             priority_threadpool = priority_threadpool,
             forward_timeout = config.axon.forward_timeout,
@@ -183,34 +189,35 @@ class axon:
         parser.print_help()
 
     @classmethod
-    def add_args( cls, parser: argparse.ArgumentParser ):
+    def add_args( cls, parser: argparse.ArgumentParser, prefix: str = None  ):
         """ Accept specific arguments from parser
         """
+        prefix_str = '' if prefix == None else prefix + '.'
         try:
-            parser.add_argument('--axon.port', type=int, 
+            parser.add_argument('--' + prefix_str + 'axon.port', type=int, 
                     help='''The port this axon endpoint is served on. i.e. 8091''', default = bittensor.defaults.axon.port)
-            parser.add_argument('--axon.ip', type=str, 
+            parser.add_argument('--' + prefix_str + 'axon.ip', type=str, 
                 help='''The local ip this axon binds to. ie. [::]''', default = bittensor.defaults.axon.ip)
-            parser.add_argument('--axon.max_workers', type=int, 
+            parser.add_argument('--' + prefix_str + 'axon.max_workers', type=int, 
                 help='''The maximum number connection handler threads working simultaneously on this endpoint. 
                         The grpc server distributes new worker threads to service requests up to this number.''', default = bittensor.defaults.axon.max_workers)
-            parser.add_argument('--axon.maximum_concurrent_rpcs', type=int, 
+            parser.add_argument('--' + prefix_str + 'axon.maximum_concurrent_rpcs', type=int, 
                 help='''Maximum number of allowed active connections''',  default = bittensor.defaults.axon.maximum_concurrent_rpcs)
-            parser.add_argument('--axon.backward_timeout', type=int,
-                help='Number of seconds to wait for backward axon request', default=20)
-            parser.add_argument('--axon.forward_timeout', type=int,
+            parser.add_argument('--' + prefix_str + 'axon.backward_timeout', type=int,
+                help='Number of seconds to wait for backward axon request', default=2*bittensor.__blocktime__)
+            parser.add_argument('--' + prefix_str + 'axon.forward_timeout', type=int,
                 help='Number of seconds to wait for forward axon request', default=bittensor.__blocktime__)
-            parser.add_argument('--axon.priority.max_workers', type = int,
+            parser.add_argument('--' + prefix_str + 'axon.priority.max_workers', type = int,
                 help='''maximum number of threads in thread pool''', default = bittensor.defaults.axon.priority.max_workers)
-            parser.add_argument('--axon.priority.maxsize', type=int, 
+            parser.add_argument('--' + prefix_str + 'axon.priority.maxsize', type=int, 
                 help='''maximum size of tasks in priority queue''', default = bittensor.defaults.axon.priority.maxsize)
-            parser.add_argument('--axon.compression', type=str, 
+            parser.add_argument('--' + prefix_str + 'axon.compression', type=str, 
                 help='''Which compression algorithm to use for compression (gzip, deflate, NoCompression) ''', default = bittensor.defaults.axon.compression)
         except argparse.ArgumentError:
             # re-parsing arguments.
             pass
 
-        bittensor.wallet.add_args( parser )
+        bittensor.wallet.add_args( parser, prefix = prefix )
 
     @classmethod   
     def add_defaults(cls, defaults):
@@ -235,6 +242,15 @@ class axon:
         assert config.axon.port > 1024 and config.axon.port < 65535, 'port must be in range [1024, 65535]'
         bittensor.wallet.check_config( config )
 
+    @classmethod   
+    def default_synapse_check(cls, synapse, hotkey ):
+        """ default synapse check function
+        """
+        if len(hotkey) == bittensor.__ss58_address_length__:
+            return True
+        
+        return False
+
     @staticmethod
     def check_backward_callback( backward_callback:Callable, pubkey:str = '_' ):
         """ Check and test axon backward callback function
@@ -255,13 +271,13 @@ class axon:
         """
         if not inspect.ismethod(forward_callback) and not inspect.isfunction(forward_callback):
             raise ValueError('The axon forward callback must be a function with signature Callable[inputs_x: torch.Tensor] -> torch.FloatTensor:, got {}'.format(forward_callback))   
-        if len( inspect.signature(forward_callback).parameters) != 2:
-            raise ValueError('The axon forward callback must have signature Callable[ inputs_x: torch.Tensor, synapses] -> torch.FloatTensor:, got {}'.format(inspect.signature(forward_callback)))
+        if len( inspect.signature(forward_callback).parameters) != 3:
+            raise ValueError('The axon forward callback must have signature Callable[ inputs_x: torch.Tensor, synapses, hotkey] -> torch.FloatTensor:, got {}'.format(inspect.signature(forward_callback)))
         if 'inputs_x' not in inspect.signature(forward_callback).parameters:
             raise ValueError('The axon forward callback must have signature Callable[ inputs_x: torch.Tensor] -> torch.FloatTensor:, got {}'.format(inspect.signature(forward_callback)))
         
         sample_input = torch.randint(0,1,(3, 3))
-        forward_callback([sample_input], synapses)
+        forward_callback([sample_input], synapses, hotkey='')
 
 class AuthInterceptor(grpc.ServerInterceptor):
     """ Creates a new server interceptor that authenticates incoming messages from passed arguments.

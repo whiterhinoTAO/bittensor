@@ -34,7 +34,7 @@ def turn_console_off():
 
 # Vocabulary dimension.
 #__vocab_size__ = len( tokenizer ) + len( tokenizer.additional_special_tokens) + 100 # Plus 100 for eventual token size increase.
-__vocab_size__ = 50378
+__vocab_size__ = 50257
 
 # Tensor dimension.
 # NOTE (const): if/when this increases peers must be responsible for trimming or expanding output to this size.
@@ -48,6 +48,9 @@ __pipaddress__ = 'https://pypi.org/pypi/bittensor/json'
 
 # Substrate ss58_format
 __ss58_format__ = 42
+
+# Wallet ss58 address length
+__ss58_address_length__ = 48
 
 __networks__ = [ 'local', 'nobunaga', 'nakamoto']
 

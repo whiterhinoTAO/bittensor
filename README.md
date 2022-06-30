@@ -36,7 +36,7 @@ At Bittensor, we are creating an open, decentralized, peer-to-peer network that 
 
 ## 1. Documentation
 
-https://app.gitbook.com/@opentensor/s/bittensor/
+https://opentensor.gitbook.io/bittensor/
 
 ## 2. Install
 Three ways to install Bittensor. 
@@ -59,7 +59,7 @@ $ python3 -m pip install -e bittensor/
 
 ## 3. Using Bittensor
 
-The following examples showcase how to use the Bittensor API for 3 seperate purposes.
+The following examples showcase how to use the Bittensor API for 3 separate purposes.
 
 ### 3.1. Client 
 
@@ -230,19 +230,19 @@ The template server follows a similar structure as the template miner.
 
 ```bash
 $ cd bittensor
-$ python3 ./bittensor/_neuron/text/template_server/main.py --wallet.name <WALLET NAME> --wallet.hotkey <HOTKEY NAME>
+$ python3 ./bittensor/_neuron/text/core_server/main.py --wallet.name <WALLET NAME> --wallet.hotkey <HOTKEY NAME>
 ```
 or 
 ```python3
 >> import bittensor
->> bittensor.neurons.text.template_server.neuron().run()
+>> bittensor.neurons.text.core_server.neuron().run()
 ```
 
 For the full list of settings, please run
 
 ```bash
 $ cd bittensor
-$ python3 ./bittensor/_neuron/text/template_server/main.py --help
+$ python3 ./bittensor/_neuron/text/core_server/main.py --help
 ```
 
 

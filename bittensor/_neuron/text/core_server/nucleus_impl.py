@@ -1,8 +1,11 @@
 import argparse
+import math
 import bittensor
 import torch
+from torch import nn
 import torch.nn.functional as F
 from types import SimpleNamespace
+from typing import Tuple, Optional
 
 from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM
 from torch.nn.utils.rnn import pad_sequence
@@ -67,7 +70,7 @@ class server(torch.nn.Module):
             self.pre_model = model if model != None else AutoModel.from_config(model_config)
             self.tokenizer = bittensor.tokenizer()
 
-        if self.config.neuron.training:
+        if self.config.neuron.local_train or self.config.neuron.remote_train:
             self.pre_model.train()
         elif self.config.neuron.autocast and self.device == 'cuda':
             self.pre_model.half()
@@ -97,15 +100,82 @@ class server(torch.nn.Module):
         
         self.outputs_cache = None
         self.gradients_cache = None
+        self.best_loss = math.inf
 
         #checking if the parameters of the server makes sense
         if self.checking and pretrained == True:
             self.check()
         
         # -- keeps track of gradients applied
-        self.backward_gradients = 0 
+        self.backward_gradients_count = 0 
+        self.set_fine_tuning_params()
+
+    def set_fine_tuning_params(self) -> Tuple[bool, str]:
+        r''' Set to tune only the parameter of the last layer
+            Returns: 
+                reached_last_layer (:type:`bool`):
+                    If we have set partial of the model to requires grad.
+                
+                last_layer_name (:type:`string`):
+                    The name of the last layer that user specified or we found.
+                    None if the user did not specify and we couldnt find it. 
+        '''
+        def find_last_layer(model: torch.nn.Module) -> Optional[str]:    
+            r''' Recursively find the last layer in a nn.ModuleList
+                Args:
+                    model (:obj:`torch.module`):
+                        The model (or sub-model) to fine the last layer from. 
+                Returns:
+                    name (:type:`str`):
+                        The name (or sub-name) of the last layer.
+                        None if not found
+            '''
+            reverted_child_list = [(name, child) for name, child in model.named_children()]
+            reverted_child_list.reverse()
+
+            for name, child in reverted_child_list:    
+                if isinstance(child, nn.ModuleList):
+                    if self.config.neuron.finetune.num_layers > len(child):
+                        logger.warning(f'Number of finetune layers was set higher then the layers avaliable {len(child)}')
+                        return None
+                    return (name + '.' +str(len(child) - self.config.neuron.finetune.num_layers))
+                
+            for name, child in reverted_child_list:    
+                name_ = find_last_layer(child)
+                if name_ != None:
+                    return (name+'.'+ name_)
+
+            return None     
+
+        if self.config.neuron.finetune.layer_name == None:
+            last_layer_name = find_last_layer(self.pre_model)
+        else:
+            last_layer_name = self.config.neuron.finetune.layer_name
+
+        reached_last_layer = False
+
+        # set the non-last layer parameters not to require grads
+        if (self.config.neuron.finetune.all) or (last_layer_name == None):
+            return False, last_layer_name
+
+        logger.success(f'Set to finetune layer {last_layer_name} and onwards')
         
-    def forward(self, inputs,tokenizer=None):
+        for name, param in self.pre_model.named_parameters():
+            if last_layer_name in name or reached_last_layer == True:
+                param.requires_grad = True
+                reached_last_layer = True
+            else:
+                param.requires_grad = False
+
+        if reached_last_layer == False:
+            if self.config.neuron.finetune.all:
+                logger.warning('Set to finetune the whole model, this will significantly increase the memory usage.')
+            else:
+                logger.warning(f'Cannot identify the last layer of the model with name {last_layer_name}, setting to finetune on all of the parameters.')
+
+        return reached_last_layer, last_layer_name
+        
+    def forward(self, inputs, tokenizer=None):
         """
             Forward pass through the whole server model. Returns the loss and decoded predictions.
 
@@ -121,13 +191,50 @@ class server(torch.nn.Module):
                     Decoded predictions of the next token in the sentence.
 
         """
-        decoded_targets = self.decoder(self.encode_forward(inputs,tokenizer).hidden)
+        decoded_targets = self.local_forward(inputs, tokenizer)[1]
         
         shift_logits = decoded_targets[..., :-1, :].contiguous()
         shift_labels = inputs[..., 1:].contiguous()     
         loss = self.loss_fct( shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1) ) 
 
         return loss, decoded_targets
+
+    def local_forward(self, token_batch, tokenizer=None, encode_len=bittensor.__network_dim__, model_output = None):
+        r""" Forward pass through the pretrained model and possible mappings between hidden units.
+             The response tensor should be the hidden units computed using the local context and
+             with shape: [batch_size, sequence_len, __vocab_size__].
+
+            Args:
+                token_batch ( :obj:`torch.LongTensor`, `required`):
+                    torch inputs to be forward processed, [batch_size, sequence_len]
+                tokenizer ( huggingface.tokenizer, `optional`):
+                    The tokenizer which was used to tokenize the inputs
+                encode_len ( :obj:`int`, `optional`):
+                    logit encoding length, default bittensor.__network_dim__ length
+                model_output (:obj:`transformers.modeling_outputs.BaseModelOutputWithCrossAttentions`, `optional`):
+                    The output of huggingface auto model.
+
+            Returns:
+                model_outputs (:obj:`transformers.modeling_outputs.BaseModelOutputWithCrossAttentions`, `required`):
+                    The output of huggingface auto model.
+                
+                logits (:obj:`torch.FloatTensor`):
+                    The nucleus's logit outputs as a torch tensor of shape [batch_size, sequence_len, __vocab_size__]
+        """
+        tokens = self.remapping_token_causallm(token_batch, tokenizer)  # remap to server tokenizer
+
+        if model_output == None:
+            if self.config.neuron.local_train or (self.config.neuron.autocast and self.device[:4] == 'cuda'):
+                model_output = self.pre_model(input_ids=tokens['input_ids'],
+                                                attention_mask=tokens['attention_mask'],
+                                                output_hidden_states=True)
+            else:
+                with torch.no_grad():
+                    model_output = self.pre_model(input_ids=tokens['input_ids'],
+                                                    attention_mask=tokens['attention_mask'],
+                                                    output_hidden_states=True)
+
+        return model_output, model_output.logits
     
     def encode_forward(self,inputs,tokenizer=None, model_output = None):
         r""" Forward pass through the pretrained model and possible mappings between hidden units. 
@@ -149,20 +256,10 @@ class server(torch.nn.Module):
                     The hidden layer output as a torch tensor of shape [batch_size, sequence_len, __network_dim__ ]
         """
         sen_len = inputs.size()
-        # inputs = self.token_remap(inputs,tokenizer).to(self.device)
-        
-        # if model_output == None:
-        #     if self.config.neuron.training or self.config.neuron.autocast and self.device == 'cuda':
-        #         model_output = self.pre_model(inputs, output_hidden_states=True)
-
-        #     else:
-        #         with torch.no_grad():
-        #             model_output = self.pre_model(inputs, output_hidden_states=True)
-
         tokens = self.remapping_token_causallm(inputs, tokenizer)  # remap to server tokenizer
 
         if model_output == None:
-            if self.config.neuron.training or (self.config.neuron.autocast and self.device[:4] == 'cuda'):
+            if self.config.neuron.remote_train or (self.config.neuron.autocast and self.device[:4] == 'cuda'):
                 model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                 attention_mask=tokens['attention_mask'],
                                                 output_hidden_states=True)
@@ -211,7 +308,7 @@ class server(torch.nn.Module):
     def encode_forward_causallm(self, token_batch, tokenizer=None, encode_len=bittensor.__network_dim__, model_output = None):
         r""" Forward pass through the pretrained model and possible mappings between hidden units.
              The response tensor should be the hidden units computed using the local context and
-             with shape: [batch_size, sequence_len, __network_dim__].
+             with shape: [batch_size, sequence_len, __vocab_size__].
 
             Args:
                 token_batch ( :obj:`torch.LongTensor`, `required`):
@@ -222,19 +319,17 @@ class server(torch.nn.Module):
                     logit encoding length, default bittensor.__network_dim__ length
                 model_output (:obj:`transformers.modeling_outputs.BaseModelOutputWithCrossAttentions`, `optional`):
                     The output of huggingface auto model.
-                
 
             Returns:
                 model_outputs (:obj:`transformers.modeling_outputs.BaseModelOutputWithCrossAttentions`, `required`):
                     The output of huggingface auto model.
                 
                 logits_std (:obj:`torch.FloatTensor`):
-                    The nucleus's logit outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+                    The nucleus's logit outputs as a torch tensor of shape [batch_size, sequence_len, __vocab_size__]
         """
         tokens = self.remapping_token_causallm(token_batch, tokenizer)  # remap to server tokenizer
-
         if model_output == None:
-            if self.config.neuron.training or (self.config.neuron.autocast and self.device[:4] == 'cuda'):
+            if self.config.neuron.remote_train or (self.config.neuron.autocast and self.device[:4] == 'cuda'):
                 model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                 attention_mask=tokens['attention_mask'],
                                                 output_hidden_states=True)
@@ -246,19 +341,24 @@ class server(torch.nn.Module):
 
         pre_logits = model_output.logits
 
-        with torch.no_grad():
+        if self.config.neuron.remote_train or (self.config.neuron.autocast and self.device[:4] == 'cuda'):
             probs_std = translate_logits_to_probs_std(pre_logits,
-                                                      tokens['offset_mapping'], tokens['offset_mapping_std'],
-                                                      self.tokenizer, self.std_tokenizer,
-                                                      self.split_map_cache,
-                                                      self.to_translation_map, self.from_translation_map,
-                                                      tokens['input_ids'], token_batch)
+                                                        tokens['offset_mapping'], tokens['offset_mapping_std'],
+                                                        self.tokenizer, self.std_tokenizer,
+                                                        self.split_map_cache,
+                                                        self.to_translation_map, self.from_translation_map,
+                                                        tokens['input_ids'], token_batch)
+        
+        else:
+            with torch.no_grad():
+                probs_std = translate_logits_to_probs_std(pre_logits,
+                                                            tokens['offset_mapping'], tokens['offset_mapping_std'],
+                                                            self.tokenizer, self.std_tokenizer,
+                                                            self.split_map_cache,
+                                                            self.to_translation_map, self.from_translation_map,
+                                                            tokens['input_ids'], token_batch)
         probs_std = probs_std.to(self.device)
         logits_std = torch.log(probs_std + 1e-40)
-
-        # with torch.no_grad():
-        #     original_loss = self.get_loss_fct(pre_logits.cpu(), tokens['input_ids'])
-        #     translated_loss = self.get_loss_fct(logits_std, token_batch.cpu())
 
         return model_output, logits_std
 
@@ -276,20 +376,21 @@ class server(torch.nn.Module):
         text_batch = std_tokenizer.batch_decode(token_batch)  # decode tokens to original text
         result = translate_special_token_text(text_batch, std_tokenizer, self.tokenizer)  # translate special tokens
         to_text_batch, from_offsets_batch, to_offsets_batch, pad_offsets_batch = result
-
+        
         std_tokens = std_tokenizer(text_batch, return_offsets_mapping=True)  # encode again to get offsets mapping
         tokens = self.tokenizer(to_text_batch, return_offsets_mapping=True, add_special_tokens=False)
 
         # pad offsets so that special token offset widths match for continued correct alignment
         std_tokens['offset_mapping'] = pad_offsets(std_tokens['offset_mapping'], from_offsets_batch, pad_offsets_batch)
         tokens['offset_mapping'] = pad_offsets(tokens['offset_mapping'], to_offsets_batch, pad_offsets_batch)
-
+        
         tokens['offset_mapping_std'] = std_tokens['offset_mapping']  # include std token info
-
+        
         for key in ['input_ids', 'attention_mask']:  # form a torch batch tensor
-            tokens[key] = pad_sequence([torch.LongTensor(tensor) for tensor in tokens[key]], batch_first=True)
+            padded_tokens= pad_sequence([torch.LongTensor(tensor) for tensor in tokens[key]], batch_first=True)
+            tokens[key] = torch.zeros(padded_tokens.shape, dtype = torch.long)
+            tokens[key][:, :padded_tokens.shape[1]] = padded_tokens
             tokens[key] = torch.LongTensor(tokens[key])
-
         return tokens
 
     def get_loss_fct(self, logits: torch.FloatTensor, labels: torch.LongTensor) -> torch.FloatTensor:
@@ -323,7 +424,8 @@ class server(torch.nn.Module):
             state_dict = {
                 'model': self.pretrained,
                 'pretrained_model': self.pre_model.state_dict(), 
-                'decoder': self.decoder.state_dict()
+                'decoder': self.decoder.state_dict(),
+                'best_loss': self.best_loss,
             }
             if self.padding == False:
                 state_dict['mapping'] = self.mapping.state_dict()
@@ -340,7 +442,7 @@ class server(torch.nn.Module):
                 self.decoder.load_state_dict(state_dict['decoder'])
                 if self.padding == False:
                     self.mapping.load_state_dict(state_dict['mapping'])
-
+                self.best_loss = state_dict['best_loss']
                 bittensor.logging.success( prefix = 'Reloaded model', sufix = '<blue>{}/model.torch</blue>'.format( path ))
 
 
@@ -360,17 +462,28 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.padding', action='store_false', help='To pad out final dimensions',default=True)
         parser.add_argument('--neuron.interpolate', action='store_false', help='To interpolate between sentence length',default=True)
         parser.add_argument('--neuron.inter_degree', type=str, help='Interpolate algorithm (nearest | linear | bilinear | bicubic | trilinear | area)', default='nearest')
-        parser.add_argument('--neuron.name', type=str, help='Trials for this miner go in miner.root / (wallet_cold - wallet_hot) / miner.name ', default='advanced_server')
+        parser.add_argument('--neuron.name', type=str, help='Trials for this miner go in miner.root / (wallet_cold - wallet_hot) / miner.name ', default='core_server')
         parser.add_argument('--neuron.checking', action='store_false', help='To check if server settings are correct',default=True)
         parser.add_argument('--neuron.restart', action='store_true', help='If True, train the neuron from the beginning', default=False)
         parser.add_argument('--neuron.blacklist.stake', type=float, help='Amount of stake (tao) in order not to get blacklisted', default=10)
         parser.add_argument('--neuron.blocks_per_epoch', type=int, help='Blocks per epoch', default=10)
         parser.add_argument('--neuron.blacklist.time', type=int, help='how often a peer can query you (seconds) ', default=1)
-        parser.add_argument('--neuron.training',  action='store_true', help='if the model should be training (increases memory load)', default=False)
         parser.add_argument('--neuron.autocast',  action='store_true', help='(experimental) autocasts the model to float16. Must require cuda', default=False)
         parser.add_argument('--neuron.blocks_per_set_weights', type=float, help='how often to set weights', default=100)
         parser.add_argument('--neuron.metagraph_sync', type=float, help='how often to sync the metagraph', default=100000)
         parser.add_argument('--neuron.blacklist_allow_non_registered', action='store_true', help='''If true, allow non-registered peers''', default=False)
+        parser.add_argument('--neuron.local_train', action='store_true', help='''If true, allow local training''', default=False)
+        parser.add_argument('--neuron.remote_train', action='store_true', help='''If true, allow remote training''', default=False)
+        parser.add_argument('--neuron.lasthidden', action='store_false', help='To turn off last hidden synapse', default=True)
+        parser.add_argument('--neuron.causallm', action='store_false', help='To turn off causallm synapse', default=True)
+        parser.add_argument('--neuron.seq2seq', action='store_false', help='To turn off seq2seq synapse', default=True)
+        parser.add_argument('--neuron.lasthidden_stake', type = float, help='the amount of stake to run last hidden synapse',default=0)
+        parser.add_argument('--neuron.causallm_stake',  type = float, help='the amount of stake to run causallm synapse',default=0)
+        parser.add_argument('--neuron.seq2seq_stake',  type = float, help='the amount of stake to run  seq2seq synapse',default=0)
+        parser.add_argument('--neuron.finetune.all', action='store_true', help='Finetune your whole model instead of only on the last (few) layers', default=False)
+        parser.add_argument('--neuron.finetune.num_layers', type=int, help='The number of layers to finetune on your model.', default=1)
+        parser.add_argument('--neuron.finetune.layer_name', type=str, help='Specify since which layer to finetune. eg. encoder.layer.11', default=None)
+
 
 
         bittensor.wallet.add_args( parser )

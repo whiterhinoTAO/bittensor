@@ -35,6 +35,8 @@ import random
 import traceback
 from rich import print
 from rich.console import Console
+from rich.style import Style
+from rich.table import Table
 from rich.traceback import install
 from ..neuron_utilities import joining_context, partial_contexts, ThreadQueue
 import torch.nn as nn
@@ -48,6 +50,28 @@ from threading import Lock
 logger = logger.opt( colors=True )
 console = Console()
 install(show_locals=True)
+
+# Neuron stats recorded by validator neuron/nucleus
+#   [Column_name, key_name, format_string, rich_style]  # description
+neuron_stats_columns = [
+    ['UID', 'uid', '{:.0f}', 'cyan'],  # neuron UID
+    ['Upd', 'updates', '{}', 'bright_yellow'],  # number of exponential moving average updates
+    ['Time', 'response_time', '{:.2f}', 'yellow'],  # response time to forward requests
+    ['Route', 'routing_score', '{:.3f}', 'grey30'],  # validator routing score (higher preferred)
+    ['Weight', 'weight', '{:.5f}', 'green'],  # weight set on substrate (each epoch)
+    ['mShap', 'shapley_values_min', '{:.0f}', 'bright_magenta'],  # min(Shap, vShap) of sequence and validation Shapley
+    ['Loss', 'loss', '{:.2f}', 'bright_cyan'],  # next token prediction loss average over sequence
+    ['vLoss', 'loss_val', '{:.2f}', 'bright_cyan'],  # next token prediction loss for validation task
+    ['RLoss', 'routing_loss', '{:.3f}', 'grey30'],  # MSE between routing_score and conditioned loss
+    ['Shap', 'shapley_values', '{:.0f}', 'magenta'],  # Shapley value (=Base+Syn) over sequence
+    ['vShap', 'shapley_values_val', '{:.0f}', 'magenta'],  # Shapley value (=vBase+vSyn) for validation
+    ['Base', 'base_params', '{:.0f}', ''],  # parameter count estimate via adjusted scaling law
+    ['vBase', 'base_params_val', '{:.0f}', ''],  # parameter count estimate for validation task
+    ['Syn', 'synergy', '{:.0f}', 'white'],  # Shapley pairwise synergy over sequence loss (parameter count estimate)
+    ['vSyn', 'synergy_val', '{:.0f}', 'white'],  # Shapley pairwise synergy over validation loss (count estimate)
+    ['SynD', 'synergy_loss_diff', '{:.2f}', 'bright_blue'],  # Shapley pairwise synergy over sequence loss (loss difference)
+    ['vSynD', 'synergy_loss_diff_val', '{:.2f}', 'bright_blue']]  # Shapley pairwise synergy over validation loss (loss difference)
+
 
 class neuron:
     r"""
@@ -105,7 +129,7 @@ class neuron:
         bittensor.logging( config = self.config, logging_dir = self.config.neuron.full_path )
         self.wallet = bittensor.wallet ( config = self.config ) if wallet == None else wallet
         self.subtensor = bittensor.subtensor ( config = self.config ) if subtensor == None else subtensor
-        self.metagraph = bittensor.metagraph ( config = config, subtensor = self.subtensor ) if metagraph == None else metagraph
+        self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor ) if metagraph == None else metagraph
         self.dendrite = bittensor.dendrite ( config = self.config, wallet = self.wallet ) if dendrite == None else dendrite
         self.device = torch.device ( device = self.config.neuron.device )    
         self.nucleus = nucleus ( config = self.config, device = self.device, subtensor = self.subtensor ).to( self.device )
@@ -206,12 +230,14 @@ class neuron:
         This function is supposed to be ran multi-threaded.
         """
         loss, stats = self.nucleus( next(self.dataset) , self.metagraph, self.dendrite )
-                
+
         # === Backward ===
         # Backwards gradients through model to train gating and remote endpoints.
-        if hasattr(loss, 'grad_fn'):
-            print('Loss: {}'.format(loss))
+        if hasattr(loss, 'grad_fn') and loss.grad_fn is not None:
+            print(f'Backward \t| Loss: {loss:.3f} ... backpropagation ... ', end='')
+            start_time = time.time()
             (loss / self.config.neuron.forward_num).backward()
+            print(f'complete [{time.time() - start_time:.3g}s]')
 
         return loss, stats
 
@@ -268,13 +294,11 @@ class neuron:
             self.dataset.set_data_size(batch_size, sequence_length)
 
         # === Logs ===
-        print ( '\nEra:', '\n\t batch_size:', batch_size, '\n\t sequence_length:', sequence_length, '\n\t n_topk_peer_weights:', n_topk_peer_weights,
-                '\n\t max_allowed_ratio:', max_allowed_ratio, '\n\t blocks_per_epoch:', blocks_per_epoch, '\n\t epochs_until_reset:', epochs_until_reset, 
-                '\n\t until_reset:', self.epoch % epochs_until_reset, '\n\t current_block:', current_block, '\n')
         if self.config.using_wandb:
-            wandb.log( {    'era/batch_size': batch_size, 'era/sequence_length': sequence_length, 'era/n_topk_peer_weights': n_topk_peer_weights, 
-                            'era/max_allowed_ratio': max_allowed_ratio, 'era/blocks_per_epoch': blocks_per_epoch, 'era/epochs_until_reset': epochs_until_reset, 
-                }, step = current_block )
+            wandb.log({'era/batch_size': batch_size, 'era/sequence_length': sequence_length,
+                       'era/n_topk_peer_weights': n_topk_peer_weights, 'era/max_allowed_ratio': max_allowed_ratio,
+                       'era/blocks_per_epoch': blocks_per_epoch, 'era/epochs_until_reset': epochs_until_reset},
+                      step=current_block)
 
         # === Run Epoch ===
         # Each block length lasts blocks_per_epoch blocks.
@@ -290,8 +314,7 @@ class neuron:
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
-            loss, stats = self.forward()
-            print(f'Run\t| Got forward result in {round(time.time() - start_time, 3)}')
+            loss, stats = self.forward_thread_queue.get()
 
             # === Scoring ===
             # Updates moving averages and history.
@@ -311,26 +334,109 @@ class neuron:
             current_block = self.subtensor.block
             step_time = time.time() - start_time
 
+            # === Stats update (table) ===
+            # Prints exponential moving average statistics of valid neurons from latest validator forward
+            columns = [_[:] for _ in neuron_stats_columns if _[0] not in ['Weight']]
+            sort_col = [_[0] for _ in columns].index('mShap')  # sort column with key of shapley_values_min
+            columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
+            rows = [[txt.format(self.server_stats[s['uid']][key]) for _, key, txt, _ in columns] for s in stats]
+            rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_col]))  # sort according to mShap column
+
+            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ''])
+            table.title = f'[white] Stats update [/white] | [bold]UID {self.uid}[/bold] ' \
+                          f'\[{self.dendrite.receptor_pool.external_ip}] ' \
+                          f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+                          f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+            table.caption = f'#{current_block}: ' \
+                            f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
+                            f'Epoch {self.epoch} | ' \
+                            f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]'
+
+            for col, _, _, stl in columns:
+                table.add_column(col, style=stl, justify='right')
+            for row in rows:
+                table.add_row(*row)
+
+            print(f'UID {self.uid}   \t| '
+                  f'Updated {current_block - self.metagraph.last_update[self.uid]} [white]blocks ago[/white] | '
+                  f'Dividends {self.metagraph.dividends[self.uid]:.5f} | '
+                  f'Stake \u03C4{self.metagraph.stake[self.uid]:.5f} '
+                  f'[dim](retrieved {current_block - start_block} blocks ago from {self.subtensor.network})[/dim]')
+            print(table)
+            print()
+
+            # === Set weights ===
+            score_key = 'shapley_values_min'  # server score based on Shapley value approximation
+            moving_avg_scores = torch.zeros_like(
+                self.metagraph.S)  # allow unevaluated UIDs to be selected to meet min topk
+
+            for key in self.server_stats:
+                moving_avg_scores[key] = torch.tensor([self.server_stats[key][score_key]])
+            # Find the n_topk_peer_weights peers to set weights to.
+            topk_scores, topk_uids = bittensor.unbiased_topk(moving_avg_scores, k=n_topk_peer_weights)
+            topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
+
+            # === Set weights (table) ===
+            # Prints exponential moving average statistics of valid neurons and latest weights
+            columns = [_[:] for _ in neuron_stats_columns]  # clone neuron_stats_columns
+            rows = []
+            unvalidated = []  # unsuccessful neurons that still receive a weighting
+            for i in range(len(topk_uids)):
+                _weight = topk_scores[i].item()
+                _uid = topk_uids[i].item()
+                if _uid in self.server_stats:
+                    _stats = {k: v for k, v in self.server_stats[_uid].items()}
+                    _stats['weight'] = _weight  # add weight entry into _stats dictionary
+                    rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
+                else:
+                    unvalidated += [_uid]
+
+            sort_col = [_[0] for _ in columns].index('Weight')  # sort column with key of weight
+            columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
+            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
+
+            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
+            table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
+                          f'\[{self.dendrite.receptor_pool.external_ip}] ' \
+                          f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+                          f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+            table.caption = f'Validated [bold]{(n_topk_peer_weights - len(unvalidated))}[/bold]' \
+                            f'/{n_topk_peer_weights}/{self.metagraph.n} (valid/min/total) | ' \
+                            f'sum:{topk_scores.sum().item():.2g} ' \
+                            f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
+                            f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
+                            f'\[{topk_scores.max().item() / topk_scores.min().item():.1f}:1] ' \
+                            f'({max_allowed_ratio} allowed)'
+
+            for col, _, _, stl in columns:
+                table.add_column(col, style=stl, justify='right')
+            for row in rows:
+                table.add_row(*row)
+
+            print(table)
+            print(f'Unvalidated \t| [dim]\[weight={topk_scores.min().item():.4g}][/dim]: {unvalidated}')
+            print()
+
             # === Logs ===
-            print( '\nStep:', '\n\t epoch:', self.epoch, '\n\t epoch_steps:', epoch_steps, '\n\t global_steps:', self.global_step, '\n\t step_time:', step_time, '\n\t loss:', loss.item(),
-                   '\n\t current_block', current_block, '\n\t blocks remaining:', current_block - start_block, '/', blocks_per_epoch, '\n')
             if self.config.using_wandb:
                 wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
                            'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
                            'epoch/time': step_time}, step=current_block)
                 for uid, vals in self.server_stats.items():
                     for key in vals:  # detailed server evaluation fields, e.g. loss, shapley_values, synergy
-                        wandb.log({'stats/{}_{}'.format(key, uid): vals[key]}, step=current_block)
+                        wandb.log({f'stats/{key}_{uid}': vals[key]}, step=current_block)
 
             # Do the backward request after the a queue of forward requests got finished.  
             if self.forward_thread_queue.paused() and self.forward_thread_queue.is_empty():
-                print('Run\t| Model update')
+                start_time = time.time()
+                print('Model update \t| Optimizer step ... ', end='')
 
                 # === Apply gradients ===
                 # Applies local gradients to parameters.
                 clip_grad_norm_(self.nucleus.parameters(), self.config.neuron.clip_gradients)
                 self.optimizer.step()
-                self.optimizer.zero_grad()   
+                self.optimizer.zero_grad()
+                print(f'complete [{time.time() - start_time:.3g}s]')
                 
                 # === Get another round of forward requests ===
                 self.forward_thread_queue.resume()
@@ -339,14 +445,56 @@ class neuron:
         self.epoch += 1
 
         # === Set weights ===
-        score_key = 'shapley_values_val'  # server score based on validation Shapley value approximation
-        moving_avg_scores = torch.zeros_like(self.metagraph.S)  # allow unevaluated UIDs to be selected to meet minimum topk
-        moving_avg_scores[list(self.server_stats.keys())] = torch.tensor([s[score_key].item() for s in self.server_stats.values()])
+        score_key = 'shapley_values_min'  # server score based on Shapley value approximation
+        moving_avg_scores = torch.zeros_like(self.metagraph.S)  # allow unevaluated UIDs to be selected to meet min topk
+
+        for key in self.server_stats:
+            moving_avg_scores[key] = torch.tensor([self.server_stats[key][score_key]])
         # Find the n_topk_peer_weights peers to set weights to.
         topk_scores, topk_uids = bittensor.unbiased_topk(moving_avg_scores, k=n_topk_peer_weights)
         topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
-        print( '\nScores:', '\n\t weights:', topk_scores.sort()[0].tolist(), '\n\t sum:', topk_scores.sum().item(), 
-                '\n\t min:', topk_scores.min().item(), '\n\t max:', topk_scores.max().item(), '\n\t max/min:', (topk_scores.max()/topk_scores.min()).item() )
+
+        # === Set weights (table) ===
+        # Prints exponential moving average statistics of valid neurons and latest weights
+        columns = [_[:] for _ in neuron_stats_columns]  # clone neuron_stats_columns
+        rows = []
+        unvalidated = []  # unsuccessful neurons that still receive a weighting
+        for i in range(len(topk_uids)):
+            _weight = topk_scores[i].item()
+            _uid = topk_uids[i].item()
+            if _uid in self.server_stats:
+                _stats = {k: v for k, v in self.server_stats[_uid].items()}
+                _stats['weight'] = _weight  # add weight entry into _stats dictionary
+                rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
+            else:
+                unvalidated += [_uid]
+
+        sort_col = [_[0] for _ in columns].index('Weight')  # sort column with key of weight
+        columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
+        rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
+
+        table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
+        table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
+                      f'\[{self.dendrite.receptor_pool.external_ip}] ' \
+                      f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+                      f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+        table.caption = f'Validated [bold]{(n_topk_peer_weights - len(unvalidated))}[/bold]' \
+                        f'/{n_topk_peer_weights}/{self.metagraph.n} (valid/min/total) | ' \
+                        f'sum:{topk_scores.sum().item():.2g} ' \
+                        f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
+                        f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
+                        f'\[{topk_scores.max().item() / topk_scores.min().item():.1f}:1] ' \
+                        f'({max_allowed_ratio} allowed)'
+
+        for col, _, _, stl in columns:
+            table.add_column(col, style=stl, justify='right')
+        for row in rows:
+            table.add_row(*row)
+
+        print(table)
+        print(f'Unvalidated \t| [dim]\[weight={topk_scores.min().item():.4g}][/dim]: {unvalidated}')
+        print()
+
         self.subtensor.set_weights(
             uids = topk_uids.detach().to('cpu'),
             weights = topk_scores.detach().to('cpu'),
@@ -422,6 +570,8 @@ class nucleus( torch.nn.Module ):
         self.config = config
         self.device = device
         self.max_n = subtensor.max_n 
+        tokenizer = bittensor.tokenizer()
+        self.pad_token = tokenizer(tokenizer.pad_token)['input_ids'][0]
 
         # Token embeddings project int64 tokens onto representations.
         self.token_embedding = torch.nn.Embedding( bittensor.__vocab_size__,  bittensor.__network_dim__ )
@@ -528,8 +678,12 @@ class nucleus( torch.nn.Module ):
                 scores (torch.FloatTensor, [ metagraph.n ]):
                     Scores per endpoint for this batch.
         """
-        inputs_seq = inputs[..., :-1]  # input sequence without last token [batch_size, sequence_len]
-        inputs_val = inputs[..., -1]  # input validation with last token [batch_size]
+        start_time = time.time()
+        batch_size, sequence_len = inputs.shape
+        print(f'Forward \t| Model forward ... ', end='')
+        non_eos_indices = torch.cat([ (i != self.pad_token).nonzero()[-1] for i in inputs ]).reshape(len(inputs),1)
+        inputs_seq = inputs[..., :-1]  # input sequence without last token [batch_size, sequence_len-1]
+        inputs_val = inputs.gather(1, non_eos_indices).flatten()  # input validation with last token [batch_size]
 
         # === Create the local context used to select endpoints ===
         # The context tensor returns a hidden unit representation for the text inputs
@@ -569,6 +723,10 @@ class nucleus( torch.nn.Module ):
         # Ensure number of queried servers does not exceed metagraph.n
         num_servers = min([self.config.nucleus.topk, metagraph.n])
 
+        print(f'complete \[{time.time() - start_time:.3g}s]')
+        print(f'Dendrite \t| Request {num_servers} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ... ', end='')
+        request_start_time = time.time()
+
         # === Randomly select num_servers UIDs ===
         random_uids = torch.randperm(metagraph.n)[:num_servers]
 
@@ -598,6 +756,11 @@ class nucleus( torch.nn.Module ):
             synapses=synapses,
             timeout=100
         )
+
+        print(f'complete \[{time.time() - request_start_time:.3g}s]')
+        print(f'Shapley values \t| Calculating ... ', end='')
+        shapley_start_time = time.time()
+
         # Send responses to device. This is required to ensure we move the responses
         # Onto the correct device.
         for responses in query_responses:
@@ -622,59 +785,67 @@ class nucleus( torch.nn.Module ):
         for index in range(num_servers):
             _uid = random_uids[index]
             if return_ops[index][index_s] == bittensor.proto.ReturnCode.Success:
-                _stats = {'uid': _uid, 'routing_score': routing_score[_uid].detach()}
+                _stats = {'uid': _uid.item(),
+                          'response_time': times[index][index_s],
+                          'routing_score': routing_score[_uid]}
+                
+                _stats.update({'logits': query_responses[index][index_s],
+                               'logits_val': torch.cat([ res[idx-1] for res, idx in zip (query_responses[index][index_s], non_eos_indices)])})
 
-                with torch.no_grad():
-                    _stats.update({'logits': query_responses[index][index_s],
-                                   'logits_val': query_responses[index][index_s][:, -1:, :]})
+                for target, ext in [(inputs_seq, ''), (inputs_val, '_val')]:
+                    _loss = self.get_target_loss_casuallm(_stats['logits' + ext], target, eval_type = ext)  # CausalLM loss
+                    _num_params = get_num_params(_loss)  # estimate the effective number of model parameters
 
-                    for target, ext in [(inputs_seq, ''), (inputs_val, '_val')]:
-                        _loss = self.get_target_loss_casuallm(_stats['logits' + ext], target, eval_type = ext)  # CausalLM loss
-                        _num_params = get_num_params(_loss)  # estimate the effective number of model parameters
-
-                        _stats.update({'loss' + ext: _loss.item(), 'base_params' + ext: _num_params.item(),
-                                       'synergy' + ext: 0, 'synergy_loss_diff' + ext: 0})
+                    _stats.update({'loss' + ext: _loss, 'base_params' + ext: _num_params,
+                                   'synergy' + ext: 0, 'synergy_loss_diff' + ext: 0})
 
                 # === Add routing loss ===
                 # MSE loss between predicted routing score and ideal target routing score.
                 # The Bayes risk approx. 1.69, i.e. the minimal loss achievable for next-token
                 # prediction on the full distribution 𝑃, a.k.a the "entropy of natural text"
                 # Hoffmann, Jordan, et al. "Training Compute-Optimal Large Language Models." arXiv:2203.15556 (2022).
-                routing_score_target = torch.exp(-torch.clamp(_loss - 1.69, 0))
+                routing_score_target = torch.exp(-torch.clamp(_stats['loss'] - 1.69, 0))
                 _routing_loss = (routing_score[_uid] - routing_score_target) ** 2  # MSE loss
                 routing_loss += _routing_loss
-                _stats.update({'routing_score_target': routing_score_target.detach(), 'routing_loss': _routing_loss.item()})
+                _stats.update({'routing_score_target': routing_score_target, 'routing_loss': _routing_loss})
                 stats += [_stats]
             else:
-                unsuccessful += [(_uid, return_ops[index][index_s])]
-
-        print('Unsuccessful UID[return_op]: ', end='')
-        for _uid, _return_op in unsuccessful:
-            print('{}[{}], '.format(_uid, _return_op), end='')
-        print()
+                unsuccessful += [(_uid, return_ops[index][index_s], times[index][index_s])]
 
         # === Shapley synergy approximation ===
         # Shapley values - second level - coalition size 2
         # Synergy = measured performance above expected performance
         # Measured in effective number of model parameters, just like base Shapley values.
-        for _first in range(len(stats) - 1):
+        syn_loss_diff = {}  # expected_loss - measured_loss (where > 0)
+        for _first in range(len(stats)):
             first = stats[_first]
+            first_diff = syn_loss_diff.setdefault(first['uid'], {})
+            first_diff[first['uid']] = torch.min(first['loss'], first['loss_val'])  # diagonal keeps best direct loss
+
             for _second in range(_first + 1, len(stats)):
                 second = stats[_second]
+                second_diff = syn_loss_diff.setdefault(second['uid'], {})
+                second_diff.setdefault(first['uid'], torch.tensor(0.))
+                first_diff.setdefault(second['uid'], torch.tensor(0.))
+
                 with torch.no_grad():
                     for target, ext in [(inputs_seq, ''), (inputs_val, '_val')]:
-                        expected_loss = (first['loss' + ext] + second['loss' + ext]) / 2  # expecting mean loss
+                        expected_loss = torch.min(first['loss' + ext], second['loss' + ext])  # expecting min loss
                         combined_logits = (first['logits' + ext] + second['logits' + ext]) / 2  # combined logits
                         measured_loss = self.get_target_loss_casuallm(combined_logits, target, eval_type=ext)  # actual loss
 
                         loss_diff_share = torch.clamp(expected_loss - measured_loss, 0) / 2  # record direct loss diff
-                        first['synergy_loss_diff' + ext] += loss_diff_share.item()
-                        second['synergy_loss_diff' + ext] += loss_diff_share.item()
+                        first['synergy_loss_diff' + ext] += loss_diff_share
+                        second['synergy_loss_diff' + ext] += loss_diff_share
+
+                        # pairwise loss reduction of expected and measured loss due to synergy between first and second
+                        first_diff[second['uid']] = torch.max(loss_diff_share, first_diff[second['uid']])
+                        second_diff[first['uid']] = torch.max(loss_diff_share, second_diff[first['uid']])
 
                         synergy_share = torch.clamp(get_num_params(measured_loss) -
-                                                    get_num_params(torch.tensor(expected_loss)), 0) / 2
-                        first['synergy' + ext] += synergy_share.item()  # share synergy amongst coalition members
-                        second['synergy' + ext] += synergy_share.item()
+                                                    get_num_params(expected_loss), 0) / 2
+                        first['synergy' + ext] += synergy_share  # share synergy amongst coalition members
+                        second['synergy' + ext] += synergy_share
 
         # === Shapley value combination ===
         # Combine base values with synergy approximation to get final Shapley values.
@@ -683,9 +854,61 @@ class nucleus( torch.nn.Module ):
                 s['shapley_values' + ext] = (s['base_params' + ext] + s['synergy' + ext])
                 del s['logits' + ext]  # remove logits - not needed for stats anymore
 
-            output = 'Shapely\t|\tuid: {}'.format(s['uid'])
-            for key in ['routing_loss', 'loss', 'loss_val', 'base_params', 'synergy_loss_diff', 'shapley_values_val']:
-                output += '\t{}: {:.3f}'.format(key, s[key])
+            # use minimum of sequence/validation Shapley values, for added adversarial resilience
+            s['shapley_values_min'] = torch.min(s['shapley_values'], s['shapley_values_val'])
 
-            print(output)
+            for key in s:
+                if hasattr(s[key], 'item'):
+                    s[key] = s[key].item()
+
+        print(f'complete \[{time.time() - shapley_start_time:.3g}s]')
+
+        # === Synergy table ===
+        # Prints the synergy loss diff matrix with pairwise loss reduction due to synergy (original loss on diagonal)
+        sort = sorted([(s['uid'], s['shapley_values_min']) for s in stats], reverse=True, key=lambda _row: _row[1])
+        uid_col = neuron_stats_columns[0]  # [Column_name, key_name, format_string, rich_style]
+        columns = [uid_col] + [[f'{s[0]}', '', '{:.2f}', ''] for s in sort]
+        rows = [[uid_col[2].format(s[0])] +
+                [('[bright_cyan]{:.2f}[/bright_cyan]' if t == s else
+                  '[magenta]{:.2f}[/magenta]' if syn_loss_diff[s[0]][t[0]] > 0 else
+                  '[dim]{:.0f}[/dim]').format(syn_loss_diff[s[0]][t[0]]) for t in sort] for s in sort]
+
+        table = Table(width=self.config.get('width', None), box=None)
+        table.title = f'[white] Synergy [/white]'
+        table.caption = f'loss decrease'
+        for col, _, _, stl in columns:
+            table.add_column(col, style=stl, justify='right')
+        for row in rows:
+            table.add_row(*row)
+
+        if len(rows):
+            print(table)
+            print()
+
+        # === Neuron responses (table) ===
+        # Prints the evaluation of the neuron responses to the validator request
+        columns = [_[:] for _ in neuron_stats_columns if _[0] not in ['Upd', 'Weight']]
+        sort_col = [_[0] for _ in columns].index('mShap')  # sort column with key of shapley_values_min
+        columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
+        rows = [[txt.format(s[key]) for _, key, txt, _ in columns] for s in stats]
+        rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_col]))  # sort according to mShap column
+
+        table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
+        table.title = f'[white] Neuron responses [/white] | Validator forward'
+        table.caption = f'[bold]{num_servers}[/bold]/{metagraph.n} (topk/total) | [bold]TextCausalLM[/bold] | ' \
+                        f'[white] {len(stats)} x \[{batch_size}, {sequence_len - 1}, {bittensor.__network_dim__}] ' \
+                        f'\[{time.time() - start_time:.3g}s] [/white]'
+
+        for col, _, _, stl in columns:
+            table.add_column(col, style=stl, justify='right')
+        for row in rows:
+            table.add_row(*row)
+
+        print(table)
+
+        unsuccess_txt = f'Unsuccessful \t| [cyan]UID[/cyan]\[[red]return_op[/red] [yellow]time[/yellow]]: '
+        for _uid, _return_op, _time in unsuccessful:
+            unsuccess_txt += f'{_uid}[[red]{_return_op}[/red] [yellow not bold]{_time:.2f}[/yellow not bold]] '
+        print(unsuccess_txt)
+
         return routing_loss, stats
