@@ -758,7 +758,7 @@ class nucleus( torch.nn.Module ):
             synapses=[syn for syn, _ in synapses],
             timeout=100
         )
-        print('query_responses:', len(query_responses), len(len(query_responses)), query_responses)
+        print('query_responses:', len(query_responses), query_responses)
         print('return_ops', len(return_ops), return_ops)
         print('times', len(times), times)
 
