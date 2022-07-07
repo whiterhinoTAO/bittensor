@@ -370,7 +370,7 @@ class neuron:
                             f'Epoch {self.epoch} | ' \
                             f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]'
 
-            for col, _, _, stl in columns:
+            for col, _, _, stl in columns:  # [Column_name, key_name, format_string, rich_style]
                 table.add_column(col, style=stl, justify='right')
             for row in rows:
                 table.add_row(*row)
@@ -741,8 +741,8 @@ class nucleus( torch.nn.Module ):
         # The synapse defines the task we are sending to the neurons
         # synapses: List[bittensor.synapse]: synapse information 
         # TODO: WORK IN PROGRESS, prototype
-        synapses = [(bittensor.synapse.TextCausalLM(), textcausallm), ]
-                    # (bittensor.synapse.TextCausalLMNext(), textcausallmnext)]
+        synapses = [(bittensor.synapse.TextCausalLM(), textcausallm),
+                    (bittensor.synapse.TextCausalLMNext(), textcausallmnext)]
 
         # === Query the endpoints ===
         # Makes the dendrite call into the network returning the representations 
@@ -760,7 +760,7 @@ class nucleus( torch.nn.Module ):
         )
 
         if not self.config.nucleus.dendrite_backward:
-            query_responses = [[res.detach() for res in syn] for syn in query_responses]
+            query_responses = [[syn.detach() for syn in res] for res in query_responses]
             return_ops = [ops.detach() for ops in return_ops]
             times = [t.detach() for t in times]
 
