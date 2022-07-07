@@ -758,7 +758,10 @@ class nucleus( torch.nn.Module ):
             synapses=[syn for syn, _ in synapses],
             timeout=100
         )
-        print('query_responses.shape, return_ops.shape, times.shape:', query_responses.shape, return_ops.shape, times.shape)
+        print('query_responses:', len(query_responses), len(len(query_responses)), query_responses)
+        print('return_ops', len(return_ops), return_ops)
+        print('times', len(times), times)
+
         if not self.config.nucleus.dendrite_backward:
             query_responses = [[res.detach() for res in syn] for syn in query_responses]
             return_ops = [ops.detach() for ops in return_ops]
