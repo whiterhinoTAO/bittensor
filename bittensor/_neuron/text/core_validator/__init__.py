@@ -960,7 +960,7 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
     # === Neuron responses (table) ===
     # Prints the evaluation of the neuron responses to the validator request
     columns = [c[:] for c in neuron_stats_columns if c[0] not in ['Upd', 'Weight'] and c[0][0] != 'n']  # excl. nxt cols
-    synapse_table(synapse_name, stats, columns, 'nShap', batch_size, sequence_len,
+    synapse_table(synapse_name, stats, columns, 'mShap', batch_size, sequence_len,
                   num_endpoints, metagraph_n, console_width, shapley_start_time)
 
     # === Unsuccessful responses ===
