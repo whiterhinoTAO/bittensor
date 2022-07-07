@@ -741,8 +741,8 @@ class nucleus( torch.nn.Module ):
         # The synapse defines the task we are sending to the neurons
         # synapses: List[bittensor.synapse]: synapse information 
         # TODO: WORK IN PROGRESS, prototype
-        synapses = [(bittensor.synapse.TextCausalLM(), textcausallm),
-                    (bittensor.synapse.TextCausalLMNext(), textcausallmnext)]
+        synapses = [(bittensor.synapse.TextCausalLM(), textcausallm), ]
+                    # (bittensor.synapse.TextCausalLMNext(), textcausallmnext)]
 
         # === Query the endpoints ===
         # Makes the dendrite call into the network returning the representations 
