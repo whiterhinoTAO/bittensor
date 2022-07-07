@@ -758,9 +758,6 @@ class nucleus( torch.nn.Module ):
             synapses=[syn for syn, _ in synapses],
             timeout=100
         )
-        print('query_responses:', len(query_responses), query_responses)
-        print('return_ops', len(return_ops), return_ops)
-        print('times', len(times), times)
 
         if not self.config.nucleus.dendrite_backward:
             query_responses = [[res.detach() for res in syn] for syn in query_responses]
@@ -785,7 +782,7 @@ class nucleus( torch.nn.Module ):
 
         # === Validate synapse responses ===
         # Iterate over all queried synapses and validate responses
-        for i, synapse, validate_func in enumerate(synapses):
+        for i, (synapse, validate_func) in enumerate(synapses):
             _loss, _stats = validate_func(*validation_params, synapse=synapse, index_s=i)  # validate individual synapse
             loss += _loss  # add neuron_loss and routing_loss
             for s in _stats:
