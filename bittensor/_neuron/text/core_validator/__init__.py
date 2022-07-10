@@ -38,9 +38,9 @@ from rich.console import Console
 from rich.style import Style
 from rich.table import Table
 from rich.traceback import install
-from typing import List, Tuple, Callable
+from typing import List, Tuple, Callable, Dict
 
-from ..neuron_utilities import ThreadQueue
+from ..neuron_utilities import *
 from bittensor.utils.tokenizer_utils import unravel_topk_token_phrases, phrase_cross_entropy
 
 import torch.nn as nn
@@ -59,11 +59,13 @@ install(show_locals=True)
 #   [Column_name, key_name, format_string, rich_style]  # description
 neuron_stats_columns = [
     ['UID', 'uid', '{:.0f}', 'cyan'],  # neuron UID
+    ['Upd!', 'updates!', '{}', 'bright_yellow'],  # number of exponential moving average updates with zeroing on
     ['Upd', 'updates', '{}', 'bright_yellow'],  # number of exponential moving average updates
     ['sTime', 'response_time', '{:.2f}', 'yellow'],  # response time to TextCausalLM forward requests
     ['nTime', 'response_time_nxt', '{:.2f}', 'yellow'],  # response time to TextCausalLMNext forward requests
     ['Route', 'routing_score', '{:.3f}', 'grey30'],  # validator routing score (higher preferred)
     ['Weight', 'weight', '{:.5f}', 'green'],  # weight set on substrate (each epoch)
+    ['mShap!', 'shapley_values_min!', '{:.0f}', 'bright_magenta'],  # min(Shap, vShap) of sequence and validation Shapley (zeroing)
     ['mShap', 'shapley_values_min', '{:.0f}', 'bright_magenta'],  # min(Shap, vShap) of sequence and validation Shapley
     ['sLoss', 'loss', '{:.2f}', 'bright_cyan'],  # next token prediction loss average over sequence
     ['vLoss', 'loss_val', '{:.2f}', 'bright_cyan'],  # next token prediction loss for validation task
@@ -72,6 +74,7 @@ neuron_stats_columns = [
     ['nRLoss', 'routing_loss_nxt', '{:.3f}', 'grey30'],  # MSE between routing_score_nxt and conditioned loss
     ['sShap', 'shapley_values', '{:.0f}', 'magenta'],  # Shapley value (=Base+Syn) over sequence
     ['vShap', 'shapley_values_val', '{:.0f}', 'magenta'],  # Shapley value (=vBase+vSyn) for validation
+    ['nShap!', 'shapley_values_nxt!', '{:.0f}', 'magenta'],  # Shapley value (=vBase+vSyn) for phrase validation (zeroing)
     ['nShap', 'shapley_values_nxt', '{:.0f}', 'magenta'],  # Shapley value (=vBase+vSyn) for phrase validation
     ['sBase', 'base_params', '{:.0f}', ''],  # parameter count estimate via adjusted scaling law
     ['vBase', 'base_params_val', '{:.0f}', ''],  # parameter count estimate for validation task
@@ -155,6 +158,11 @@ class neuron:
         self.forward_thread_queue = ThreadQueue(num_jobs = self.config.neuron.forward_num, target = self.forward)
         self.loss = None
         self.loss_agg_mutex = Lock()
+
+        self.alpha = 0.05  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
+        self.weight_key = 'shapley_values_min'  # stat key to calculate neuron weights with
+        # stat keys to duplicate (['key']->['key!']) and push zero to its EMA if neuron non-responsive
+        self.zeroing_keys = ['shapley_values_min', 'shapley_values_nxt']
         self.neuron_stats = {}
 
     @classmethod
@@ -203,7 +211,15 @@ class neuron:
         bittensor.dataset.add_args( parser )
         bittensor.wandb.add_args(parser)
         return bittensor.config( parser )
-    
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def __str__(self) -> str:
+        return f'[bold]UID {self.uid}[/bold] \[{self.dendrite.receptor_pool.external_ip}] ' \
+               f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
+               f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
+
     def __del__(self):
         self.__exit__()
 
@@ -334,16 +350,9 @@ class neuron:
             # and endpoint scores using shapely approximation of salience.
             loss, stats = self.forward_thread_queue.get()
 
-            # === Scoring ===
+            # === Stats update ===
             # Updates moving averages and history.
-            for s in stats.values():
-                history = self.neuron_stats.setdefault(s['uid'], s)
-                history.setdefault('updates', 0)  # add updates fields for new uid entries
-                history['updates'] += 1  # increase number of updates made
-                sum_ratio = 1. / min(20, history['updates'])  # moving average window size of 20 max
-                for key in s:  # detailed neuron evaluation fields, e.g. loss, shapley_values, synergy
-                    if key not in ['updates']:
-                        history[key] = (1 - sum_ratio) * history[key] + sum_ratio * s[key]  # update EMA
+            self.neuron_stats_update(stats)
 
             # === State update ===
             # Prints step logs to screen.
@@ -352,88 +361,24 @@ class neuron:
             current_block = self.subtensor.block
             step_time = time.time() - start_time
 
-            # === Stats update (table) ===
-            # Prints exponential moving average statistics of valid neurons from latest validator forward
-            columns = [_[:] for _ in neuron_stats_columns if _[0] not in ['Weight']]
-            sort_col = [_[0] for _ in columns].index('mShap')  # sort column with key of shapley_values_min
-            columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
-            rows = [[txt.format(self.neuron_stats[s['uid']][key]) for _, key, txt, _ in columns] for s in stats.items()]
-            rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_col]))  # sort according to mShap column
-
-            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ''])
-            table.title = f'[white] Stats update [/white] | [bold]UID {self.uid}[/bold] ' \
-                          f'\[{self.dendrite.receptor_pool.external_ip}] ' \
-                          f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
-                          f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-            table.caption = f'#{current_block}: ' \
-                            f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | ' \
-                            f'Epoch {self.epoch} | ' \
-                            f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]'
-
-            for col, _, _, stl in columns:
-                table.add_column(col, style=stl, justify='right')
-            for row in rows:
-                table.add_row(*row)
-
             print(f'UID {self.uid}   \t| '
                   f'Updated {current_block - self.metagraph.last_update[self.uid]} [white]blocks ago[/white] | '
                   f'Dividends {self.metagraph.dividends[self.uid]:.5f} | '
                   f'Stake \u03C4{self.metagraph.stake[self.uid]:.5f} '
                   f'[dim](retrieved {current_block - start_block} blocks ago from {self.subtensor.network})[/dim]')
-            print(table)
-            print()
 
-            # === Set weights ===
-            score_key = 'shapley_values_min'  # neuron score based on Shapley value approximation
-            moving_avg_scores = torch.zeros_like(
-                self.metagraph.S)  # allow unevaluated UIDs to be selected to meet min topk
+            # === Print stats update (table) ===
+            # Prints exponential moving average statistics of valid neurons from latest validator forward
+            stats_table({uid: self.neuron_stats[uid] for uid in stats}, self.weight_key, self.config.width,
+                        f'[white] Stats update [/white] | ' + str(self),
+                        f'#{current_block}: '
+                        f'[bold]{current_block - start_block}[/bold]/{blocks_per_epoch} (blocks/epoch) | '
+                        f'Epoch {self.epoch} | '
+                        f'[white] Step {epoch_steps} ({self.global_step} global) \[{step_time:.3g}s] [/white]')
 
-            for key in self.neuron_stats:
-                moving_avg_scores[key] = torch.tensor([self.neuron_stats[key][score_key]])
-            # Find the n_topk_peer_weights peers to set weights to.
-            topk_scores, topk_uids = bittensor.unbiased_topk(moving_avg_scores, k=n_topk_peer_weights)
-            topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
-
-            # === Set weights (table) ===
-            # Prints exponential moving average statistics of valid neurons and latest weights
-            columns = [_[:] for _ in neuron_stats_columns]  # clone neuron_stats_columns
-            rows = []
-            unvalidated = []  # unsuccessful neurons that still receive a weighting
-            for i in range(len(topk_uids)):
-                _weight = topk_scores[i].item()
-                _uid = topk_uids[i].item()
-                if _uid in self.neuron_stats:
-                    _stats = {k: v for k, v in self.neuron_stats[_uid].items()}
-                    _stats['weight'] = _weight  # add weight entry into _stats dictionary
-                    rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
-                else:
-                    unvalidated += [_uid]
-
-            sort_col = [_[0] for _ in columns].index('Weight')  # sort column with key of weight
-            columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
-            rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
-
-            table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
-            table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
-                          f'\[{self.dendrite.receptor_pool.external_ip}] ' \
-                          f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
-                          f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-            table.caption = f'Validated [bold]{(n_topk_peer_weights - len(unvalidated))}[/bold]' \
-                            f'/{n_topk_peer_weights}/{self.metagraph.n} (valid/min/total) | ' \
-                            f'sum:{topk_scores.sum().item():.2g} ' \
-                            f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
-                            f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
-                            f'\[{topk_scores.max().item() / topk_scores.min().item():.1f}:1] ' \
-                            f'({max_allowed_ratio} allowed)'
-
-            for col, _, _, stl in columns:
-                table.add_column(col, style=stl, justify='right')
-            for row in rows:
-                table.add_row(*row)
-
-            print(table)
-            print(f'Unvalidated \t| [dim]\[weight={topk_scores.min().item():.4g}][/dim]: {unvalidated}')
-            print()
+            # === Calculate neuron weights ===
+            topk_uids, topk_weights = self.calculate_weights()
+            self.weights_table(topk_uids, topk_weights)  # print weights table
 
             # === Logs ===
             if self.config.using_wandb:
@@ -462,60 +407,13 @@ class neuron:
         # Iterate epochs.
         self.epoch += 1
 
-        # === Set weights ===
-        score_key = 'shapley_values_min'  # neuron score based on Shapley value approximation
-        moving_avg_scores = torch.zeros_like(self.metagraph.S)  # allow unevaluated UIDs to be selected to meet min topk
-
-        for key in self.neuron_stats:
-            moving_avg_scores[key] = torch.tensor([self.neuron_stats[key][score_key]])
-        # Find the n_topk_peer_weights peers to set weights to.
-        topk_scores, topk_uids = bittensor.unbiased_topk(moving_avg_scores, k=n_topk_peer_weights)
-        topk_scores = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_scores, multiple=max_allowed_ratio)
-
-        # === Set weights (table) ===
-        # Prints exponential moving average statistics of valid neurons and latest weights
-        columns = [_[:] for _ in neuron_stats_columns]  # clone neuron_stats_columns
-        rows = []
-        unvalidated = []  # unsuccessful neurons that still receive a weighting
-        for i in range(len(topk_uids)):
-            _weight = topk_scores[i].item()
-            _uid = topk_uids[i].item()
-            if _uid in self.neuron_stats:
-                _stats = {k: v for k, v in self.neuron_stats[_uid].items()}
-                _stats['weight'] = _weight  # add weight entry into _stats dictionary
-                rows += [[txt.format(_stats[key]) for _, key, txt, _ in columns]]
-            else:
-                unvalidated += [_uid]
-
-        sort_col = [_[0] for _ in columns].index('Weight')  # sort column with key of weight
-        columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
-        rows = sorted(rows, reverse=True, key=lambda _row: float(_row[sort_col]))  # sort according to weights
-
-        table = Table(width=self.config.get('width', None), box=None, row_styles=[Style(bgcolor='grey15'), ""])
-        table.title = f'[white] Set weights [/white] | [bold]UID {self.uid}[/bold] ' \
-                      f'\[{self.dendrite.receptor_pool.external_ip}] ' \
-                      f'({self.wallet.name}:[bold]{self.wallet.coldkeypub.ss58_address[:7]}[/bold]/' \
-                      f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])'
-        table.caption = f'Validated [bold]{(n_topk_peer_weights - len(unvalidated))}[/bold]' \
-                        f'/{n_topk_peer_weights}/{self.metagraph.n} (valid/min/total) | ' \
-                        f'sum:{topk_scores.sum().item():.2g} ' \
-                        f'[white] max:[bold]{topk_scores.max().item():.4g}[/bold] / ' \
-                        f'min:[bold]{topk_scores.min().item():.4g}[/bold] [/white] ' \
-                        f'\[{topk_scores.max().item() / topk_scores.min().item():.1f}:1] ' \
-                        f'({max_allowed_ratio} allowed)'
-
-        for col, _, _, stl in columns:
-            table.add_column(col, style=stl, justify='right')
-        for row in rows:
-            table.add_row(*row)
-
-        print(table)
-        print(f'Unvalidated \t| [dim]\[weight={topk_scores.min().item():.4g}][/dim]: {unvalidated}')
-        print()
+        # === Calculate neuron weights ===
+        topk_uids, topk_weights = self.calculate_weights()
+        self.weights_table(topk_uids, topk_weights)  # print weights table
 
         self.subtensor.set_weights(
             uids = topk_uids.detach().to('cpu'),
-            weights = topk_scores.detach().to('cpu'),
+            weights = topk_weights.detach().to('cpu'),
             wallet = self.wallet,
             wait_for_finalization = self.config.neuron.wait_for_finalization,
         )
@@ -545,39 +443,87 @@ class neuron:
                 if uid in self.neuron_stats:
                     del self.neuron_stats[uid]
 
-
-class PositionalEncoding(nn.Module):
-    r""" Positional Encoder which adds information based on the relative position of each token
-    
-    """
-    def __init__(self, d_model: int, dropout: float, max_len: int = 5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-
-        # === Create position matrix ===
-        # Creates a positional matrix with alternating frequencies 
-        # pe: (torch.FloatTensor) positional encoding matrix
-        # pe.shape: [1, max_len, network_dim]
-        pe = torch.zeros(1, max_len, d_model)
-        pe[0, :, 0::2] = torch.sin(position * div_term)
-        pe[0, : , 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x: torch.tensor) -> torch.tensor:
+    def neuron_stats_update(self, neuron_stats: Dict[Dict]):
+        r""" Updates self.neuron_stats with new individual dictionaries per uid.
         """
-        Args:
-            x: Tensor, shape [batch_size, seq_len, embedding_dim]
-        """
-        # === Positional Encoding ===
-        # Inject some information of the relative position of the token in the sequence.
-        #  Finally, Dropout is applied to tokens
-        # x: (torch.FloatTensor) input sequence tokens with position information injected
-        # x.shape: [batch_size, seq_len, network_dim]
-        x = x + self.pe[0, :x.size(1)]
-        return self.dropout(x)
+        for _uid, _stats in neuron_stats.items():
+            stats = self.neuron_stats.setdefault(_uid, {})
+
+            # === EMA zeroing update ===
+            # Push zero into EMA for zeroing_keys to exponentially decay weighting keys if neuron non-responsive
+            if 'updates!' in stats:
+                stats['updates!'] += 1  # increment number of EMA zeroing updates
+            else:
+                stats.setdefault('updates!', 0)  # number of EMA zeroing updates init to zero
+
+            for key in self.zeroing_keys:
+                if key in stats:
+                    if key in _stats:
+                        stats[key + '!'] = (1 - self.alpha) * stats[key + '!'] + self.alpha * _stats[key + '!']
+                    else:
+                        stats[key + '!'] = (1 - self.alpha) * stats[key + '!']  # + self.alpha * 0
+                else:
+                    stats.setdefault(key + '!', 0.)
+
+            # === EMA normal update ===
+            # If synapse responsive push available values into EMA for normal update.
+            # Normal EMA values provide a view on neuron performance if fully responsive.
+            if len(_stats):
+                if 'updates' in stats:
+                    stats['updates'] += 1  # increment number of normal EMA updates made
+                else:
+                    stats.setdefault('updates', 0)  # add updates fields for new uid entries
+
+                for key in _stats:  # detailed neuron evaluation fields, e.g. loss, shapley_values, synergy
+                    if key in stats:
+                        stats[key] = (1 - self.alpha) * stats[key] + self.alpha * _stats[key]  # update EMA
+                    else:
+                        stats.setdefault(key, _stats[key])
+
+    def calculate_weights(self):
+        weight_key = self.weight_key + '!'  # use zeroing key to penalize non-responsive neurons
+        n_topk_peer_weights = self.subtensor.min_allowed_weights
+        max_allowed_ratio = self.subtensor.max_allowed_min_max_ratio
+
+        # === Calculate neuron weights ===
+        neuron_weights = torch.zeros_like(
+            self.metagraph.S)  # allow unevaluated UIDs to be selected to meet min topk
+
+        for uid in self.neuron_stats:
+            if weight_key in self.neuron_stats[uid]:
+                neuron_weights[uid] = torch.tensor([self.neuron_stats[uid][weight_key]])
+
+        # Find the n_topk_peer_weights peers to set weights to.
+        topk_weights, topk_uids = bittensor.unbiased_topk(neuron_weights, k=n_topk_peer_weights)
+        topk_weights = bittensor.utils.weight_utils.normalize_max_multiple(x=topk_weights,
+                                                                           multiple=max_allowed_ratio)
+
+        return topk_uids, topk_weights
+
+    def weights_table(self, topk_uids, topk_weights):
+        n_topk_peer_weights = self.subtensor.min_allowed_weights
+        max_allowed_ratio = self.subtensor.max_allowed_min_max_ratio
+
+        # === Weight table ===
+        # Prints exponential moving average statistics of valid neurons and latest weights
+        _neuron_stats = {}
+        unvalidated = []
+        for uid, weight in zip(topk_uids.tolist(), topk_weights.tolist()):
+            if uid in self.neuron_stats:
+                _neuron_stats[uid] = {k: v for k, v in self.neuron_stats[uid].items()}
+                _neuron_stats[uid]['weight'] = weight
+            else:
+                unvalidated += [uid]
+
+        stats_table(_neuron_stats, 'weight', self.config.width,
+                    f'[white] Set weights [/white] | ' + str(self),
+                    f'Validated [bold]{(n_topk_peer_weights - len(unvalidated))}[/bold]'
+                    f'/{n_topk_peer_weights}/{self.metagraph.n} (valid/min/total) | '
+                    f'sum:{topk_weights.sum().item():.2g} '
+                    f'[white] max:[bold]{topk_weights.max().item():.4g}[/bold] / '
+                    f'min:[bold]{topk_weights.min().item():.4g}[/bold] [/white] '
+                    f'\[{topk_weights.max().item() / topk_weights.min().item():.1f}:1] '
+                    f'({max_allowed_ratio} allowed)')
 
 
 class nucleus( torch.nn.Module ):
@@ -673,18 +619,14 @@ class nucleus( torch.nn.Module ):
             Returns:
                 loss (:obj:`torch.FloatTensor`):
                     Loss for training validator nucleus and dendrite backward to endpoints.
-                stats (:obj:`Dict`, `required`):
+                neuron_stats (:obj:`Dict`, `required`):
                     Statistics per endpoint for this batch.
         """
         start_time = time.time()
         print(f'Forward \t| Model forward ... ', end='')
 
         val_len = self.config.neuron.validation_len  # Number of tokens to holdout for phrase validation beyond sequence context
-        inputs_seq = inputs[..., :-val_len]  # input sequence without last token [batch_size, sequence_len]
-        inputs_val = inputs[..., -val_len]  # input validation with next token [batch_size]
-        inputs_nxt = inputs[..., -val_len:]  # input validation with next token target phrase [batch_size, val_len]
-
-        batch_size, sequence_len = inputs_seq.shape
+        inputs_seq = inputs[..., :-val_len]  # input sequence without last validation tokens [batch_size, sequence_len]
 
         # === Create the local context used to select endpoints ===
         # The context tensor returns a hidden unit representation for the text inputs
@@ -725,7 +667,7 @@ class nucleus( torch.nn.Module ):
         num_endpoints = min([self.config.nucleus.topk, metagraph.n])
 
         print(f'complete \[{time.time() - start_time:.3g}s]')
-        print(f'Dendrite \t| Request {num_endpoints} x \[{batch_size}, {sequence_len}, {bittensor.__network_dim__}] ... ', end='')
+        print(f'Dendrite \t| Request {num_endpoints} x {list(inputs_seq.shape)}] ... ', end='')
         request_start_time = time.time()
 
         # === Randomly select num_endpoints UIDs ===
@@ -775,30 +717,22 @@ class nucleus( torch.nn.Module ):
         # === Prepare validation parameter set ===
         console_width = self.config.get('width', None)  # console width for rich table displays of synapse measures
         validation_params = (random_uids, query_responses, return_ops, times, routing_score,
-                             inputs_seq, inputs_val, inputs_nxt, self.loss_fct, console_width)
+                             inputs, val_len, self.loss_fct, console_width)
 
         loss = torch.tensor(0.)  # to accumulate neuron_loss and routing_loss over synapses
-        stats = {}  # to gather neuron synapse validation measures and statistics
+        neuron_stats = {}  # to gather neuron synapse validation measures and statistics
 
         # === Validate synapse responses ===
         # Iterate over all queried synapses and validate responses
         for i, synapse, validate_func in enumerate(synapses):
-            _loss, _stats = validate_func(*validation_params, synapse=synapse, index_s=i)  # validate individual synapse
+            _loss, stats = validate_func(*validation_params, synapse=synapse, index_s=i)  # validate individual synapse
             loss += _loss  # add neuron_loss and routing_loss
-            for s in _stats:
-                stats.setdefault(s['uid'], {})
-                stats[s['uid']].update(s)  # gather neuron synapse validation measures and statistics
 
-        return loss, stats
+            for _uid, _stats in stats:
+                neuron_stats.setdefault(_uid, {})
+                neuron_stats[_uid].update(_stats)  # gather neuron synapse validation measures and statistics
 
-
-def calc_loss_fct(loss_fct, logits, labels):
-    r""" Calculates self.loss_fct with logits and labels that are expected to be aligned already.
-    """
-    _logits = logits.contiguous()
-    _labels = labels.contiguous()
-    loss = loss_fct(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
-    return loss
+        return loss, neuron_stats
 
 
 def scaling_law_loss_to_params(loss):
@@ -811,9 +745,9 @@ def scaling_law_loss_to_params(loss):
 
 def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor],
                  times: List[torch.FloatTensor], routing_score: torch.FloatTensor,
-                 inputs_seq: torch.FloatTensor, inputs_val: torch.FloatTensor, inputs_nxt: torch.FloatTensor,
-                 loss_fct: Callable, console_width: int, synapse: 'bittensor.TextCausalLM' = None, index_s: int = 0,
-                 synapse_name: str = 'TextCausalLM') -> Tuple[torch.FloatTensor, List]:
+                 inputs: torch.FloatTensor, validation_len: int, loss_fct: Callable,
+                 console_width: int, synapse: 'bittensor.TextCausalLM' = None, index_s: int = 0
+                 ) -> Tuple[torch.FloatTensor, Dict]:
     r"""
     Calculate Shapley values and neuron response validation measure statistics, given TextCausalLM synapse responses.
         Args:
@@ -828,12 +762,10 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
                 Times per call per synapse.
             routing_score (:obj:`torch.FloatTensor`, `required`):
                 [metagraph.n] Predictive routing score per endpoint in the metagraph, mean over the batch.
-            inputs_seq (:obj:`torch.FloatTensor`, `required`):
-                [batch_size, sequence_len] Token batch of inputs to validate with.
-            inputs_val (:obj:`torch.FloatTensor`, `required`):
-                [batch_size] Held-out token batch for validation, not sent to neurons.
-            inputs_nxt (:obj:`torch.FloatTensor`, `required`):
-                [batch_size, validation_len] Held-out phrase token batch for extended validation, not sent to neurons.
+            inputs (:obj:`torch.FloatTensor`, `required`):
+                [batch_size, sequence_len + validation_len] Token batch of original inputs with validation tokens.
+            validation_len (:obj:`int`, `required`):
+                Number of held-out phrase token batch for extended validation, not sent to neurons.
             loss_fct (:obj:`Callable`, `required`):
                 CrossEntropy loss function to use.
             console_width (:obj:`int`, `required`):
@@ -842,8 +774,6 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
                 TextCausalLM synapse object.
             index_s (:obj:`int`, `optional`):
                 Index of synapse to extract responses.
-            synapse_name (:obj:`str`, `optional`):
-                Name of synapse to display in synapse results.
 
         Returns:
             loss (:obj:`torch.FloatTensor`):
@@ -851,101 +781,52 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
             stats (:obj:`Dict`, `required`):
                 Statistics per endpoint for this batch.
     """
-    print(f'\[{synapse_name}] Shapley values \t| Calculating ... ', end='')
+
+    inputs_seq = inputs[..., :-validation_len]  # input sequence without last token [batch_size, sequence_len]
+    inputs_val = inputs[..., -validation_len]  # input validation with next token [batch_size]
+
+    def _base_params(_stats, query_response):
+        _stats.update({'logits': query_response[:, :-1, :],
+                       'logits_val': query_responses[:, -1:, :]})
+
+        for target, _ext in [(inputs_seq[:, 1:], ''), (inputs_val, '_val')]:
+            _loss = calc_loss_fct(loss_fct, _stats['logits' + _ext], target)  # CausalLM loss
+            _num_params = scaling_law_loss_to_params(_loss)  # estimate the effective number of model parameters
+
+            _stats.update({'loss' + _ext: _loss, 'base_params' + _ext: _num_params,
+                           'synergy' + _ext: 0, 'synergy_loss_diff' + _ext: 0})
+
+    def _synergy(first, second, target, _ext):
+        # Combined logits: log of average probabilities per token between responses
+        combined_logits = torch.log((torch.softmax(first['logits' + _ext], dim=-1) +
+                                     torch.softmax(second['logits' + _ext], dim=-1)) / 2 + 1e-40)
+        measured_loss = calc_loss_fct(loss_fct, combined_logits, target)  # actual measured loss
+
+        return measured_loss
+
+    print(f'\[{str(synapse)}] Shapley values \t| Calculating base ... ', end='')
     shapley_start_time = time.time()
 
-    num_endpoints = len(uids)
-    metagraph_n = len(routing_score)
-    batch_size, sequence_len = inputs_seq.shape
+    loss, stats, unsuccessful = shapley_base(uids, query_responses, return_ops, times, routing_score,
+                                             _base_params, index_s, ext='')
 
-    stats = []
-    unsuccessful = []
-    neuron_loss = torch.tensor(0.)  # neuron losses to accumulate to then backward() via dendrite
-    routing_loss = torch.tensor(0.)  # validator routing loss for local model update
+    print(f'\[{time.time() - shapley_start_time:.3g}s] | synergy ... ', end='')
 
-    # === Base parameter estimation ===
-    # Shapley values - base level - coalition size 1
-    # Collect successful neuron responses, calculate base Shapley values.
-    # Measured in effective number of model parameters, according to OpenAI scaling laws.
-    for index, _uid in enumerate(uids):
-        if return_ops[index][index_s] == bittensor.proto.ReturnCode.Success:
-            _stats = {'uid': _uid.item(),
-                      'response_time': times[index][index_s],
-                      'routing_score': routing_score[_uid]}
-
-            _stats.update({'logits': query_responses[index][index_s][:, :-1, :],
-                           'logits_val': query_responses[index][index_s][:, -1:, :]})
-
-            for target, ext in [(inputs_seq[:, 1:], ''), (inputs_val, '_val')]:
-                _loss = calc_loss_fct(loss_fct, _stats['logits' + ext], target)  # CausalLM loss
-                _num_params = scaling_law_loss_to_params(_loss)  # estimate the effective number of model parameters
-
-                _stats.update({'loss' + ext: _loss, 'base_params' + ext: _num_params,
-                               'synergy' + ext: 0, 'synergy_loss_diff' + ext: 0})
-
-            neuron_loss += _stats['loss']  # add sequence loss to be backward() to neuron
-
-            # === Add routing loss ===
-            # MSE loss between predicted routing score and ideal target routing score.
-            # The Bayes risk approx. 1.69, i.e. the minimal loss achievable for next-token
-            # prediction on the full distribution 𝑃, a.k.a the "entropy of natural text"
-            # Hoffmann, Jordan, et al. "Training Compute-Optimal Large Language Models." arXiv:2203.15556 (2022).
-            routing_score_target = torch.exp(-torch.clamp(_stats['loss'].detach() - 1.69, 0))
-            _routing_loss = (routing_score[_uid] - routing_score_target) ** 2  # MSE loss
-            routing_loss += _routing_loss
-            _stats.update({'routing_score_target': routing_score_target, 'routing_loss': _routing_loss})
-
-            stats += [_stats]
-        else:
-            unsuccessful += [(_uid, return_ops[index][index_s], times[index][index_s])]
-
-    # === Shapley synergy approximation ===
-    # Shapley values - second level - coalition size 2
-    # Synergy = measured performance above expected performance
-    # Measured in effective number of model parameters, just like base Shapley values.
-    syn_loss_diff = {}  # expected_loss - measured_loss (where > 0)
-    for _first in range(len(stats)):
-        first = stats[_first]
-        first_diff = syn_loss_diff.setdefault(first['uid'], {})
-        first_diff[first['uid']] = torch.min(first['loss'], first['loss_val'])  # diagonal keeps best direct loss
-
-        for _second in range(_first + 1, len(stats)):
-            second = stats[_second]
-            second_diff = syn_loss_diff.setdefault(second['uid'], {})
-            second_diff.setdefault(first['uid'], torch.tensor(0.))
-            first_diff.setdefault(second['uid'], torch.tensor(0.))
-
-            with torch.no_grad():
-                for target, ext in [(inputs_seq[:, 1:], ''), (inputs_val, '_val')]:
-                    expected_loss = torch.min(first['loss' + ext], second['loss' + ext])  # expecting min loss
-
-                    # Combined logits: log of average probabilities per token between responses
-                    combined_logits = torch.log((torch.softmax(first['logits' + ext], dim=-1) +
-                                                 torch.softmax(second['logits' + ext], dim=-1)) / 2 + 1e-40)
-                    measured_loss = calc_loss_fct(loss_fct, combined_logits, target)  # actual measured loss
-
-                    loss_diff_share = torch.clamp(expected_loss - measured_loss, 0) / 2  # record direct loss diff
-                    first['synergy_loss_diff' + ext] += loss_diff_share
-                    second['synergy_loss_diff' + ext] += loss_diff_share
-
-                    # pairwise loss reduction of expected to measured loss due to synergy between first and second
-                    first_diff[second['uid']] = torch.max(loss_diff_share, first_diff[second['uid']])
-                    second_diff[first['uid']] = torch.max(loss_diff_share, second_diff[first['uid']])
-
-                    synergy_share = torch.clamp(scaling_law_loss_to_params(measured_loss) -
-                                                scaling_law_loss_to_params(expected_loss), 0) / 2
-                    first['synergy' + ext] += synergy_share  # share synergy amongst coalition members
-                    second['synergy' + ext] += synergy_share
+    syn_loss_diff = shapley_synergy(stats, _synergy, ext='', target=inputs_seq[:, 1:])
+    syn_loss_diff_val = shapley_synergy(stats, _synergy, ext='_val', target=inputs_val)
 
     # === Shapley value combination ===
     # Combine base values with synergy approximation to get final Shapley values.
-    for s in stats:
+    for s in stats.values():
         for ext in ['', '_val']:
-            s['shapley_values' + ext] = (s['base_params' + ext] + s['synergy' + ext])
-            del s['logits' + ext]  # remove logits - not needed for stats anymore
+            if 'base_params' + ext in s and 'synergy' + ext in s:
+                s['shapley_values' + ext] = (s['base_params' + ext] + s['synergy' + ext])
 
-        # use minimum of sequence/validation Shapley values, for added adversarial resilience
-        s['shapley_values_min'] = torch.min(s['shapley_values'], s['shapley_values_val'])
+            if 'logits' + ext in s:
+                del s['logits' + ext]  # remove logits - not needed for stats anymore
+
+        if 'shapley_values' in s and 'shapley_values_val' in s:
+            s['shapley_values_min'] = torch.min(s['shapley_values'], s['shapley_values_val'])
 
         for key in s:
             if hasattr(s[key], 'item'):
@@ -959,22 +840,20 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
 
     # === Neuron responses (table) ===
     # Prints the evaluation of the neuron responses to the validator request
-    columns = [c[:] for c in neuron_stats_columns if c[0] not in ['Upd', 'Weight'] and c[0][0] != 'n']  # excl. nxt cols
-    synapse_table(synapse_name, stats, columns, 'nShap', batch_size, sequence_len,
-                  num_endpoints, metagraph_n, console_width, shapley_start_time)
+    synapse_table(str(synapse), stats, 'shapley_values_min', console_width, shapley_start_time)
 
     # === Unsuccessful responses ===
     # Prints the return codes and response times of unsuccessful responses
-    unsuccess(synapse_name, unsuccessful)
+    unsuccess(str(synapse), unsuccessful)
 
-    return neuron_loss + routing_loss, stats
+    return loss, stats
 
 
 def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor],
                      times: List[torch.FloatTensor], routing_score: torch.FloatTensor,
-                     inputs_seq: torch.FloatTensor, inputs_val: torch.FloatTensor, inputs_nxt: torch.FloatTensor,
-                     loss_fct: Callable, console_width: int, synapse: 'bittensor.TextCausalLMNext' = None, index_s: int = 0,
-                     synapse_name: str = 'TextCausalLMNext') -> Tuple[torch.FloatTensor, List]:
+                     inputs: torch.FloatTensor, validation_len: int, loss_fct: Callable,
+                     console_width: int, synapse: 'bittensor.TextCausalLMNext' = None, index_s: int = 0
+                     ) -> Tuple[torch.FloatTensor, Dict]:
     r"""
     Calculate Shapley values and neuron response validation measure statistics, given TextCausalLMNext synapse responses.
         Args:
@@ -989,12 +868,10 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
                 Times per call per synapse.
             routing_score (:obj:`torch.FloatTensor`, `required`):
                 [metagraph.n] Predictive routing score per endpoint in the metagraph, mean over the batch.
-            inputs_seq (:obj:`torch.FloatTensor`, `required`):
-                [batch_size, sequence_len] Token batch of inputs to validate with.
-            inputs_val (:obj:`torch.FloatTensor`, `required`):
-                [batch_size] Held-out token batch for validation, not sent to neurons.
-            inputs_nxt (:obj:`torch.FloatTensor`, `required`):
-                [batch_size, validation_len] Held-out phrase token batch for extended validation, not sent to neurons.
+            inputs (:obj:`torch.FloatTensor`, `required`):
+                [batch_size, sequence_len + validation_len] Token batch of original inputs with validation tokens.
+            validation_len (:obj:`int`, `required`):
+                Number of held-out phrase token batch for extended validation, not sent to neurons.
             loss_fct (:obj:`Callable`, `required`):
                 CrossEntropy loss function to use.
             console_width (:obj:`int`, `required`):
@@ -1003,8 +880,6 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
                 TextCausalLMNext Synapse object.
             index_s (:obj:`int`, `optional`):
                 Index of synapse to extract responses.
-            synapse_name (:obj:`str`, `optional`):
-                Name of synapse to display in synapse results.
 
         Returns:
             loss (:obj:`torch.FloatTensor`):
@@ -1012,97 +887,49 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
             stats (:obj:`Dict`, `required`):
                 Statistics per endpoint for this batch.
     """
-    print(f'\[{synapse_name}] Shapley values \t| Calculating ... ', end='')
+
+    inputs_nxt = inputs[..., -validation_len:]  # input validation with next token target phrase [batch_size, val_len]
+
+    def _base_params(_stats, query_response):
+        result = unravel_topk_token_phrases(query_response, topk=synapse.topk)
+        topk_tokens, topk_probs, floor_probs = result
+        # topk_tokens: [batch_size, topk, max_len] Phrase tokens with ignore_index token for padding.
+        # topk_probs: [batch_size, topk] Probabilities for each phrase in topk.
+        # floor_probs: [batch_size] Floor probabilities as mean probability for non-topk tokens.
+        # inputs_nxt: [batch_size] Target phrases in standard token sequence list.
+
+        _losses = phrase_cross_entropy(inputs_nxt, topk_tokens, topk_probs, floor_probs, reduce=False)  # [batch_size]
+        _loss = _losses.mean()
+        _num_params = scaling_law_loss_to_params(_loss)  # estimate the effective number of model parameters
+
+        _stats.update({'losses_nxt': _losses, 'loss_nxt': _loss,
+                       'base_params_nxt': _num_params, 'synergy_nxt': 0, 'synergy_loss_diff_nxt': 0})
+
+    def _synergy(first, second, target, ext):
+        # average first + second probabilities per batch item, convert to loss
+        measured_loss = -torch.log((torch.exp(-first['losses_nxt']) +
+                                    torch.exp(-second['losses_nxt'])) / 2).mean()
+
+        return measured_loss
+
+    print(f'\[{str(synapse)}] Shapley values \t| Calculating base ... ', end='')
     shapley_start_time = time.time()
 
-    num_endpoints = len(uids)
-    metagraph_n = len(routing_score)
-    batch_size, sequence_len = inputs_seq.shape
+    loss, stats, unsuccessful = shapley_base(uids, query_responses, return_ops, times, routing_score,
+                                             _base_params, index_s, ext='_nxt')
 
-    stats = []
-    unsuccessful = []
-    neuron_loss = torch.tensor(0.)  # neuron losses to accumulate to then backward() via dendrite
-    routing_loss = torch.tensor(0.)  # validator routing loss for local model update
+    print(f'\[{time.time() - shapley_start_time:.3g}s] | synergy ... ', end='')
 
-    # === Base parameter estimation ===
-    # Shapley values - base level - coalition size 1
-    # Collect successful neuron responses, calculate base Shapley values.
-    # Measured in effective number of model parameters, according to OpenAI scaling laws.
-    for index, _uid in enumerate(uids):
-        if return_ops[index][index_s] == bittensor.proto.ReturnCode.Success:
-            _stats = {'uid': _uid.item(),
-                      'response_time_nxt': times[index][index_s],
-                      'routing_score': routing_score[_uid]}
-
-            result = unravel_topk_token_phrases(query_responses[index][index_s], topk=synapse.topk)
-            topk_tokens, topk_probs, floor_probs = result
-            # topk_tokens: [batch_size, topk, max_len] Phrase tokens with ignore_index token for padding.
-            # topk_probs: [batch_size, topk] Probabilities for each phrase in topk.
-            # floor_probs: [batch_size] Floor probabilities as mean probability for non-topk tokens.
-            # inputs_nxt: [batch_size] Target phrases in standard token sequence list.
-
-            _losses = phrase_cross_entropy(inputs_nxt, topk_tokens, topk_probs, floor_probs, reduce=False)  # [batch_size]
-            _loss = _losses.mean()
-            _num_params = scaling_law_loss_to_params(_loss)  # estimate the effective number of model parameters
-
-            _stats.update({'losses_nxt': _losses, 'loss_nxt': _loss,
-                           'base_params_nxt': _num_params, 'synergy_nxt': 0, 'synergy_loss_diff_nxt': 0})
-
-            neuron_loss += _stats['loss_nxt']  # add sequence loss to be backward() to neuron
-
-            # === Add routing loss ===
-            # MSE loss between predicted routing score and ideal target routing score.
-            # The Bayes risk approx. 1.69, i.e. the minimal loss achievable for next-token
-            # prediction on the full distribution 𝑃, a.k.a the "entropy of natural text"
-            # Hoffmann, Jordan, et al. "Training Compute-Optimal Large Language Models." arXiv:2203.15556 (2022).
-            routing_score_target = torch.exp(-torch.clamp(_stats['loss_nxt'].detach() - 1.69, 0))
-            _routing_loss = (routing_score[_uid] - routing_score_target) ** 2  # MSE loss
-            routing_loss += _routing_loss
-            _stats.update({'routing_score_target_nxt': routing_score_target, 'routing_loss_nxt': _routing_loss})
-
-            stats += [_stats]
-        else:
-            unsuccessful += [(_uid, return_ops[index][index_s], times[index][index_s])]
-
-    # === Shapley synergy approximation ===
-    # Shapley values - second level - coalition size 2
-    # Synergy = measured performance above expected performance
-    # Measured in effective number of model parameters, just like base Shapley values.
-    syn_loss_diff = {}  # expected_loss - measured_loss (where > 0)
-    for _first in range(len(stats)):
-        first = stats[_first]
-        first_diff = syn_loss_diff.setdefault(first['uid'], {})
-        first_diff[first['uid']] = first['loss_nxt']  # diagonal keeps direct loss
-
-        for _second in range(_first + 1, len(stats)):
-            second = stats[_second]
-            second_diff = syn_loss_diff.setdefault(second['uid'], {})
-
-            with torch.no_grad():
-                expected_loss = torch.min(first['loss_nxt'], second['loss_nxt'])  # expecting min loss
-
-                # average first + second probabilities per batch item, convert to loss
-                measured_loss = -torch.log((torch.exp(-first['losses_nxt']) +
-                                            torch.exp(-second['losses_nxt'])) / 2).mean()
-
-                loss_diff_share = torch.clamp(expected_loss - measured_loss, 0) / 2  # record direct loss diff
-                first['synergy_loss_diff_nxt'] += loss_diff_share
-                second['synergy_loss_diff_nxt'] += loss_diff_share
-
-                # pairwise loss reduction of expected to measured loss due to synergy between first and second
-                first_diff[second['uid']] = loss_diff_share
-                second_diff[first['uid']] = loss_diff_share
-
-                synergy_share = torch.clamp(scaling_law_loss_to_params(measured_loss) -
-                                            scaling_law_loss_to_params(expected_loss), 0) / 2
-                first['synergy_nxt'] += synergy_share  # share synergy amongst coalition members
-                second['synergy_nxt'] += synergy_share
+    syn_loss_diff = shapley_synergy(stats, _synergy, '_nxt')
 
     # === Shapley value combination ===
     # Combine base values with synergy approximation to get final Shapley values.
-    for s in stats:
-        s['shapley_values_nxt'] = (s['base_params_nxt'] + s['synergy_nxt'])
-        del s['losses_nxt']  # remove batch losses - not needed for stats anymore
+    for s in stats.values():
+        if 'base_params_nxt' in s and 'synergy_nxt' in s:
+            s['shapley_values_nxt'] = s['base_params_nxt'] + s['synergy_nxt']
+
+        if 'losses_nxt' in s:
+            del s['losses_nxt']  # remove batch losses - not needed for stats anymore
 
         for key in s:
             if hasattr(s[key], 'item'):
@@ -1116,22 +943,145 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
 
     # === Neuron responses (table) ===
     # Prints the evaluation of the neuron responses to the validator request
-    columns = [c[:] for c in neuron_stats_columns if (c[0] not in ['Upd', 'Weight'] and
-                                                      c[0][0] != 's' and c[0][0] != 'v')]  # excl. seq / val cols
-    synapse_table(synapse_name, stats, columns, 'nShap', batch_size, sequence_len,
-                  num_endpoints, metagraph_n, console_width, shapley_start_time)
+    synapse_table(str(synapse), stats, 'shapley_values_nxt', console_width, shapley_start_time)
 
     # === Unsuccessful responses ===
     # Prints the return codes and response times of unsuccessful responses
-    unsuccess(synapse_name, unsuccessful)
+    unsuccess(str(synapse), unsuccessful)
 
-    return neuron_loss + routing_loss, stats
+    return loss, stats
+
+
+def shapley_base(uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor],
+                 times: List[torch.FloatTensor], routing_score: torch.FloatTensor,
+                 base_params: Callable, index_s: int = 0, ext: str = None) -> Tuple[torch.FloatTensor, Dict, List]:
+    r"""
+    Calculate Shapley base values and neuron response validation measure statistics, given responses from a synapse.
+        Args:
+            uids (:obj:`torch.Tensor`, `required`): [num_neurons]
+                Neuron UIDs.
+            query_responses (:obj:`List[List[torch.FloatTensor]]`, `required`):
+                List of outputs from synapses, each a list of size num_endpoints of tensors with relevant size. Non-responses are zeroes of relevant
+                synapse shape. Shape num_synapses * ( num_endpoints * ( -1, -1, -1 ) )
+            return_ops (:obj:`List[torch.LongTensor]` of shape :obj:`[num_endpoints]`, `required`):
+                Return code per call per synapse.
+            times (:obj:`List [torch.FloatTensor]` of shape :obj:`[num_endpoints]`, `required`):
+                Times per call per synapse.
+            routing_score (:obj:`torch.FloatTensor`, `required`):
+                [metagraph.n] Predictive routing score per endpoint in the metagraph, mean over the batch.
+            base_params (:obj:`Callable`, `required`):
+                CrossEntropy loss function to use.
+            index_s (:obj:`int`, `optional`):
+                Index of synapse to extract responses.
+            ext (:obj:`str`, `optional`):
+                Extension to parameter string for stats key.
+
+        Returns:
+            loss (:obj:`torch.FloatTensor`):
+                Loss for training validator nucleus and dendrite backward to endpoints.
+            stats (:obj:`Dict`, `required`):
+                Statistics per endpoint for this batch.
+            unsuccessful (:obj:`List`, `required`):
+                Unsuccessful endpoints [(uid, return_op, time)].
+    """
+    stats = {}
+    unsuccessful = []
+    neuron_loss = torch.tensor(0.)  # neuron losses to accumulate to then backward() via dendrite
+    routing_loss = torch.tensor(0.)  # validator routing loss for local model update
+
+    # === Base parameter estimation ===
+    # Shapley values - base level - coalition size 1
+    # Collect successful neuron responses, calculate base Shapley values.
+    # Measured in effective number of model parameters, according to OpenAI scaling laws.
+    for index, _uid in enumerate(uids.tolist()):
+        if return_ops[index][index_s] == bittensor.proto.ReturnCode.Success:
+            _stats = {'uid': _uid,
+                      'response_time' + ext: times[index][index_s],
+                      'routing_score': routing_score[_uid]}
+
+            base_params(query_responses[index][index_s])
+
+            neuron_loss += _stats['loss' + ext]  # add sequence loss to be backward() to neuron
+
+            # === Add routing loss ===
+            # MSE loss between predicted routing score and ideal target routing score.
+            # The Bayes risk approx. 1.69, i.e. the minimal loss achievable for next-token
+            # prediction on the full distribution 𝑃, a.k.a the "entropy of natural text"
+            # Hoffmann, Jordan, et al. "Training Compute-Optimal Large Language Models." arXiv:2203.15556 (2022).
+            routing_score_target = torch.exp(-torch.clamp(_stats['loss' + ext].detach() - 1.69, 0))
+            _routing_loss = (routing_score[_uid] - routing_score_target) ** 2  # MSE loss
+            routing_loss += _routing_loss
+            _stats.update({'routing_score_target' + ext: routing_score_target, 'routing_loss' + ext: _routing_loss})
+
+            stats[_stats['uid']] = _stats
+        else:
+            stats[_uid] = {}  # weight EMA will push zero update to reduce weight of unsuccessful neurons
+            unsuccessful += [(_uid, return_ops[index][index_s], times[index][index_s])]
+
+    return neuron_loss + routing_loss, stats, unsuccessful
+
+
+def shapley_synergy(stats: Dict, synergy: Callable, ext: str, target: torch.Tensor = None):
+    r"""
+    Calculates Shapley synergy for coalition size 2, measured performance above expected performance.
+    Measured in effective number of model parameters, just like base Shapley values.
+        Args:
+            stats (:obj:`Dict`, `required`):
+                Statistics per endpoint for this batch.
+            synergy (:obj:`Callable`, `required`)
+                Function to calculate measured loss.
+            ext (:obj:`str`, `optional`):
+                Extension to parameter string for stats key.
+            target (:obj:`torch.Tensor`, `optional`):
+                Target to measure loss against.
+
+        Returns:
+            syn_loss_diff (:obj:`Dict`, `required`):
+                Dictionary table of pairwise synergies as loss reductions, with direct loss on diagonal.
+    """
+    # === Shapley synergy approximation ===
+    # Shapley values - second level - coalition size 2
+    # Synergy = measured performance above expected performance
+    # Measured in effective number of model parameters, just like base Shapley values.
+    syn_loss_diff = {}  # expected_loss - measured_loss (where > 0)
+    for _first, first in stats.items():
+        if 'loss' + ext not in first:
+            continue
+        first_diff = syn_loss_diff.setdefault(first['uid'], {})
+        first_diff[first['uid']] = first['loss' + ext]  # diagonal keeps direct loss
+
+        for _second, second in stats.items():
+            if 'loss' + ext not in second or _second <= _first:
+                continue
+            second_diff = syn_loss_diff.setdefault(second['uid'], {})
+            second_diff.setdefault(first['uid'], torch.tensor(0.))
+            first_diff.setdefault(second['uid'], torch.tensor(0.))
+
+            with torch.no_grad():
+                expected_loss = torch.min(first['loss' + ext], second['loss' + ext])  # expecting min loss
+
+                measured_loss = synergy(first, second, target, ext)
+
+                loss_diff_share = torch.clamp(expected_loss - measured_loss, 0) / 2  # record direct loss diff
+                first['synergy_loss_diff' + ext] += loss_diff_share
+                second['synergy_loss_diff' + ext] += loss_diff_share
+
+                # pairwise loss reduction of expected to measured loss due to synergy between first and second
+                first_diff[second['uid']] = torch.max(loss_diff_share, first_diff[second['uid']])
+                second_diff[first['uid']] = torch.max(loss_diff_share, second_diff[first['uid']])
+
+                synergy_share = torch.clamp(scaling_law_loss_to_params(measured_loss) -
+                                            scaling_law_loss_to_params(expected_loss), 0) / 2
+                first['synergy' + ext] += synergy_share  # share synergy amongst coalition members
+                second['synergy' + ext] += synergy_share
+
+    return syn_loss_diff
 
 
 def synergy_table(stats, syn_loss_diff, sort_col, console_width):
     r""" Prints the synergy loss diff matrix with pairwise loss reduction due to synergy (original loss on diagonal)
     """
-    sort = sorted([(_s['uid'], _s[sort_col]) for _s in stats], reverse=True, key=lambda _row: _row[1])
+    sort = sorted([(_s['uid'], _s[sort_col]) for _s in stats.values()], reverse=True, key=lambda _row: _row[1])
     uid_col = neuron_stats_columns[0]  # [Column_name, key_name, format_string, rich_style]
     columns = [uid_col] + [[f'{s[0]}', '', '{:.2f}', ''] for s in sort]
     rows = [[uid_col[2].format(_s[0])] +
@@ -1154,21 +1104,34 @@ def synergy_table(stats, syn_loss_diff, sort_col, console_width):
         print()
 
 
-def synapse_table(name, stats, columns, sort_col, batch_size, sequence_len,
-                  num_endpoints, metagraph_n, console_width, start_time):
+def synapse_table(name, stats, sort_col, console_width, start_time):
     r""" Prints the evaluation of the neuron responses to the validator request
     """
-    sort_col = [c[0] for c in columns].index(sort_col)  # sort column with key of _sort_col
-    columns[sort_col][0] += '\u2193'  # ↓ downwards arrow (sort)
-    rows = [[txt.format(_s[key]) for _, key, txt, _ in columns] for _s in stats]
-    rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_col]))  # sort according to _sortcol
+
+    stats_table(stats, sort_col, console_width,
+                f'[white] \[{name}] responses [/white] | Validator forward',
+                f'[bold]{len([s for s in stats.values() if len(s)])}[/bold]/{len(stats)} (respond/topk) | '
+                f'[bold]Synapse[/bold] | [white]\[{time.time() - start_time:.3g}s][/white]'
+                )
+
+
+def stats_table(stats, sort_col, console_width, title, caption):
+    r""" Prints the evaluation of the neuron responses to the validator request
+    """
+    stats_keys = set.union(*[set(k for k in stat) for stat in stats])  # all available stats keys
+    columns = [c[:] for c in neuron_stats_columns if c[1] in stats_keys]  # available columns intersecting with stats_keys
+    rows = [['' if s not in key else txt.format(s[key]) for _, key, txt, _ in columns]
+            for s in stats.values() if len(s)]
+
+    sort_idx = [c[1] for c in columns].index(sort_col)  # sort column with key of _sort_col
+    if sort_idx != -1:  # sort_col found
+        columns[sort_idx][0] += '\u2193'  # ↓ downwards arrow (sort)
+        rows = sorted(rows, reverse=True, key=lambda _row: int(_row[sort_idx]))  # sort according to _sortcol
 
     # === Synapse table ===
     table = Table(width=console_width, box=None, row_styles=[Style(bgcolor='grey15'), ""])
-    table.title = f'[white] \[{name}] responses [/white] | Validator forward'
-    table.caption = f'[bold]{num_endpoints}[/bold]/{metagraph_n} (topk/total) | [bold]TextCausalLM[/bold] | ' \
-                    f'[white] {len(stats)} x \[{batch_size}, {sequence_len}, {bittensor.__network_dim__}] ' \
-                    f'\[{time.time() - start_time:.3g}s] [/white]'
+    table.title = title
+    table.caption = caption
 
     for col, _, _, stl in columns:  # [Column_name, key_name, format_string, rich_style]
         table.add_column(col, style=stl, justify='right')
@@ -1184,5 +1147,5 @@ def unsuccess(_name, _unsuccessful):
     # === Unsuccessful responses ===
     unsuccess_txt = f'\[{_name}] Unsuccessful \t| [cyan]UID[/cyan]\[[red]return_op[/red] [yellow]time[/yellow]]: '
     for _uid, _return_op, _time in _unsuccessful:
-        unsuccess_txt += f'{_uid}[[red]{_return_op}[/red] [yellow not bold]{_time:.2f}[/yellow not bold]] '
+        unsuccess_txt += f'{_uid}\[[red]{_return_op}[/red] [yellow not bold]{_time:.2f}[/yellow not bold]] '
     print(unsuccess_txt)
