@@ -789,13 +789,8 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
     inputs_val = inputs[..., -validation_len]  # input validation with next token [batch_size]
 
     def _base_params(_stats, query_response):
-        try:
-            _stats.update({'logits': query_response[:, :-1, :],
-                           'logits_val': query_responses[:, -1:, :]})
-        except TypeError as e:
-            # TypeError: list indices must be integers or slices, not tuple
-            print(query_response, len(query_response), query_response.shape)
-            raise
+        _stats.update({'logits': query_response[:, :-1, :],
+                       'logits_val': query_response[:, -1:, :]})
 
         for target, _ext in [(inputs_seq[:, 1:], ''), (inputs_val, '_val')]:
             _loss = calc_loss_fct(loss_fct, _stats['logits' + _ext], target)  # CausalLM loss
