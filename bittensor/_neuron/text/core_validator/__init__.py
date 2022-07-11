@@ -794,7 +794,7 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
                            'logits_val': query_responses[:, -1:, :]})
         except TypeError as e:
             # TypeError: list indices must be integers or slices, not tuple
-            print(query_response, len(query_response))
+            print(query_response, len(query_response), query_response.shape)
             raise
 
         for target, _ext in [(inputs_seq[:, 1:], ''), (inputs_val, '_val')]:
