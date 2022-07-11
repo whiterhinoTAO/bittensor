@@ -477,20 +477,19 @@ class neuron:
             # === EMA normal update ===
             # If synapse responsive push available values into EMA for normal update.
             # Normal EMA values provide a view on neuron performance if fully responsive.
-            if len(_stats):
-                for key in self.synapse_keys:
-                    if key in _stats:
-                        updates = 'updates_' + key
-                        if updates in stats:
-                            stats[updates] += 1  # increment number of normal EMA updates made
-                        else:
-                            stats.setdefault(updates, 1)  # add updates fields for new uid entries
-
-                for key in _stats:  # detailed neuron evaluation fields, e.g. loss, shapley_values, synergy
-                    if key in stats:
-                        stats[key] = (1 - self.alpha) * stats[key] + self.alpha * _stats[key]  # update EMA
+            for key in self.synapse_keys:
+                if key in _stats:
+                    updates = 'updates_' + key
+                    if updates in stats:
+                        stats[updates] += 1  # increment number of normal EMA updates made
                     else:
-                        stats.setdefault(key, _stats[key])
+                        stats.setdefault(updates, 1)  # add updates fields for new uid entries
+
+            for key in _stats:  # detailed neuron evaluation fields, e.g. loss, shapley_values, synergy
+                if key in stats:
+                    stats[key] = (1 - self.alpha) * stats[key] + self.alpha * _stats[key]  # update EMA
+                else:
+                    stats.setdefault(key, _stats[key])
 
     def calculate_weights(self):
         r""" Calculates neuron set-weights from weight_key mapped values. Defines weight_key as the neuron stats key
