@@ -795,6 +795,7 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
         except TypeError as e:
             # TypeError: list indices must be integers or slices, not tuple
             print(query_response, len(query_response))
+            raise
 
         for target, _ext in [(inputs_seq[:, 1:], ''), (inputs_val, '_val')]:
             _loss = calc_loss_fct(loss_fct, _stats['logits' + _ext], target)  # CausalLM loss
