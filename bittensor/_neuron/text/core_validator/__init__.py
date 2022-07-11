@@ -441,7 +441,7 @@ class neuron:
                 if uid in self.neuron_stats:
                     del self.neuron_stats[uid]
 
-    def neuron_stats_update(self, neuron_stats: Dict[Dict]):
+    def neuron_stats_update(self, neuron_stats: Dict):
         r""" Updates self.neuron_stats with new individual dictionaries per uid.
         """
         for _uid, _stats in neuron_stats.items():
