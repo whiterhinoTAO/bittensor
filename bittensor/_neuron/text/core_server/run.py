@@ -25,6 +25,7 @@ import bittensor
 import sys
 import time
 import datetime
+import traceback
 from threading import Lock
 from datetime import datetime,timedelta
 from loguru import logger; logger = logger.opt(colors=True)
@@ -248,7 +249,7 @@ def serve(
                     # --- Exception Hit in Synapse ---
                     response_tensors.append(None)
                     response_codes.append(bittensor.proto.ReturnCode.UnknownException)
-                    response_messages.append(str(e))
+                    response_messages.append(str(e) + str(traceback.format_exc()))
 
         return response_tensors, response_codes, response_messages
 

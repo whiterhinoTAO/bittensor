@@ -22,6 +22,8 @@ import time as clock
 from types import SimpleNamespace
 from typing import List, Tuple, Callable
 
+import traceback
+
 import torch
 import grpc
 import wandb
@@ -316,7 +318,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
         except Exception as e:
             code = bittensor.proto.ReturnCode.UnknownException
             call_time = clock.time() - start_time
-            message = str ( e )
+            message = str ( e ) + str(traceback.format_exc())
             synapse_codes = [code for _ in synapses ]
             synapse_call_times = [call_time for _ in synapses ]
             synapse_messages = [ message for _ in synapses ]
@@ -542,7 +544,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
         except Exception as e:
             code = bittensor.proto.ReturnCode.UnknownException
             call_time = clock.time() - start_time
-            message = str ( e )
+            message = str ( e ) + str(traceback.format_exc())
             synapse_codes = [code for _ in synapses ]
             synapse_call_times = [call_time for _ in synapses ]
             synapse_messages = [ message for _ in synapses ]
@@ -617,7 +619,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 # --- Exception Hit in Synapse ---
                 response_tensors.append(None)
                 response_codes.append(bittensor.proto.ReturnCode.UnknownException)
-                response_messages.append(str(e))
+                response_messages.append(str(e) + str(traceback.format_exc()))
         
         return response_tensors, response_codes, response_messages
 
@@ -668,7 +670,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
                     # --- Exception Hit in Synapse ---
                     response_tensors.append(None)
                     response_codes.append(bittensor.proto.ReturnCode.UnknownException)
-                    response_messages.append(str(e))
+                    response_messages.append(str(e) + str(traceback.format_exc()))
 
         if self.optimizer_step != None:
             self.optimizer_step()
