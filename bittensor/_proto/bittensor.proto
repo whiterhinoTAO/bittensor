@@ -102,6 +102,7 @@ message Synapse {
 		TEXT_LAST_HIDDEN_STATE = 1;
 		TEXT_CAUSAL_LM = 2;
 		TEXT_SEQ_2_SEQ = 3;
+		TEXT_CAUSAL_LM_NEXT = 4;
 	}
 
 	// Position of Tensor inputs for corresponding synapse call.
