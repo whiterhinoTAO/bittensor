@@ -422,6 +422,9 @@ class server(torch.nn.Module):
                      prob_k=0_b=1, tok_0_k=0_b=1, tok_1_k=0_b=1, ..., prob_k=1_b=1, tok_0_k=1_b=1, ..., prob_floor_b=1,
                      ...]
         """
+        if std_tokenizer is None:
+            std_tokenizer = self.std_tokenizer
+
         # remap to server tokenizer, expect right-aligned sequences so that last position keeps continuation prediction
         tokens = self.token_remap(token_batch, std_tokenizer)
 
