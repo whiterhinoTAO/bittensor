@@ -392,9 +392,13 @@ class server(torch.nn.Module):
         
         else:
             with torch.no_grad():
+                print('new tokenizers', time.time()-start_time)
+                tokenizer = AutoTokenizer.from_pretrained(self.tokenizer.name_or_path)
+                std_tokenizer = AutoTokenizer.from_pretrained(self.std_tokenizer.name_or_path)
+                print('finished tokenizers', time.time()-start_time)
                 probs_std = translate_logits_to_probs_std(pre_logits,
                                                             tokens['offset_mapping'], tokens['offset_mapping_std'],
-                                                            self.tokenizer, self.std_tokenizer,
+                                                            tokenizer, std_tokenizer,
                                                             self.split_map_cache,
                                                             self.to_translation_map, self.from_translation_map,
                                                             tokens['input_ids'], token_batch)
