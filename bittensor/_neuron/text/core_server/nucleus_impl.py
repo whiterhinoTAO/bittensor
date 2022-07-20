@@ -6,7 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 from types import SimpleNamespace
 from typing import Tuple, Optional
-
+import time
 from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM
 from torch.nn.utils.rnn import pad_sequence
 from bittensor.utils.tokenizer_utils import get_translation_map, translate_logits_to_probs_std, \
