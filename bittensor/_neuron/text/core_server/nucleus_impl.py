@@ -11,6 +11,7 @@ from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalL
 from torch.nn.utils.rnn import pad_sequence
 from bittensor.utils.tokenizer_utils import get_translation_map, translate_logits_to_probs_std, \
     translate_special_token_text, pad_offsets
+from threading import Lock
 
 from loguru import logger; logger = logger.opt(colors=True)
 
@@ -56,6 +57,8 @@ class server(torch.nn.Module):
         if config == None: config = server.config()
         self.config = config;print(config)
         self.std_tokenizer = bittensor.tokenizer()
+        self.std_tokenizers = [bittensor.tokenizer() for i in range(3)]
+        self.tokenizer_locks = [Lock() for i in range(3)]
         self.device = config.neuron.device
 
         #setting up pretrained model
@@ -64,6 +67,7 @@ class server(torch.nn.Module):
         if self.pretrained == True:
             self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name)
             self.tokenizer = tokenizer if tokenizer != None else AutoTokenizer.from_pretrained(self.model_name)
+            self.tokenizers = [AutoTokenizer.from_pretrained(self.model_name) for i in range(3)]
         elif self.pretrained == False:
             model_config = AutoConfig.from_pretrained(self.model_name)
             model_config.vocab_size= bittensor.__vocab_size__
@@ -382,26 +386,33 @@ class server(torch.nn.Module):
 
         pre_logits = model_output.logits
 
-        if self.config.neuron.remote_train:
-            probs_std = translate_logits_to_probs_std(pre_logits,
-                                                        tokens['offset_mapping'], tokens['offset_mapping_std'],
-                                                        self.tokenizer, self.std_tokenizer,
-                                                        self.split_map_cache,
-                                                        self.to_translation_map, self.from_translation_map,
-                                                        tokens['input_ids'], token_batch)
+        def check_locks():
+            for i in range(3):
+                if not self.tokenizer_locks[i].locked():
+                    return i
+                else:
+                    pass
         
-        else:
-            with torch.no_grad():
-                print('new tokenizers', time.time()-start_time)
-                tokenizer = AutoTokenizer.from_pretrained(self.tokenizer.name_or_path)
-                std_tokenizer = AutoTokenizer.from_pretrained(self.std_tokenizer.name_or_path)
-                print('finished tokenizers', time.time()-start_time)
+        lock_index = check_locks()
+        print(lock_index)
+        if self.config.neuron.remote_train:
+            with self.tokenizer_locks[lock_index]:
                 probs_std = translate_logits_to_probs_std(pre_logits,
                                                             tokens['offset_mapping'], tokens['offset_mapping_std'],
-                                                            tokenizer, std_tokenizer,
+                                                            self.tokenizers[lock_index], self.std_tokenizers[lock_index],
                                                             self.split_map_cache,
                                                             self.to_translation_map, self.from_translation_map,
                                                             tokens['input_ids'], token_batch)
+        
+        else:
+            with torch.no_grad():
+                with self.tokenizer_locks[lock_index]:
+                    probs_std = translate_logits_to_probs_std(pre_logits,
+                                                                tokens['offset_mapping'], tokens['offset_mapping_std'],
+                                                                self.tokenizers[lock_index], self.std_tokenizers[lock_index],
+                                                                self.split_map_cache,
+                                                                self.to_translation_map, self.from_translation_map,
+                                                                tokens['input_ids'], token_batch)
         probs_std = probs_std.to(self.device)
         logits_std = torch.log(probs_std + 1e-40)
         print('Translation Finished', time.time()-start_time )
