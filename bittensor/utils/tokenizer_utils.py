@@ -557,34 +557,38 @@ def translate_tokenizer_probs(probs: torch.FloatTensor, probs_std: torch.FloatTe
 
     # === Get one-to-many / many-to-one mappings ===
     mappings = get_tokenizer_sequence_mappings(aligned_offset_mapping, offset_mapping_std)
-
+    print(len(mappings))
+    one_to_many = []
+    many_to_one = []
     # === Perform probability mappings ===
     for (right_idx, right_idx_std, segment_count_base, segment_count_std_base,
          segment_count_overlap, segment_count_std_overlap) in mappings[1:]:  # don't map start token
 
         segment_count = segment_count_base + segment_count_overlap  # calculate effective segments length
         segment_count_std = segment_count_std_base + segment_count_std_overlap  # calculate effective segments length
-
+        start_time = time.time()
         # === One-to-many / one-to-one mapping ===
         if segment_count_base == 1:
-            print('One to many')
             start_idx_std = right_idx_std - segment_count_std  # calculate starting index
 
             translate_one_to_many(aligned_probs[right_idx-1],
                                   probs_std[start_idx_std:start_idx_std+segment_count_std],
                                   to_translation_map)
+            one_to_many += [time.time()-start_time]
 
         # === Many-to-one mapping ===
         elif segment_count_std_base == 1:  # many-to-one
-            print('Many to one')
             start_idx = right_idx - segment_count  # calculate starting index
 
             translate_many_to_one(aligned_probs[start_idx:right_idx],
                                   probs_std[right_idx_std-1],
                                   from_translation_map)
+            many_to_one += [time.time()-start_time]
 
         else:
             print('Undefined mapping.')
+    print('one to many',len(one_to_many), sum(one_to_many)/len(one_to_many))
+    print('many to one',len(many_to_one), sum(many_to_one)/len(many_to_one))
 
 
 def get_top_probs(probs: torch.FloatTensor, tokenizer: PreTrainedTokenizerBase, amount: int = 10) -> str:
