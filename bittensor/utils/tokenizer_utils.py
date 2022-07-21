@@ -588,7 +588,7 @@ def translate_tokenizer_probs(probs: torch.FloatTensor, probs_std: torch.FloatTe
         else:
             print('Undefined mapping.')
     print('one to many',len(one_to_many), sum(one_to_many)/len(one_to_many))
-    print('many to one',len(many_to_one), sum(many_to_one)/len(many_to_one))
+    print('many to one',len(many_to_one), sum(many_to_one)/(len(many_to_one)+0.01))
 
 
 def get_top_probs(probs: torch.FloatTensor, tokenizer: PreTrainedTokenizerBase, amount: int = 10) -> str:
