@@ -13,6 +13,7 @@ from bittensor.utils.tokenizer_utils import get_translation_map, translate_logit
     translate_special_token_text, pad_offsets, topk_token_phrases
 
 from loguru import logger; logger = logger.opt(colors=True)
+from threading import Lock
 
 class server(torch.nn.Module):
     def __init__(self, 
