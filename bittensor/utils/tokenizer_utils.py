@@ -567,6 +567,7 @@ def translate_tokenizer_probs(probs: torch.FloatTensor, probs_std: torch.FloatTe
 
         # === One-to-many / one-to-one mapping ===
         if segment_count_base == 1:
+            print('One to many')
             start_idx_std = right_idx_std - segment_count_std  # calculate starting index
 
             translate_one_to_many(aligned_probs[right_idx-1],
@@ -575,6 +576,7 @@ def translate_tokenizer_probs(probs: torch.FloatTensor, probs_std: torch.FloatTe
 
         # === Many-to-one mapping ===
         elif segment_count_std_base == 1:  # many-to-one
+            print('Many to one')
             start_idx = right_idx - segment_count  # calculate starting index
 
             translate_many_to_one(aligned_probs[start_idx:right_idx],
@@ -677,6 +679,7 @@ def translate_logits_to_probs_std(logits: torch.FloatTensor,
         probs = padded_probs
 
     start_time = time.time()
+    print('Start translation')
     # === Translate to probabilities over standard tokenizer ===
     probs_std = torch.zeros(batch_size, std_sequence_len, std_vocab_size)
     for b in range(batch_size):
