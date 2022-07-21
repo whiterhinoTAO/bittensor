@@ -18,7 +18,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import torch
-
+import time
 from typing import List, Dict, Tuple, Any
 from transformers import PreTrainedTokenizerBase
 
@@ -676,7 +676,7 @@ def translate_logits_to_probs_std(logits: torch.FloatTensor,
         padded_probs[..., :vocab_size] = probs
         probs = padded_probs
 
-
+    start_time = time.time()
     # === Translate to probabilities over standard tokenizer ===
     probs_std = torch.zeros(batch_size, std_sequence_len, std_vocab_size)
     for b in range(batch_size):
@@ -684,6 +684,8 @@ def translate_logits_to_probs_std(logits: torch.FloatTensor,
                                   tokenizer, std_tokenizer,
                                   split_map_cache, to_translation_map, from_translation_map,
                                   tokens[b], tokens_std[b])
+        print('batch',b, time.time()-start_time)
+
 
     # === Correct excess probability mass (haircut) ===
     probs_std_sum = probs_std.sum(dim=-1)  # [batch_size, std_sequence_len]
