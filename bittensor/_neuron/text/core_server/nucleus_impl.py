@@ -366,11 +366,9 @@ class server(torch.nn.Module):
                 logits_std (:obj:`torch.FloatTensor`):
                     The nucleus's logit outputs as a torch tensor of shape [batch_size, sequence_len, __vocab_size__]
         """
-        start_time = time.time()
 
         tokens = self.token_remap(token_batch, std_tokenizer=tokenizer, tokenizer_padding=False,
                                   return_offsets_mapping=True)  # remap to server tokenizer
-        print('Token remap Finished', time.time()-start_time )
 
         if model_output == None:
             if self.config.neuron.remote_train:
@@ -382,7 +380,6 @@ class server(torch.nn.Module):
                     model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                     attention_mask=tokens['attention_mask'],
                                                     output_hidden_states=True)
-        print('Model Output Finished', time.time()-start_time )
 
         pre_logits = model_output.logits
 
@@ -415,7 +412,6 @@ class server(torch.nn.Module):
                                                                 tokens['input_ids'], token_batch)
         probs_std = probs_std.to(self.device)
         logits_std = torch.log(probs_std + 1e-40)
-        print('Translation Finished', time.time()-start_time )
 
         return model_output, logits_std
 
