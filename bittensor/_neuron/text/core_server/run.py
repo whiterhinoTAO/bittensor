@@ -21,6 +21,9 @@ Example:
     $ python miners/text/template_client.py
 
 """
+from prometheus_client import start_http_server
+from prometheus_client import Info
+
 import bittensor
 import sys
 import time
@@ -312,6 +315,9 @@ def serve(
 
     last_set_block = subtensor.get_current_block()
 
+    start_http_server(1991)
+    info = Info('model', 'model')
+    info.info({'model': config.neuron.model_name})
 
     # --- Run Forever.
     while True:

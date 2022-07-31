@@ -20,6 +20,7 @@ Implementation of the config class, which manages the config of different bitten
 
 import yaml
 from munch import Munch
+from prometheus_client import Info
 import bittensor
 
 class Config ( Munch ):
@@ -47,6 +48,10 @@ class Config ( Munch ):
         """
         for key,val in kwargs.items():
             self[key] = val
+
+    def to_prometheus(self):
+        promo_i = Info('config', 'Config')
+        promo_i.info({'version': '1.2.3', 'buildhost': 'foo@bar'})
 
     def to_defaults(self):
         try: 
