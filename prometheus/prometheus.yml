@@ -15,4 +15,4 @@ scrape_configs:
     - job_name: bittensor
       static_configs:
         - targets: 
-            - node-bittensor:8091
+            - localhost:1991
