@@ -117,7 +117,8 @@ class neuron:
 
         # Init prometheus.
         bittensor.prometheus ( 
-            config = config 
+            config = config,
+            port = config.prometheus.port if config.axon.port == bittensor.defaults.axon.port else config.axon.port - 1000
         )
 
         self.model = server(config = config)
