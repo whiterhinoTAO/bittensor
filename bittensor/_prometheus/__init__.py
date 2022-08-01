@@ -23,6 +23,9 @@ import argparse
 import bittensor
 from prometheus_client import start_http_server
 
+from loguru import logger
+logger = logger.opt(colors=True)
+
 class prometheus:
 
     # Global state.
@@ -44,10 +47,14 @@ class prometheus:
                 start_http_server( config.prometheus.port )
             except OSError:
                 # The singleton process is likely already running.
-                bittensor.__console__.print("Prometheus port: {} already in use, likely prometheus is already running in a separate process.".format(config.prometheus.port), highlight=True)
+                logger.error( "Prometheus:".ljust(20) + "<blue>{}</blue>  <red>already in use</red> ".format( config.prometheus.port ) )
                 return
             prometheus.started = True
             prometheus.port = config.prometheus.port
+            logger.success( "Prometheus:".ljust(20) + "<green>ON</green>".ljust(20) + "using: <blue>[::]:{}</blue>".format( config.prometheus.port ))
+        else:
+            logger.success('Prometheus:'.ljust(20) + '<red>OFF</red>')
+
 
     @classmethod   
     def config(cls) -> 'bittensor.Config':

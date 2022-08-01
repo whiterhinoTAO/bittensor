@@ -21,8 +21,8 @@ Example:
     $ python miners/text/template_client.py
 
 """
-from prometheus_client import start_http_server
-from prometheus_client import Info
+from prometheus_client import Counter
+from prometheus_client import Summary
 
 import bittensor
 import sys
@@ -47,6 +47,7 @@ def serve(
         axon= None,
         metagraph = None,
     ):
+
     config.to_defaults()
     model= model.to(model.device)
 
@@ -315,9 +316,10 @@ def serve(
 
     last_set_block = subtensor.get_current_block()
 
-    start_http_server(1991)
-    info = Info('model', 'model')
-    info.info({'model': config.neuron.model_name})
+    # --- Set prometheus summaries.
+    # These will not be posted if the user passes the --prometheus.off
+    iteration_prometheus = Counter('total_iterations', 'Total running iterations on miner')
+    loss_prometheus = Summary('loss', 'Miner loss.')
 
     # --- Run Forever.
     while True:
@@ -338,6 +340,11 @@ def serve(
                     else:
                         losses = loss
                     iteration += 1
+
+                    # ---- Prometheus iterations.
+                    iteration_prometheus.inc()
+                    loss_prometheus.observe( losses.item() )
+
                     current_block = subtensor.get_current_block()
                     logger.info(f'local training\titeration: {iteration}\tloss: {loss}')
             
