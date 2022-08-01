@@ -23,22 +23,20 @@ from typing import Tuple, List, Union, Optional
 import sys
 import torch
 import pandas
-import random
+import time
 
 from torch.autograd.function import once_differentiable
-from loguru import logger
-from transformers.utils.logging import enable_explicit_format
-from yaml import serialize
 
 import bittensor
-from bittensor._endpoint.endpoint_impl import Endpoint
-from bittensor._serializer import serializer, serializer_impl
-from bittensor._synapse import TextCausalLM, synapse
+from bittensor._synapse import synapse
 import bittensor.utils.stats as stat_utils
-import bittensor.utils.codes as codes
 
-import wandb
+# Prometheus
+from prometheus_client import Gauge
+from prometheus_client import Histogram
 
+# Logger
+from loguru import logger
 logger = logger.opt(colors=True)
 
 # dummy tensor that triggers autograd 
@@ -78,9 +76,18 @@ class Dendrite(torch.autograd.Function):
         self.wallet = wallet
         self.receptor_pool = receptor_pool
         self.manager = manager
+
         # ---- Dendrite stats
-        # num of time we have sent request to a peer, received successful respond, and the respond time
         self.stats = self._init_stats()
+
+        # --- Prometheus
+        obj_uid = int(time.time()*10000) # UID for prometheus counters incase there are more than one in process for dendrite.
+        self.prometheus_total_requests = Gauge('dendrite_total_requests_' + str(obj_uid), 'dendrite_total_requests')
+        self.prometheus_qps = Gauge('dendrite_qps_' + str(obj_uid), 'dendrite_qps')
+        self.prometheus_avg_out_bytes_per_second = Gauge('dendrite_avg_out_bytes_per_second_' + str(obj_uid), 'dendrite_avg_out_bytes_per_second')
+        self.prometheus_avg_in_bytes_per_second = Gauge('dendrite_avg_in_bytes_per_second_' + str(obj_uid), 'dendrite_avg_in_bytes_per_second')
+        self.prometheus_latency_per_uid = Gauge('dendrite_latency_per_uid_' + str(obj_uid), 'dendrite_latency_per_uid', ['uid'])
+        self.prometheus_success_rate_per_uid = Gauge('dendrite_success_rate_per_uid_' + str(obj_uid), 'dendrite_success_rate_per_uid', ['uid'])
 
     def __str__(self):
         return "Dendrite({}, {})".format(self.wallet.hotkey.ss58_address, self.receptor_pool)
@@ -781,12 +788,13 @@ class Dendrite(torch.autograd.Function):
         self.stats.total_requests += 1
         total_in_bytes_per_second = 0
         self.stats.avg_out_bytes_per_second.event( float(sys.getsizeof(inputs)) )
+        self.stats.avg_in_bytes_per_second.event( float( total_in_bytes_per_second ) )
         for (end_i, syn_i, inps_i, outs_i, codes_i, times_i) in list( zip ( endpoints, synapses, inputs, outputs, codes, times ) ):
             pubkey = end_i.hotkey
             # First time for this pubkey we create a new entry.
             if pubkey not in self.stats.requests_per_pubkey:
                 self.stats.requests_per_pubkey[pubkey] = 0
-                self.stats.successes_per_pubkey[pubkey] = 0
+                self.stats.successes_per_pubkey[pubkey] = stat_utils.AmountPerSecondRollingAverage( 0, 0.01 )
                 self.stats.codes_per_pubkey[pubkey] = dict([(k,0) for k in bittensor.proto.ReturnCode.keys()])
                 self.stats.query_times_per_pubkey[pubkey] = stat_utils.AmountPerSecondRollingAverage( 0, 0.01 )
                 self.stats.avg_in_bytes_per_pubkey[pubkey] = stat_utils.AmountPerSecondRollingAverage( 0, 0.01 )
@@ -794,7 +802,7 @@ class Dendrite(torch.autograd.Function):
                 self.stats.qps_per_pubkey[pubkey] = stat_utils.EventsPerSecondRollingAverage( 0, 0.01 )
 
             self.stats.requests_per_pubkey[pubkey] += 1
-            self.stats.successes_per_pubkey[pubkey] += (codes_i == 1).sum().int()
+            self.stats.successes_per_pubkey[pubkey].event( (codes_i == 1).sum().int() / len(codes_i) )
             self.stats.query_times_per_pubkey[pubkey].event( float( times_i.max() ) )
             self.stats.avg_in_bytes_per_pubkey[pubkey].event( float(sys.getsizeof( outs_i )) )
             self.stats.avg_out_bytes_per_pubkey[pubkey].event( float(sys.getsizeof( inps_i )) )
@@ -808,7 +816,15 @@ class Dendrite(torch.autograd.Function):
                 # Code may be faulty.
                 pass
 
-        self.stats.avg_in_bytes_per_second.event( float( total_in_bytes_per_second ) )
+        # -- Set prometheus
+        self.prometheus_qps.set( self.stats.qps.get() )
+        self.prometheus_total_requests.set( self.stats.total_requests )
+        self.prometheus_avg_out_bytes_per_second.set( self.stats.avg_out_bytes_per_second.get() )
+        self.prometheus_avg_in_bytes_per_second.set( self.stats.avg_in_bytes_per_second.get() )
+        for (end_i, syn_i, inps_i, outs_i, codes_i, times_i) in list( zip ( endpoints, synapses, inputs, outputs, codes, times ) ):
+            self.prometheus_latency_per_uid.labels(end_i.uid).set( self.stats.query_times_per_pubkey[end_i.hotkey].get() )
+            self.prometheus_success_rate_per_uid.labels(end_i.uid).set( self.stats.successes_per_pubkey[end_i.hotkey].get() )
+
 
     def to_dataframe ( self, metagraph ):
         r""" Return a stats info as a pandas dataframe indexed by the metagraph or pubkey if not existend.

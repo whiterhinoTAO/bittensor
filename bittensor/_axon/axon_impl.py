@@ -17,29 +17,21 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
 # DEALINGS IN THE SOFTWARE.
 
-import sys
 import time as clock
-from types import SimpleNamespace
 from typing import List, Tuple, Callable
 
 import torch
 import grpc
-import wandb
 import pandas
 from loguru import logger
-import torch.nn.functional as F
 import concurrent
 
 import bittensor
-import bittensor.utils.stats as stat_utils
 
 # Prometheus
 from prometheus_client import Counter
-from prometheus_client import Summary
 from prometheus_client import Histogram
 from prometheus_client import Enum
-
-
 
 logger = logger.opt(colors=True)
 
@@ -101,8 +93,8 @@ class Axon( bittensor.grpc.BittensorServicer ):
         self.is_started = Enum('axon_is_started_' + str(obj_uid), 'is_started', states=['stopped', 'started' ])
         self.total_forward = Counter('axon_total_forward_' + str(obj_uid), 'total_forward')
         self.total_backward = Counter('axon_total_backward_' + str(obj_uid), 'total_backward')
-        self.forward_latency = Histogram('axon_forward_latency_' + str(obj_uid), 'forward_latency')
-        self.backward_latency = Histogram('axon_backward_latency_' + str(obj_uid), 'backward_latency')
+        self.forward_latency = Histogram('axon_forward_latency_' + str(obj_uid), 'forward_latency', buckets=list(range(0,24,1)))
+        self.backward_latency = Histogram('axon_backward_latency_' + str(obj_uid), 'backward_latency', buckets=list(range(0,24,2))) 
         self.forward_synapses = Counter('axon_forward_synapses_' + str(obj_uid), 'forward_synapses', ["synapse"])
         self.backward_synapses = Counter('axon_backward_synapses_' + str(obj_uid), 'backward_synapses', ["synapse"])
         self.forward_codes = Counter('axon_forward_codes_' + str(obj_uid), 'forward_codes', ["code"])
