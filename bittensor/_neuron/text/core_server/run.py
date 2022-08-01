@@ -101,7 +101,6 @@ def serve(
         return priority
 
     def forward_generate( inputs_x:torch.FloatTensor, synapse, model_output = None):
-        total_forward_generate.inc()
         tokens = model.token_remap(inputs_x.to(model.device))
         output = model.pre_model.generate(
             input_ids=tokens['input_ids'],
@@ -125,7 +124,6 @@ def serve(
         return None, model_output, bittensor_output
 
     def forward_hidden_state(inputs_x:torch.FloatTensor, synapse, model_output = None):
-        total_forward_hidden_state.inc()
         message, model_output, hidden = model.encode_forward(inputs_x.to(model.device), model_output=model_output)
         return message, model_output, hidden
 

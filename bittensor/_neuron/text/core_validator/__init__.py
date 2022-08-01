@@ -113,6 +113,8 @@ class neuron:
                 bittensor dendrite object
             dataset (:obj:bittensor.dendrite, `optional`):
                 bittensor dendrite object
+            axon (:obj:bittensor.axon, `optional`):
+                bittensor axon object
     Examples:: 
             >>> subtensor = bittensor.subtensor(network='nakamoto')
             >>> validator = bittensor.neuron.text.core_validator.neuron(subtensor=subtensor)
@@ -125,7 +127,8 @@ class neuron:
         subtensor: 'bittensor.Subtensor' = None,
         metagraph: 'bittensor.Metagraph' = None,
         dendrite: 'bittensor.Dendrite' = None,
-        dataset: 'bittensor.dataset' = None
+        dataset: 'bittensor.dataset' = None,
+        axon: 'bittensor.axon' = None
     ):
 
         # === Set up Config ===
@@ -142,12 +145,22 @@ class neuron:
             self.config.subtensor._mock = True
         print ( self.config )
 
+        # === Set up logging + prometheus ===
+        bittensor.logging( 
+            config = self.config, 
+            logging_dir = self.config.neuron.full_path 
+        )
+        bittensor.prometheus ( 
+            config = self.config, 
+            port = config.prometheus.port if config.axon.port == bittensor.defaults.axon.port else config.axon.port - 1000
+        )
+
         # === Create Bittensor objects ===
-        bittensor.logging( config = self.config, logging_dir = self.config.neuron.full_path )
         self.wallet = bittensor.wallet ( config = self.config ) if wallet == None else wallet
         self.subtensor = bittensor.subtensor ( config = self.config ) if subtensor == None else subtensor
         self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor ) if metagraph == None else metagraph
         self.dendrite = bittensor.dendrite ( config = self.config, wallet = self.wallet ) if dendrite == None else dendrite
+        self.axon = bittensor.axon ( config = self.config, wallet = self.wallet ) if axon == None else axon
         self.device = torch.device ( device = self.config.neuron.device )    
         self.nucleus = nucleus ( config = self.config, device = self.device, subtensor = self.subtensor ).to( self.device )
         self.dataset = (bittensor.dataset(config=self.config, batch_size=self.subtensor.validator_batch_size,
@@ -180,7 +193,9 @@ class neuron:
         bittensor.metagraph.check_config( config )
         bittensor.dataset.check_config( config )
         bittensor.dendrite.check_config( config )
+        bittensor.axon.check_config( config )
         bittensor.wandb.check_config( config )
+        bittensor.prometheus.check_config( config )
         full_path = os.path.expanduser('{}/{}/{}/{}'.format( config.logging.logging_dir, config.wallet.name, config.wallet.hotkey, config.neuron.name ))
         config.neuron.full_path = os.path.expanduser(full_path)
         config.using_wandb = config.wandb.api_key != 'default'
@@ -214,6 +229,8 @@ class neuron:
         bittensor.logging.add_args( parser )
         bittensor.dataset.add_args( parser )
         bittensor.wandb.add_args(parser)
+        bittensor.prometheus.add_args( parser )
+        bittensor.axon.add_args( parser )
         return bittensor.config( parser )
 
     def __repr__(self) -> str:
@@ -245,6 +262,8 @@ class neuron:
         # NOTE: This registration step should likely be solved offline first.
         self.wallet.reregister( subtensor = self.subtensor )
 
+        # Serve the axon so we can determine where the prometheus server is to speak to.
+        self.axon.serve( subtensor = self.subtensor )
 
         # === UID ===
         # Get our uid from the chain. 
