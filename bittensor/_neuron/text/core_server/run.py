@@ -101,6 +101,7 @@ def serve(
         return priority
 
     def forward_generate( inputs_x:torch.FloatTensor, synapse, model_output = None):
+        total_forward_generate.inc()
         tokens = model.token_remap(inputs_x.to(model.device))
         output = model.pre_model.generate(
             input_ids=tokens['input_ids'],
@@ -124,6 +125,7 @@ def serve(
         return None, model_output, bittensor_output
 
     def forward_hidden_state(inputs_x:torch.FloatTensor, synapse, model_output = None):
+        total_forward_hidden_state.inc()
         message, model_output, hidden = model.encode_forward(inputs_x.to(model.device), model_output=model_output)
         return message, model_output, hidden
 
@@ -318,8 +320,9 @@ def serve(
 
     # --- Set prometheus summaries.
     # These will not be posted if the user passes the --prometheus.off
-    iteration_prometheus = Counter('total_iterations', 'Total running iterations on miner')
-    loss_prometheus = Summary('loss', 'Miner loss.')
+    training_iteration_prometheus = Counter('total_iterations', 'total_iterations')
+    training_loss_prometheus = Summary('training_loss', 'training_loss')
+    total_set_weights = Counter('total_set_weights', 'total_set_weights')
 
     # --- Run Forever.
     while True:
@@ -342,8 +345,8 @@ def serve(
                     iteration += 1
 
                     # ---- Prometheus iterations.
-                    iteration_prometheus.inc()
-                    loss_prometheus.observe( losses.item() )
+                    training_iteration_prometheus.inc()
+                    training_loss_prometheus.observe( losses.item() )
 
                     current_block = subtensor.get_current_block()
                     logger.info(f'local training\titeration: {iteration}\tloss: {loss}')
@@ -398,6 +401,7 @@ def serve(
             wandb.log( { 'stats': wandb.Table( dataframe = df ) }, step = current_block )
 
         if current_block - last_set_block > config.neuron.blocks_per_set_weights:
+            total_set_weights.inc()
             try: 
                 bittensor.__console__.print('[green]Current Status:[/green]', {**wandb_data, **local_data})
 
