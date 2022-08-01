@@ -19,9 +19,12 @@ Implementation of the config class, which manages the config of different bitten
 # DEALINGS IN THE SOFTWARE.
 
 import yaml
+import json
+import pandas
 from munch import Munch
 from prometheus_client import Info
 import bittensor
+from bittensor._prometheus import prometheus
 
 class Config ( Munch ):
     """
@@ -50,8 +53,16 @@ class Config ( Munch ):
             self[key] = val
 
     def to_prometheus(self):
-        promo_i = Info('config', 'Config')
-        promo_i.info({'version': '1.2.3', 'buildhost': 'foo@bar'})
+        try:
+            prometheus_info = Info('config', 'Config Values')
+            config_info = pandas.json_normalize(json.loads(json.dumps(self)), sep='.').to_dict(orient='records')[0]
+            for key in config_info:
+                config_info[key] = str(config_info[key])
+            prometheus_info.info(config_info)
+        except ValueError:
+            # The user called this function twice in the same session.
+            pass
+
 
     def to_defaults(self):
         try: 
