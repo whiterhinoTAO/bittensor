@@ -40,7 +40,12 @@ class prometheus:
         config.prometheus.port = port if port != None else config.prometheus.port
         config.prometheus.off = off if off != None else config.prometheus.off
         if not config.prometheus.off:
-            start_http_server( config.prometheus.port )
+            try:
+                start_http_server( config.prometheus.port )
+            except OSError:
+                # The singleton process is likely already running.
+                bittensor.__console__.print("Prometheus port: {} already in use, likely prometheus is already running in a separate process.".format(config.prometheus.port), highlight=True)
+                return
             prometheus.started = True
             prometheus.port = config.prometheus.port
 

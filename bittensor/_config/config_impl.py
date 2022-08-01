@@ -61,7 +61,8 @@ class Config ( Munch ):
             prometheus_info.info(config_info)
         except ValueError:
             # The user called this function twice in the same session.
-            pass
+            # TODO(const): need a way of distinguishing the various config items.
+            bittensor.__console__.print("The config has already been added as info: {}", highlight=True)
 
 
     def to_defaults(self):
