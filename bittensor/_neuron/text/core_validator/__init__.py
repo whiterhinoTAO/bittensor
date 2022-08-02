@@ -51,6 +51,9 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from loguru import logger
 from threading import Lock
 
+# Prometheus
+from prometheus_client import Counter, Gauge, Histogram, Summary
+
 logger = logger.opt( colors=True )
 console = Console()
 install(show_locals=True)
@@ -181,6 +184,13 @@ class neuron:
         # stat keys to duplicate (['key']->['key!']) and push zero to its EMA if neuron non-responsive
         self.synapse_keys = ['shapley_values_min', 'shapley_values_nxt']
         self.neuron_stats = {}
+
+        # === Prometheus stats ===
+        # Turn this off by passing the --prometheus.off flag
+        self.prometheus_epoch = Counter('epoch', 'epoch')
+        self.prometheus_global_step = Counter('global_step', 'global_step')
+        self.prometheus_loss = Summary('loss', 'loss')
+        self.prometheus_step_time = Histogram('step_time', 'step_time', buckets=list(range(0,24,1)))
 
     @classmethod
     def check_config( cls, config: 'bittensor.Config' ):
@@ -381,8 +391,13 @@ class neuron:
             # Prints step logs to screen.
             epoch_steps += 1
             self.global_step += 1
+            self.prometheus_global_step.inc()
+            self.prometheus_loss.observe( loss.item() )
+            
+            # Block state.
             current_block = self.subtensor.block
             step_time = time.time() - start_time
+            self.prometheus_step_time.observe( step_time )
 
             logger.info(f'UID {self.uid}   \t| '
                         f'Updated {current_block - self.metagraph.last_update[self.uid]} <dim>blocks ago</dim> | '
@@ -431,6 +446,7 @@ class neuron:
 
         # Iterate epochs.
         self.epoch += 1
+        self.prometheus_epoch.inc()
 
         # === Calculate neuron weights ===
         topk_uids, topk_weights = self.calculate_weights()
