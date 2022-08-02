@@ -52,7 +52,7 @@ from loguru import logger
 from threading import Lock
 
 # Prometheus
-from prometheus_client import Counter, Gauge, Histogram, Summary
+from prometheus_client import Counter, Gauge, Histogram, Summary, Info
 
 logger = logger.opt( colors=True )
 console = Console()
@@ -62,7 +62,7 @@ install(show_locals=True)
 #   [Column_name, key_name, format_string, rich_style]  # description
 neuron_stats_columns = [
     ['UID', 'uid', '{:.0f}', 'cyan'],  # neuron UID
-    ['Upd!', 'updates!', '{}', 'bright_yellow'],  # number of exponential moving average updates with zeroing on
+    ['Upd', 'updates', '{}', 'bright_yellow'],  # number of exponential moving average updates with zeroing on
     ['nUpd', 'updates_shapley_values_nxt', '{}', 'bright_yellow'],  # number of exponential moving average updates to nShap
     ['mUpd', 'updates_shapley_values_min', '{}', 'bright_yellow'],  # number of exponential moving average updates to mShap
     ['nTime', 'response_time_nxt', '{:.2f}', 'yellow'],  # response time to TextCausalLMNext forward requests [TextCausalLMNext]
@@ -95,9 +95,9 @@ neuron_stats_columns = [
 
 class neuron:
     r"""
-    Creates a bittensor neuron that specializes validating other peers. The core validator
-    finetunes on the bittensor network with a mixture of experts model and shapely scoring.
-    The validator's main jobs are to identify important/useful peers in the network and correctly
+    Creates a bittensor neuron that specializes in validating other peers. The core validator
+    finetunes on the bittensor network with a mixture of experts model with shapely scoring.
+    The validator's main jobs is identify important/useful peers in the network and correctly
     weight them. To achieve this, the validator will send requests to different peers on the network
     and evalute their responses.
 
@@ -187,9 +187,11 @@ class neuron:
 
         # === Prometheus stats ===
         # Turn this off by passing the --prometheus.off flag
+        self.prometheus_stats = {} # A dictionary of prometheus Gauges we can query. This replicates the neuron_stats dictionary every step.
+        self.prometheus_info = Info("core_validator_info", "core_validator_info")
         self.prometheus_epoch = Counter('epoch', 'epoch')
         self.prometheus_global_step = Counter('global_step', 'global_step')
-        self.prometheus_loss = Summary('loss', 'loss')
+        self.prometheus_loss = Gauge('loss', 'loss')
         self.prometheus_step_time = Histogram('step_time', 'step_time', buckets=list(range(0,24,1)))
 
     @classmethod
@@ -252,16 +254,16 @@ class neuron:
                 f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])')
 
     def __del__(self):
-        self.__exit__()
+        self.dataset.close()
+        self.dendrite.__del__()
+        self.forward_thread_queue.stop()
+        self.forward_thread_queue.join()
 
     def __exit__ ( self, exc_type, exc_value, exc_traceback ):
         r""" Close down neuron.
         """
         print(exc_type, exc_value, exc_traceback)
-        self.dataset.close()
-        self.dendrite.__del__()
-        self.forward_thread_queue.stop()
-        self.forward_thread_queue.join()
+        self.__del__()
 
     def __enter__(self):
         r""" Sanity checks and begin validator.
@@ -279,6 +281,7 @@ class neuron:
         # Get our uid from the chain. 
         # At this point we should have a uid because we are already registered.
         self.uid = self.wallet.get_uid( subtensor = self.subtensor )    
+        self.prometheus_info.info( {'uid': str(self.uid) } )
 
         # === Monitoring ===
         # Optionally set up wandb logging.
@@ -391,13 +394,10 @@ class neuron:
             # Prints step logs to screen.
             epoch_steps += 1
             self.global_step += 1
-            self.prometheus_global_step.inc()
-            self.prometheus_loss.observe( loss.item() )
             
             # Block state.
             current_block = self.subtensor.block
             step_time = time.time() - start_time
-            self.prometheus_step_time.observe( step_time )
 
             logger.info(f'UID {self.uid}   \t| '
                         f'Updated {current_block - self.metagraph.last_update[self.uid]} <dim>blocks ago</dim> | '
@@ -419,6 +419,19 @@ class neuron:
             # === Calculate neuron weights ===
             topk_uids, topk_weights = self.calculate_weights()
             self.weights_table(topk_uids, topk_weights)  # print weights table
+
+            # === Stats to Prometheus ===
+            self.prometheus_global_step.inc()
+            self.prometheus_loss.observe( loss.item() )
+            self.prometheus_step_time.observe( step_time )
+            self.prometheus_info.info( {'block': str(current_block) } )
+            for uid, vals in self.neuron_stats.items():
+                for key in vals:
+                    if uid not in self.prometheus_stats:
+                        self.prometheus_stats[uid] = {}
+                    if key not in self.prometheus_stats[uid]:
+                        self.prometheus_stats[uid] = Gauge('stats_{key}_{uid}'.format(key, uid), 'stats_{key}_{uid}'.format(key, uid))
+                    self.prometheus_stats[uid][key].observe( vals[key] )
 
             # === Logs ===
             if self.config.using_wandb:
