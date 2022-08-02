@@ -56,9 +56,11 @@ class Config ( Munch ):
         try:
             prometheus_info = Info('config', 'Config Values')
             config_info = pandas.json_normalize(json.loads(json.dumps(self)), sep='.').to_dict(orient='records')[0]
+            formatted_info = {}
             for key in config_info:
                 config_info[key] = str(config_info[key])
-            prometheus_info.info(config_info)
+                formatted_info[key.replace('.', '_')] = str(config_info[key])
+            prometheus_info.info(formatted_info)
         except ValueError:
             # The user called this function twice in the same session.
             # TODO(const): need a way of distinguishing the various config items.
