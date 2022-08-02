@@ -10,21 +10,21 @@ LABEL bittensor.image.authors="bittensor.com" \
 	bittensor.image.documentation="https://app.gitbook.com/@opentensor/s/bittensor/"
 ARG DEBIAN_FRONTEND=noninteractive
 
-#nvidia key migration
+# nvidia key migration
 RUN apt-key del 7fa2af80
 RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub
 RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu2004/x86_64/7fa2af80.pub
 
-RUN apt-get update && apt-get install --no-install-recommends --no-install-suggests -y apt-utils curl git cmake build-essential unzip python3-pip  wget iproute2 software-properties-common
+RUN apt-get update && apt-get install --no-install-recommends --no-install-suggests -y apt-utils curl git cmake build-essential unzip python3-pip  wget iproute2 software-properties-common && rm -rf /var/lib/apt/lists/*
 
 RUN add-apt-repository ppa:deadsnakes/ppa
-RUN apt-get update
-RUN apt-get install python3 python3-dev -y
+RUN apt-get update && apt-get install --no-install-recommends python3 python3-dev -y && rm -rf /var/lib/apt/lists/*
 RUN python3 -m pip install --upgrade pip
 
-# add Bittensor code to docker image
+# Add bittensor code to docker image
 RUN mkdir /bittensor
 RUN mkdir /home/.bittensor
+RUN mkdir /root/.bittensor
 COPY . /bittensor
 
 WORKDIR /bittensor
@@ -33,3 +33,4 @@ RUN pip install -r requirements.txt
 RUN pip install .
 
 EXPOSE 8091
+EXPOSE 9095

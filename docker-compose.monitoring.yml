@@ -16,3 +16,29 @@ services:
     ports:
       - 3060:3000
     depends_on: ['prometheus']
+
+  bittensor-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8092:8091"
+      - "9095:9095"
+    volumes:
+      - ~/.bittensor:/root/.bittensor
+
+    command: /bin/bash -c "
+      PYTHONPATH=/bittensor python3 /bittensor/miners/core_server.py --subtensor.network nobunaga --neuron.model_name distilgpt2 --wallet.coldkey default --wallet.hotkey test2 --config.model core_server --config.synapse all --no_prompt"
+
+  bittensor-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8093:8091"
+      - "9096:9095"
+    volumes:
+      - ~/.bittensor:/root/.bittensor
+
+    command: /bin/bash -c "
+      PYTHONPATH=/bittensor python3 /bittensor/miners/core_server.py --subtensor.network nobunaga --neuron.model_name distilgpt2 --wallet.coldkey default --wallet.hotkey test1 --config.model core_server --config.synapse all --no_prompt"
