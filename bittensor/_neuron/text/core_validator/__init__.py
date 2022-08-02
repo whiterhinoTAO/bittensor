@@ -148,7 +148,7 @@ class neuron:
             self.config.subtensor._mock = True
         print ( self.config )
 
-        # === Set up logging + prometheus ===
+        # === Monitoring + logging + prometheus ===
         bittensor.logging( 
             config = self.config, 
             logging_dir = self.config.neuron.full_path 
@@ -157,6 +157,13 @@ class neuron:
             config = self.config, 
             port = config.prometheus.port if config.axon.port == bittensor.defaults.axon.port else config.axon.port - 1000
         )
+        if self.config.using_wandb:
+            bittensor.wandb (
+                config = self.config,
+                cold_pubkey = self.wallet.coldkeypub.ss58_address,
+                hot_pubkey = self.wallet.hotkey.ss58_address,
+                root_dir = self.config.neuron.full_path
+            )
 
         # === Create Bittensor objects ===
         self.wallet = bittensor.wallet ( config = self.config ) if wallet == None else wallet
@@ -256,8 +263,10 @@ class neuron:
     def __del__(self):
         self.dataset.close()
         self.dendrite.__del__()
-        self.forward_thread_queue.stop()
-        self.forward_thread_queue.join()
+        try:
+            self.forward_thread_queue.stop()
+            self.forward_thread_queue.join()
+        except: pass # Incase the thread was never started.
 
     def __exit__ ( self, exc_type, exc_value, exc_traceback ):
         r""" Close down neuron.
@@ -274,7 +283,7 @@ class neuron:
         # NOTE: This registration step should likely be solved offline first.
         self.wallet.reregister( subtensor = self.subtensor )
 
-        # Serve the axon so we can determine where the prometheus server is to speak to.
+        # Serve the axon so we can determine where the prometheus server port is.
         self.axon.serve( subtensor = self.subtensor )
 
         # === UID ===
@@ -282,16 +291,6 @@ class neuron:
         # At this point we should have a uid because we are already registered.
         self.uid = self.wallet.get_uid( subtensor = self.subtensor )    
         self.prometheus_info.info( {'uid': str(self.uid) } )
-
-        # === Monitoring ===
-        # Optionally set up wandb logging.
-        if self.config.using_wandb:
-            bittensor.wandb(
-                config = self.config,
-                cold_pubkey = self.wallet.coldkeypub.ss58_address,
-                hot_pubkey = self.wallet.hotkey.ss58_address,
-                root_dir = self.config.neuron.full_path
-            )
 
     def forward(self):
         r""" Run the nucleus forward request
