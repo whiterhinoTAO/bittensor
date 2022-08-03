@@ -93,24 +93,23 @@ class Axon( bittensor.grpc.BittensorServicer ):
         self.priority_threadpool= priority_threadpool
 
         # -- Prometheus
-        if prometheus:
-            try:
-                self.is_started = Enum('axon_is_started', 'is_started', states=['stopped', 'started' ])
-                self.total_forward = Counter('axon_total_forward', 'total_forward')
-                self.total_backward = Counter('axon_total_backward', 'total_backward')
-                self.forward_latency = Histogram('axon_forward_latency', 'forward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1)))
-                self.backward_latency = Histogram('axon_backward_latency', 'backward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
-                self.forward_synapses = Counter('axon_forward_synapses', 'forward_synapses', ["synapse"])
-                self.backward_synapses = Counter('axon_backward_synapses', 'backward_synapses', ["synapse"])
-                self.forward_codes = Counter('axon_forward_codes', 'forward_codes', ["code"])
-                self.backward_codes = Counter('axon_backward_codes', 'backward_codes', ["code"])
-                self.forward_hotkeys = Counter('axon_forward_hotkeys', 'forward_hotkeys', ["hotkey"])
-                self.backward_hotkeys = Counter('axon:backward_hotkeys', 'backward_hotkeys', ["hotkey"])
-            except ValueError:
-                # We have multiple axon objects attached the same prometheus server so we disregard the second.
-                self.prometheus = False
-                bittensor.__console__.print("Another axon has already been added to the in-process prometheus server.", highlight=True)
-
+        if self.prometheus:
+            prefix = 0
+            while True:
+                try:
+                    self.is_started = Enum('axon_is_started_'.format(prefix), 'is_started', states=['stopped', 'started' ])
+                    self.total_forward = Counter('axon_total_forward_'.format(prefix), 'total_forward')
+                    self.total_backward = Counter('axon_total_backward_'.format(prefix), 'total_backward')
+                    self.forward_latency = Histogram('axon_forward_latency_'.format(prefix), 'forward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1)))
+                    self.backward_latency = Histogram('axon_backward_latency_'.format(prefix), 'backward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
+                    self.forward_synapses = Counter('axon_forward_synapses_'.format(prefix), 'forward_synapses', ["synapse"])
+                    self.backward_synapses = Counter('axon_backward_synapses_'.format(prefix), 'backward_synapses', ["synapse"])
+                    self.forward_codes = Counter('axon_forward_codes_'.format(prefix), 'forward_codes', ["code"])
+                    self.backward_codes = Counter('axon_backward_codes_'.format(prefix), 'backward_codes', ["code"])
+                    self.forward_hotkeys = Counter('axon_forward_hotkeys_'.format(prefix), 'forward_hotkeys', ["hotkey"])
+                    self.backward_hotkeys = Counter('axon:backward_hotkeys_'.format(prefix), 'backward_hotkeys', ["hotkey"])
+                except ValueError: continue
+                break
 
     def __str__(self) -> str:
         return "Axon({}, {}, {}, {})".format( self.ip, self.port, self.wallet.hotkey.ss58_address, "started" if self.started else "stopped")

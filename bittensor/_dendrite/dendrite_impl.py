@@ -82,16 +82,15 @@ class Dendrite(torch.autograd.Function):
 
         # --- Prometheus
         if self.config.dendrite.prometheus:
-            try:
-                self.prometheus_total_requests = Counter('dendrite_total_requests', 'dendrite_total_requests')
-                self.prometheus_latency = Histogram('dendrite_latency', 'dendrite_latency', buckets=list(range(0,2*bittensor.__blocktime__,2))) 
-                self.prometheus_latency_per_uid = Summary('dendrite_latency_per_uid', 'dendrite_latency_per_uid', ['uid'])
-                self.prometheus_success_rate_per_uid = Gauge('dendrite_success_rate_per_uid', 'dendrite_success_rate_per_uid', ['uid'])
-            except ValueError:
-                # We have multiple dendrite objects attached the same prometheus server so we disregard the second.
-                self.config.dendrite.prometheus = False
-                bittensor.__console__.print("Another dendrite has already been added to the in-process prometheus server.", highlight=True)
-
+            prefix = 0
+            while True:
+                try:
+                    self.prometheus_total_requests = Counter('dendrite_total_requests_'.format(prefix), 'dendrite_total_requests')
+                    self.prometheus_latency = Histogram('dendrite_latency_'.format(prefix), 'dendrite_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
+                    self.prometheus_latency_per_uid = Summary('dendrite_latency_per_uid_'.format(prefix), 'dendrite_latency_per_uid', ['uid'])
+                    self.prometheus_success_rate_per_uid = Summary('dendrite_success_rate_per_uid_'.format(prefix), 'dendrite_success_rate_per_uid', ['uid'])
+                except: continue
+                break
 
     def __str__(self):
         return "Dendrite({}, {})".format(self.wallet.hotkey.ss58_address, self.receptor_pool)
@@ -317,9 +316,10 @@ class Dendrite(torch.autograd.Function):
             self.prometheus_total_requests.inc()
             self.prometheus_latency.observe( time.time() - start_time )
             for i in range(len(endpoints)):
-                if codes[i][0] == 1:
-                    self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( times[i][0] )
-                    self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 1 )
+                is_success = (codes[i] == 1).sum().item() == len(codes) # All are success.
+                if is_success:
+                    self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( times[i].mean().item() )
+                    self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 1 ) # Should act like a moving average.
                 else:
                     self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( timeout )
                     self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 0 )
