@@ -133,6 +133,7 @@ class neuron:
         if config == None: config = neuron.config()
         self.config = config
         neuron.check_config( self.config )
+        self.config.to_prometheus()
         self.config.to_defaults()
         if self.config.neuron._mock == True:
             self.config.subtensor._mock = True
@@ -193,7 +194,7 @@ class neuron:
         self.prometheus_info = Info("core_validator_info", "core_validator_info")
         self.prometheus_epoch = Counter('epoch', 'epoch')
         self.prometheus_global_step = Counter('global_step', 'global_step')
-        self.prometheus_loss = Gauge('loss', 'loss')
+        self.prometheus_loss = Summary('loss', 'loss')
         self.prometheus_step_time = Histogram('step_time', 'step_time', buckets=list(range(0,24,1)))
 
     @classmethod
@@ -426,7 +427,7 @@ class neuron:
                     if uid not in self.prometheus_stats:
                         self.prometheus_stats[uid] = {}
                     if key not in self.prometheus_stats[uid]:
-                        self.prometheus_stats[uid] = Gauge('stats_{key}_{uid}'.format(key, uid), 'stats_{key}_{uid}'.format(key, uid))
+                        self.prometheus_stats[uid] = Summary('stats_{key}_{uid}'.format(key, uid), 'stats_{key}_{uid}'.format(key, uid))
                     self.prometheus_stats[uid][key].observe( vals[key] )
 
             # === Logs ===
