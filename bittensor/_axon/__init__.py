@@ -217,6 +217,9 @@ class axon:
                 help='''maximum size of tasks in priority queue''', default = bittensor.defaults.axon.priority.maxsize)
             parser.add_argument('--' + prefix_str + 'axon.compression', type=str, 
                 help='''Which compression algorithm to use for compression (gzip, deflate, NoCompression) ''', default = bittensor.defaults.axon.compression)
+            parser.add_argument('--' + prefix_str + 'axon.no_prometheus', dest = prefix_str + 'axon.prometheus', action='store_false', 
+                help='Turns off prometheus agent posting for the axon.', default=bittensor.defaults.axon.prometheus)
+
         except argparse.ArgumentError:
             # re-parsing arguments.
             pass
@@ -236,7 +239,7 @@ class axon:
         defaults.axon.priority = bittensor.config()
         defaults.axon.priority.max_workers = os.getenv('BT_AXON_PRIORITY_MAX_WORKERS') if os.getenv('BT_AXON_PRIORITY_MAX_WORKERS') != None else 10
         defaults.axon.priority.maxsize = os.getenv('BT_AXON_PRIORITY_MAXSIZE') if os.getenv('BT_AXON_PRIORITY_MAXSIZE') != None else -1
-
+        defaults.axon.prometheus = os.getenv('BT_AXON_PROMETHEUS') if os.getenv('BT_AXON_PROMETHEUS') != None else True
         defaults.axon.compression = 'NoCompression'
 
     @classmethod   

@@ -52,6 +52,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
         priority_threadpool: 'bittensor.prioritythreadpool' = None,
         forward_timeout: int = None,
         backward_timeout: int = None,
+        prometheus:bool = True
     ):
         r""" Initializes a new Axon tensor processing endpoint.
             
@@ -69,7 +70,9 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 priority (:obj:`callable`, `optional`):
                     function to assign priority on requests.
                 priority_threadpool (:obj:`bittensor.prioritythreadpool`, `optional`):
-                    bittensor priority_threadpool.                
+                    bittensor priority_threadpool.     
+                prometheus (:obj:`bool`, `optional`, default=True):
+                    If true, this axon serves its metrics to prometheus.              
         """
         # -- Object vars.
         self.ip = ip
@@ -83,24 +86,30 @@ class Axon( bittensor.grpc.BittensorServicer ):
         self.synapse_callbacks = synapses
         self.synapse_checks = synapse_checks
         self.started = None
+        self.prometheus = prometheus
         
         # -- Priority 
         self.priority = priority 
         self.priority_threadpool= priority_threadpool
 
         # -- Prometheus
-        obj_uid = id(self) # UID for prometheus counters incase there are more than one in process for axon.
-        self.is_started = Enum('axon_is_started_' + str(obj_uid), 'is_started', states=['stopped', 'started' ])
-        self.total_forward = Counter('axon_total_forward_' + str(obj_uid), 'total_forward')
-        self.total_backward = Counter('axon_total_backward_' + str(obj_uid), 'total_backward')
-        self.forward_latency = Histogram('axon_forward_latency_' + str(obj_uid), 'forward_latency', buckets=list(range(0,24,1)))
-        self.backward_latency = Histogram('axon_backward_latency_' + str(obj_uid), 'backward_latency', buckets=list(range(0,24,2))) 
-        self.forward_synapses = Counter('axon_forward_synapses_' + str(obj_uid), 'forward_synapses', ["synapse"])
-        self.backward_synapses = Counter('axon_backward_synapses_' + str(obj_uid), 'backward_synapses', ["synapse"])
-        self.forward_codes = Counter('axon_forward_codes_' + str(obj_uid), 'forward_codes', ["code"])
-        self.backward_codes = Counter('axon_backward_codes_' + str(obj_uid), 'backward_codes', ["code"])
-        self.forward_hotkeys = Counter('axon_forward_hotkeys_' + str(obj_uid), 'forward_hotkeys', ["hotkey"])
-        self.backward_hotkeys = Counter('axon:backward_hotkeys_' + str(obj_uid), 'backward_hotkeys', ["hotkey"])
+        if prometheus:
+            try:
+                self.is_started = Enum('axon_is_started', 'is_started', states=['stopped', 'started' ])
+                self.total_forward = Counter('axon_total_forward', 'total_forward')
+                self.total_backward = Counter('axon_total_backward', 'total_backward')
+                self.forward_latency = Histogram('axon_forward_latency', 'forward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1)))
+                self.backward_latency = Histogram('axon_backward_latency', 'backward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
+                self.forward_synapses = Counter('axon_forward_synapses', 'forward_synapses', ["synapse"])
+                self.backward_synapses = Counter('axon_backward_synapses', 'backward_synapses', ["synapse"])
+                self.forward_codes = Counter('axon_forward_codes', 'forward_codes', ["code"])
+                self.backward_codes = Counter('axon_backward_codes', 'backward_codes', ["code"])
+                self.forward_hotkeys = Counter('axon_forward_hotkeys', 'forward_hotkeys', ["hotkey"])
+                self.backward_hotkeys = Counter('axon:backward_hotkeys', 'backward_hotkeys', ["hotkey"])
+            except ValueError:
+                # We have multiple axon objects attached the same prometheus server so we disregard the second.
+                self.prometheus = False
+                bittensor.__console__.print("Another axon has already been added to the in-process prometheus server.", highlight=True)
 
 
     def __str__(self) -> str:
@@ -214,12 +223,14 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ==== Function which prints all log statements per synapse ====
         # ==============================================================
         def finalize_codes_stats_and_logs():
-            self.total_forward.inc()
-            self.forward_latency.observe( clock.time() - start_time )
-            self.forward_hotkeys.labels( request.hotkey ).inc()
+            if self.prometheus:
+                self.total_forward.inc()
+                self.forward_latency.observe( clock.time() - start_time )
+                self.forward_hotkeys.labels( request.hotkey ).inc()
             for index, synapse in enumerate( synapses ):
-                self.forward_synapses.labels( str(synapse) ).inc()
-                self.forward_codes.labels( str(synapse_codes[ index ]) ).inc()
+                if self.prometheus:
+                    self.forward_synapses.labels( str(synapse) ).inc()
+                    self.forward_codes.labels( str(synapse_codes[ index ]) ).inc()
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
@@ -436,12 +447,14 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ==== Function which prints all log statements per synapse ====
         # ==============================================================
         def finalize_codes_stats_and_logs():
-            self.total_backward.inc()
-            self.backward_latency.observe( clock.time() - start_time )
-            self.backward_hotkeys.labels( request.hotkey ).inc()
+            if self.prometheus:
+                self.total_backward.inc()
+                self.backward_latency.observe( clock.time() - start_time )
+                self.backward_hotkeys.labels( request.hotkey ).inc()
             for index, synapse in enumerate( synapses ):
-                self.backward_synapses.labels( str(synapse) ).inc()
-                self.backward_codes.labels( str(synapse_codes[ index ]) ).inc()
+                if self.prometheus:
+                    self.backward_synapses.labels( str(synapse) ).inc()
+                    self.backward_codes.labels( str(synapse_codes[ index ]) ).inc()
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
@@ -573,7 +586,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
             synapse_messages = [ message for _ in synapses ]
             finalize_codes_stats_and_logs()
             return [], bittensor.proto.ReturnCode.UnknownException, request.synapses
-
         # Check if the call can stop here.
         if check_if_should_return():
             finalize_codes_stats_and_logs()
@@ -770,7 +782,8 @@ class Axon( bittensor.grpc.BittensorServicer ):
         self.server.start()
         logger.success("Axon Started:".ljust(20) + "<blue>{}</blue>", self.ip + ':' + str(self.port))
         self.started = True
-        self.is_started.state('started')
+        if self.prometheus:
+            self.is_started.state('started')
         return self
 
     def stop(self) -> 'Axon':
@@ -780,7 +793,8 @@ class Axon( bittensor.grpc.BittensorServicer ):
             self.server.stop( grace = 1 )
             logger.success("Axon Stopped:".ljust(20) + "<blue>{}</blue>", self.ip + ':' + str(self.port))
         self.started = False
-        self.is_started.state('stopped')
+        if self.prometheus:
+            self.is_started.state('stopped')
         return self
     
     def check(self):

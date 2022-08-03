@@ -32,7 +32,7 @@ from bittensor._synapse import synapse
 import bittensor.utils.stats as stat_utils
 
 # Prometheus
-from prometheus_client import Gauge
+from prometheus_client import Gauge, Summary, Counter
 from prometheus_client import Histogram
 
 # Logger
@@ -81,13 +81,17 @@ class Dendrite(torch.autograd.Function):
         self.stats = self._init_stats()
 
         # --- Prometheus
-        obj_uid = int(time.time()*10000) # UID for prometheus counters incase there are more than one in process for dendrite.
-        self.prometheus_total_requests = Gauge('dendrite_total_requests_' + str(obj_uid), 'dendrite_total_requests')
-        self.prometheus_qps = Gauge('dendrite_qps_' + str(obj_uid), 'dendrite_qps')
-        self.prometheus_avg_out_bytes_per_second = Gauge('dendrite_avg_out_bytes_per_second_' + str(obj_uid), 'dendrite_avg_out_bytes_per_second')
-        self.prometheus_avg_in_bytes_per_second = Gauge('dendrite_avg_in_bytes_per_second_' + str(obj_uid), 'dendrite_avg_in_bytes_per_second')
-        self.prometheus_latency_per_uid = Gauge('dendrite_latency_per_uid_' + str(obj_uid), 'dendrite_latency_per_uid', ['uid'])
-        self.prometheus_success_rate_per_uid = Gauge('dendrite_success_rate_per_uid_' + str(obj_uid), 'dendrite_success_rate_per_uid', ['uid'])
+        if self.config.dendrite.prometheus:
+            try:
+                self.prometheus_total_requests = Counter('dendrite_total_requests', 'dendrite_total_requests')
+                self.prometheus_latency = Histogram('dendrite_latency', 'dendrite_latency', buckets=list(range(0,2*bittensor.__blocktime__,2))) 
+                self.prometheus_latency_per_uid = Summary('dendrite_latency_per_uid', 'dendrite_latency_per_uid', ['uid'])
+                self.prometheus_success_rate_per_uid = Gauge('dendrite_success_rate_per_uid', 'dendrite_success_rate_per_uid', ['uid'])
+            except ValueError:
+                # We have multiple dendrite objects attached the same prometheus server so we disregard the second.
+                self.config.dendrite.prometheus = False
+                bittensor.__console__.print("Another dendrite has already been added to the in-process prometheus server.", highlight=True)
+
 
     def __str__(self):
         return "Dendrite({}, {})".format(self.wallet.hotkey.ss58_address, self.receptor_pool)
@@ -274,6 +278,8 @@ class Dendrite(torch.autograd.Function):
                     Call times per endpoint per synapse.
 
         """
+        start_time = time.time()
+        
         timeout:int = timeout if timeout is not None else self.config.dendrite.timeout
         requires_grad:bool = requires_grad if requires_grad is not None else self.config.dendrite.requires_grad
 
@@ -305,6 +311,18 @@ class Dendrite(torch.autograd.Function):
         # each endpoint.
         outputs: List[torch.Tensor] = forward_response[2:]
         packed_outputs: List[ List[torch.Tensor] ] = [  outputs[ s : s + len(synapses) ] for s in range (0, len(outputs), len( synapses )) ]
+
+        # Update prometheus vars.
+        if self.config.dendrite.prometheus:
+            self.prometheus_total_requests.inc()
+            self.prometheus_latency.observe( time.time() - start_time )
+            for i in range(len(endpoints)):
+                if codes[i][0] == 1:
+                    self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( times[i][0] )
+                    self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 1 )
+                else:
+                    self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( timeout )
+                    self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 0 )
 
         return packed_outputs, packed_codes, packed_times
 
@@ -815,18 +833,6 @@ class Dendrite(torch.autograd.Function):
             except:
                 # Code may be faulty.
                 pass
-
-        # -- Set prometheus
-        self.prometheus_qps.set( self.stats.qps.get() )
-        self.prometheus_total_requests.set( self.stats.total_requests )
-        self.prometheus_avg_out_bytes_per_second.set( self.stats.avg_out_bytes_per_second.get() )
-        self.prometheus_avg_in_bytes_per_second.set( self.stats.avg_in_bytes_per_second.get() )
-        for (end_i, syn_i, inps_i, outs_i, codes_i, times_i) in list( zip ( endpoints, synapses, inputs, outputs, codes, times ) ):
-            print( self.stats.query_times_per_pubkey[end_i.hotkey] )
-            print( self.stats.successes_per_pubkey[end_i.hotkey] )
-
-            self.prometheus_latency_per_uid.labels(end_i.uid).set( self.stats.query_times_per_pubkey[end_i.hotkey] )
-            self.prometheus_success_rate_per_uid.labels(end_i.uid).set( self.stats.successes_per_pubkey[end_i.hotkey] )
 
 
     def to_dataframe ( self, metagraph ):
