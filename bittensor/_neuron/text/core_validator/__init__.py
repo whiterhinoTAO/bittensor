@@ -576,6 +576,12 @@ class neuron:
             if uid in self.neuron_stats:
                 _neuron_stats[uid] = {k: v for k, v in self.neuron_stats[uid].items()}
                 _neuron_stats[uid]['weight'] = weight
+            
+                # Adding the chain-weight onto prometheus also.
+                if uid not in self.prometheus_stats:
+                    self.prometheus_stats[uid] = {}
+                self.prometheus_stats[uid]['weight'] = Summary('validator_stats_weight_{}'.format(uid), 'validator_stats_weight_{}'.format(uid))
+                self.prometheus_stats[uid]['weight'].observe( weight )
             else:
                 unvalidated += [uid]
 
