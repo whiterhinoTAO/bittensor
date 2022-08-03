@@ -89,7 +89,9 @@ class Dendrite(torch.autograd.Function):
                     self.prometheus_latency = Histogram('dendrite_latency_'.format(prefix), 'dendrite_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
                     self.prometheus_latency_per_uid = Summary('dendrite_latency_per_uid_'.format(prefix), 'dendrite_latency_per_uid', ['uid'])
                     self.prometheus_success_rate_per_uid = Summary('dendrite_success_rate_per_uid_'.format(prefix), 'dendrite_success_rate_per_uid', ['uid'])
-                except: continue
+                except ValueError: 
+                    prefix += 1
+                    continue
                 break
 
     def __str__(self):
