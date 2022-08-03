@@ -108,7 +108,10 @@ class Axon( bittensor.grpc.BittensorServicer ):
                     self.backward_codes = Counter('axon_backward_codes_'.format(prefix), 'backward_codes', ["code"])
                     self.forward_hotkeys = Counter('axon_forward_hotkeys_'.format(prefix), 'forward_hotkeys', ["hotkey"])
                     self.backward_hotkeys = Counter('axon:backward_hotkeys_'.format(prefix), 'backward_hotkeys', ["hotkey"])
-                except ValueError: continue
+                except ValueError: 
+                    prefix += 1
+                    bittensor.__console__.print('Sending next axon prometheus args to prefix: {}'.format(prefix))
+                    continue
                 break
 
     def __str__(self) -> str:

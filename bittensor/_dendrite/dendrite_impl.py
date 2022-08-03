@@ -91,6 +91,7 @@ class Dendrite(torch.autograd.Function):
                     self.prometheus_success_rate_per_uid = Summary('dendrite_success_rate_per_uid_'.format(prefix), 'dendrite_success_rate_per_uid', ['uid'])
                 except ValueError: 
                     prefix += 1
+                    bittensor.__console__.print('Sending next axon prometheus args to prefix: {}'.format(prefix))
                     continue
                 break
 
