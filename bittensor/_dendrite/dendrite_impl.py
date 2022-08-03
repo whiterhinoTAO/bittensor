@@ -794,16 +794,16 @@ class Dendrite(torch.autograd.Function):
             # First time for this pubkey we create a new entry.
             if pubkey not in self.stats.requests_per_pubkey:
                 self.stats.requests_per_pubkey[pubkey] = 0
-                self.stats.successes_per_pubkey[pubkey] = 0
-                self.stats.query_times_per_pubkey[pubkey] = 0
+                self.stats.successes_per_pubkey[pubkey] = 0.0
+                self.stats.query_times_per_pubkey[pubkey] = 0.0
                 self.stats.codes_per_pubkey[pubkey] = dict([(k,0) for k in bittensor.proto.ReturnCode.keys()])
                 self.stats.avg_in_bytes_per_pubkey[pubkey] = stat_utils.AmountPerSecondRollingAverage( 0, 0.01 )
                 self.stats.avg_out_bytes_per_pubkey[pubkey] = stat_utils.AmountPerSecondRollingAverage( 0, 0.01 )
                 self.stats.qps_per_pubkey[pubkey] = stat_utils.EventsPerSecondRollingAverage( 0, 0.01 )
 
             self.stats.requests_per_pubkey[pubkey] += 1
-            self.stats.successes_per_pubkey[pubkey] = 0.99 * self.stats.successes_per_pubkey[pubkey] + (0.01) * ( ( codes_i == 1).sum().item() / len(codes_i) )
-            self.stats.query_times_per_pubkey[pubkey] = 0.99 * self.stats.query_times_per_pubkey[pubkey] +  (0.01) * float( times_i.max() )
+            self.stats.successes_per_pubkey[pubkey] = 0.90 * self.stats.successes_per_pubkey[pubkey] + (0.10) * ( ( codes_i == 1).sum().item() / len(codes_i) )
+            self.stats.query_times_per_pubkey[pubkey] = 0.90 * self.stats.query_times_per_pubkey[pubkey] +  (0.10) * float( times_i.max() )
             self.stats.avg_in_bytes_per_pubkey[pubkey].event( float(sys.getsizeof( outs_i )) )
             self.stats.avg_out_bytes_per_pubkey[pubkey].event( float(sys.getsizeof( inps_i )) )
             self.stats.qps_per_pubkey[pubkey].event()
@@ -822,6 +822,9 @@ class Dendrite(torch.autograd.Function):
         self.prometheus_avg_out_bytes_per_second.set( self.stats.avg_out_bytes_per_second.get() )
         self.prometheus_avg_in_bytes_per_second.set( self.stats.avg_in_bytes_per_second.get() )
         for (end_i, syn_i, inps_i, outs_i, codes_i, times_i) in list( zip ( endpoints, synapses, inputs, outputs, codes, times ) ):
+            print( self.stats.query_times_per_pubkey[end_i.hotkey] )
+            print( self.stats.successes_per_pubkey[end_i.hotkey] )
+
             self.prometheus_latency_per_uid.labels(end_i.uid).set( self.stats.query_times_per_pubkey[end_i.hotkey] )
             self.prometheus_success_rate_per_uid.labels(end_i.uid).set( self.stats.successes_per_pubkey[end_i.hotkey] )
 

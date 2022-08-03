@@ -191,11 +191,11 @@ class neuron:
         # === Prometheus stats ===
         # Turn this off by passing the --prometheus.off flag
         self.prometheus_stats = {} # A dictionary of prometheus Gauges we can query. This replicates the neuron_stats dictionary every step.
-        self.prometheus_info = Info("core_validator_info", "core_validator_info")
-        self.prometheus_epoch = Counter('epoch', 'epoch')
-        self.prometheus_global_step = Counter('global_step', 'global_step')
-        self.prometheus_loss = Summary('loss', 'loss')
-        self.prometheus_step_time = Histogram('step_time', 'step_time', buckets=list(range(0,24,1)))
+        self.prometheus_info = Info("validator_info", "validator_info")
+        self.prometheus_epoch = Counter('validator_epoch', 'validator_epoch')
+        self.prometheus_global_step = Counter('validator_global_step', 'validator_global_step')
+        self.prometheus_loss = Summary('validator_loss', 'validator_loss')
+        self.prometheus_step_time = Histogram('validator_step_time', 'validator_step_time', buckets=list(range(0,24,1)))
 
     @classmethod
     def check_config( cls, config: 'bittensor.Config' ):
@@ -427,7 +427,8 @@ class neuron:
                     if uid not in self.prometheus_stats:
                         self.prometheus_stats[uid] = {}
                     if key not in self.prometheus_stats[uid]:
-                        self.prometheus_stats[uid] = Summary('stats_{key}_{uid}'.format(key, uid), 'stats_{key}_{uid}'.format(key, uid))
+                        safe_promo_key = key.replace("!", "X").replace("~","Z")
+                        self.prometheus_stats[uid][key] = Summary('validator_stats_{}_{}'.format(safe_promo_key, uid), 'validator_stats_{}_{}'.format(safe_promo_key, uid))
                     self.prometheus_stats[uid][key].observe( vals[key] )
 
             # === Logs ===
