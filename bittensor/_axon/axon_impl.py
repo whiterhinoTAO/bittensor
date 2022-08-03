@@ -94,23 +94,23 @@ class Axon( bittensor.grpc.BittensorServicer ):
 
         # -- Prometheus
         if self.prometheus:
-            prefix = 0
+            suffix = 0
             while True:
                 try:
-                    self.is_started = Enum('axon_is_started_'.format(prefix), 'is_started', states=['stopped', 'started' ])
-                    self.total_forward = Counter('axon_total_forward_'.format(prefix), 'total_forward')
-                    self.total_backward = Counter('axon_total_backward_'.format(prefix), 'total_backward')
-                    self.forward_latency = Histogram('axon_forward_latency_'.format(prefix), 'forward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1)))
-                    self.backward_latency = Histogram('axon_backward_latency_'.format(prefix), 'backward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
-                    self.forward_synapses = Counter('axon_forward_synapses_'.format(prefix), 'forward_synapses', ["synapse"])
-                    self.backward_synapses = Counter('axon_backward_synapses_'.format(prefix), 'backward_synapses', ["synapse"])
-                    self.forward_codes = Counter('axon_forward_codes_'.format(prefix), 'forward_codes', ["code"])
-                    self.backward_codes = Counter('axon_backward_codes_'.format(prefix), 'backward_codes', ["code"])
-                    self.forward_hotkeys = Counter('axon_forward_hotkeys_'.format(prefix), 'forward_hotkeys', ["hotkey"])
-                    self.backward_hotkeys = Counter('axon:backward_hotkeys_'.format(prefix), 'backward_hotkeys', ["hotkey"])
+                    self.is_started = Enum('axon_is_started_'.format(suffix), 'is_started', states=['stopped', 'started' ])
+                    self.total_forward = Counter('axon_total_forward_'.format(suffix), 'total_forward')
+                    self.total_backward = Counter('axon_total_backward_'.format(suffix), 'total_backward')
+                    self.forward_latency = Histogram('axon_forward_latency_'.format(suffix), 'forward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1)))
+                    self.backward_latency = Histogram('axon_backward_latency_'.format(suffix), 'backward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
+                    self.forward_synapses = Counter('axon_forward_synapses_'.format(suffix), 'forward_synapses', ["synapse"])
+                    self.backward_synapses = Counter('axon_backward_synapses_'.format(suffix), 'backward_synapses', ["synapse"])
+                    self.forward_codes = Counter('axon_forward_codes_'.format(suffix), 'forward_codes', ["code"])
+                    self.backward_codes = Counter('axon_backward_codes_'.format(suffix), 'backward_codes', ["code"])
+                    self.forward_hotkeys = Counter('axon_forward_hotkeys_'.format(suffix), 'forward_hotkeys', ["hotkey"])
+                    self.backward_hotkeys = Counter('axon:backward_hotkeys_'.format(suffix), 'backward_hotkeys', ["hotkey"])
                 except ValueError: 
-                    prefix += 1
-                    bittensor.__console__.print('Sending next axon prometheus args to prefix: {}'.format(prefix))
+                    suffix += 1
+                    bittensor.__console__.print('Sending next axon prometheus args to suffix: {}'.format(suffix))
                     continue
                 break
 
@@ -838,7 +838,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
             return dataframe
 
         except Exception as e:
-            bittensor.logging.error(prefix='failed axon.to_dataframe()', sufix=str(e))
+            bittensor.logging.error(suffix='failed axon.to_dataframe()', sufix=str(e))
             return pandas.DataFrame()
 
     def to_wandb( self ):
@@ -865,5 +865,5 @@ class Axon( bittensor.grpc.BittensorServicer ):
             }
             return wandb_data
         except Exception as e:
-            bittensor.logging.error(prefix='failed during axon.to_wandb()', sufix=str(e))
+            bittensor.logging.error(suffix='failed during axon.to_wandb()', sufix=str(e))
             return {} 
