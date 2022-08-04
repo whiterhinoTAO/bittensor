@@ -182,11 +182,17 @@ class neuron:
         self.loss_agg_mutex = Lock()
 
         # === Neuron statistics variables ===
-        self.alpha = 0.05  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
-        self.weight_key = 'shapley_values_nxt'  # stat key + ! to calculate neuron weights with
-        # stat keys to duplicate (['key']->['key!']) and push zero to its EMA if neuron non-responsive
-        self.synapse_keys = ['shapley_values_min', 'shapley_values_nxt']
         self.neuron_stats = {}
+        self.alpha = 0.05  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
+
+        if self.config.neuron.validation_synapse == 'TextCausalLMNext':
+            self.weight_key = 'shapley_values_nxt'  # stat key + ! to calculate neuron weights with
+            # stat keys to duplicate (['key']->['key!']) and push zero to its EMA if neuron non-responsive
+            self.synapse_keys = ['shapley_values_nxt']
+        else:
+            self.weight_key = 'shapley_values_min'  # stat key + ! to calculate neuron weights with
+            # stat keys to duplicate (['key']->['key!']) and push zero to its EMA if neuron non-responsive
+            self.synapse_keys = ['shapley_values_min']
 
         # === Prometheus stats ===
         # Turn this off by passing the --prometheus.off flag
@@ -231,6 +237,7 @@ class neuron:
         parser.add_argument('--neuron._mock', action='store_true', help='To turn on neuron mocking for testing purposes.', default=False )
         parser.add_argument('--neuron.wait_for_finalization', action='store_true', help='''when setting weights the miner waits for trnasaction finalization.''', default=False)
         parser.add_argument('--neuron.forward_num', type=int, help='''How much forward request before a backward call.''', default=3)
+        parser.add_argument('--neuron.validation_synapse', type=str, help='''Synapse used for validation.''', default='TextCausalLMNext', choices = ['TextCausalLMNext', 'TextCausalLM'])
 
     @classmethod
     def config ( cls ):
@@ -562,9 +569,6 @@ class neuron:
     def weights_table(self, topk_uids, topk_weights, include_uids=None, num_rows: int = None):
         r""" Prints weights table given topk_uids and topk_weights.
         """
-
-        assert len(include_uids) <= num_rows, f'{len(include_uids)} > {num_rows}'  # ensure all include_uids fit in num_rows
-
         n_topk_peer_weights = self.subtensor.min_allowed_weights
         max_allowed_ratio = self.subtensor.max_allowed_min_max_ratio
 
@@ -579,12 +583,14 @@ class neuron:
             else:
                 unvalidated += [uid]
 
-        avail_include_uids = list(set(_neuron_stats.keys()) & set(include_uids))  # exclude include_uids with no stats
-        if len(_neuron_stats) > num_rows:  # limit table to included_uids and remaining topk up to num_rows
-            remaining_uids = set(_neuron_stats.keys()) - set(include_uids)  # find topk remaining, loses topk ordering
-            remaining_uids = [uid for uid in _neuron_stats if uid in remaining_uids]  # recover topk ordering
-            limited_uids = avail_include_uids + remaining_uids[:num_rows - len(include_uids)]
-            _neuron_stats = {uid: stats for uid, stats in _neuron_stats.items() if uid in limited_uids}
+        avail_include_uids = None
+        if include_uids is not None and num_rows is not None:
+            avail_include_uids = list(set(_neuron_stats.keys()) & set(include_uids))  # exclude include_uids with no stats
+            if len(_neuron_stats) > num_rows:  # limit table to included_uids and remaining topk up to num_rows
+                remaining_uids = set(_neuron_stats.keys()) - set(include_uids)  # find topk remaining, loses topk ordering
+                remaining_uids = [uid for uid in _neuron_stats if uid in remaining_uids]  # recover topk ordering
+                limited_uids = avail_include_uids + remaining_uids[:num_rows - len(include_uids)]
+                _neuron_stats = {uid: stats for uid, stats in _neuron_stats.items() if uid in limited_uids}
 
         print()
         stats_table(_neuron_stats, 'weight', self.config.get('width', None),
@@ -758,8 +764,10 @@ class nucleus( torch.nn.Module ):
         # The synapse defines the task we are sending to the neurons
         # synapses: List[bittensor.synapse]: synapse information
         # TODO: WORK IN PROGRESS, prototype
-        synapses = [(bittensor.synapse.TextCausalLM(), textcausallm),
-                    (bittensor.synapse.TextCausalLMNext(), textcausallmnext)]
+        if self.config.neuron.validation_synapse == 'TextCausalLMNext':
+            synapses = [(bittensor.synapse.TextCausalLMNext(), textcausallmnext)]
+        else: 
+            synapses = [(bittensor.synapse.TextCausalLM(), textcausallm)]
 
         # === Query the endpoints ===
         # Makes the dendrite call into the network returning the representations
