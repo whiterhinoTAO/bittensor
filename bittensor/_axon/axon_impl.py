@@ -97,17 +97,17 @@ class Axon( bittensor.grpc.BittensorServicer ):
             suffix = 0
             while True:
                 try:
-                    self.is_started = Enum('axon_is_started_'.format(suffix), 'is_started', states=['stopped', 'started' ])
-                    self.total_forward = Counter('axon_total_forward_'.format(suffix), 'total_forward')
-                    self.total_backward = Counter('axon_total_backward_'.format(suffix), 'total_backward')
-                    self.forward_latency = Histogram('axon_forward_latency_'.format(suffix), 'forward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1)))
-                    self.backward_latency = Histogram('axon_backward_latency_'.format(suffix), 'backward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
-                    self.forward_synapses = Counter('axon_forward_synapses_'.format(suffix), 'forward_synapses', ["synapse"])
-                    self.backward_synapses = Counter('axon_backward_synapses_'.format(suffix), 'backward_synapses', ["synapse"])
-                    self.forward_codes = Counter('axon_forward_codes_'.format(suffix), 'forward_codes', ["code"])
-                    self.backward_codes = Counter('axon_backward_codes_'.format(suffix), 'backward_codes', ["code"])
-                    self.forward_hotkeys = Counter('axon_forward_hotkeys_'.format(suffix), 'forward_hotkeys', ["hotkey"])
-                    self.backward_hotkeys = Counter('axon:backward_hotkeys_'.format(suffix), 'backward_hotkeys', ["hotkey"])
+                    self.is_started = Enum('axon_is_started_{}'.format(suffix), 'is_started', states=['stopped', 'started' ])
+                    self.total_forward = Counter('axon_total_forward_{}'.format(suffix), 'total_forward')
+                    self.total_backward = Counter('axon_total_backward_{}'.format(suffix), 'total_backward')
+                    self.forward_latency = Histogram('axon_forward_latency_{}'.format(suffix), 'forward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1)))
+                    self.backward_latency = Histogram('axon_backward_latency_{}'.format(suffix), 'backward_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
+                    self.forward_synapses = Counter('axon_forward_synapses_{}'.format(suffix), 'forward_synapses', ["synapse"])
+                    self.backward_synapses = Counter('axon_backward_synapses_{}'.format(suffix), 'backward_synapses', ["synapse"])
+                    self.forward_codes = Counter('axon_forward_codes_{}'.format(suffix), 'forward_codes', ["code"])
+                    self.backward_codes = Counter('axon_backward_codes_{}'.format(suffix), 'backward_codes', ["code"])
+                    self.forward_hotkeys = Counter('axon_forward_hotkeys_{}'.format(suffix), 'forward_hotkeys', ["hotkey"])
+                    self.backward_hotkeys = Counter('axon:backward_hotkeys_{}'.format(suffix), 'backward_hotkeys', ["hotkey"])
                 except ValueError: 
                     suffix += 1
                     bittensor.__console__.print('Sending next axon prometheus args to suffix: {}'.format(suffix))

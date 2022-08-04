@@ -85,10 +85,10 @@ class Dendrite(torch.autograd.Function):
             suffix = 0
             while True:
                 try:
-                    self.prometheus_total_requests = Counter('dendrite_total_requests_'.format(suffix), 'dendrite_total_requests')
-                    self.prometheus_latency = Histogram('dendrite_latency_'.format(suffix), 'dendrite_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
-                    self.prometheus_latency_per_uid = Summary('dendrite_latency_per_uid_'.format(suffix), 'dendrite_latency_per_uid', ['uid'])
-                    self.prometheus_success_rate_per_uid = Summary('dendrite_success_rate_per_uid_'.format(suffix), 'dendrite_success_rate_per_uid', ['uid'])
+                    self.prometheus_total_requests = Counter('dendrite_total_requests_{}'.format(suffix), 'dendrite_total_requests')
+                    self.prometheus_latency = Histogram('dendrite_latency_{}'.format(suffix), 'dendrite_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
+                    self.prometheus_latency_per_uid = Summary('dendrite_latency_per_uid_{}'.format(suffix), 'dendrite_latency_per_uid', ['uid'])
+                    self.prometheus_success_rate_per_uid = Summary('dendrite_success_rate_per_uid_{}'.format(suffix), 'dendrite_success_rate_per_uid', ['uid'])
                 except ValueError: 
                     suffix += 1
                     bittensor.__console__.print('Sending next dendrite prometheus args to suffix: {}'.format(suffix))
