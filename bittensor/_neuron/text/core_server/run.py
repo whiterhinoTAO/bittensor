@@ -324,11 +324,15 @@ def serve(
 
     # General prometheus info.
     prometheus_info = Info("neuron_info", "neuron_info")
-    prometheus_info.info( {'type': "server"} )
-    prometheus_info.info( {'network': config.subtensor.network } )
-    prometheus_info.info( {'coldkey': str(wallet.coldkeypub.ss58_address) } )
-    prometheus_info.info( {'hotkey': str(wallet.hotkey.ss58_address) } )
-    prometheus_info.info( {'uid': str(metagraph.hotkeys.index( wallet.hotkey.ss58_address )) } )
+    prometheus_info.info ( 
+        {
+            'type': "server",
+            'uid': str(metagraph.hotkeys.index( wallet.hotkey.ss58_address )),
+            'network': config.subtensor.network,
+            'coldkey': str(wallet.coldkeypub.ss58_address),
+            'hotkey': str(wallet.hotkey.ss58_address) ,
+        } 
+    )
 
     # --- Run Forever.
     while True:
