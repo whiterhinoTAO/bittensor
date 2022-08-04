@@ -319,7 +319,7 @@ class Dendrite(torch.autograd.Function):
             self.prometheus_total_requests.inc()
             self.prometheus_latency.observe( time.time() - start_time )
             for i in range(len(endpoints)):
-                is_success = (codes[i] == 1).sum().item() == len(codes) # All are success.
+                is_success = ((codes[i] == 1).sum().item() > 0) # One is a success.
                 if is_success:
                     self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( times[i].mean().item() )
                     self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 1 ) # Should act like a moving average.
