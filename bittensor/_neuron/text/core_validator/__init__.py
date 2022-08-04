@@ -206,8 +206,8 @@ class neuron:
         self.prometheus_info = Info("neuron_info", "neuron_info")
         self.prometheus_info.info( {'type': "validator"} )
         self.prometheus_info.info( {'network': self.config.subtensor.network } )
-        self.prometheus_info.info( {'coldkey': str(wallet.coldkeypub.ss58_address) } )
-        self.prometheus_info.info( {'hotkey': str(wallet.hotkey.ss58_address) } )
+        self.prometheus_info.info( {'coldkey': str(self.wallet.coldkeypub.ss58_address) } )
+        self.prometheus_info.info( {'hotkey': str(self.wallet.hotkey.ss58_address) } )
 
     @classmethod
     def check_config( cls, config: 'bittensor.Config' ):
