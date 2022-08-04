@@ -22,7 +22,7 @@ Example:
 
 """
 from prometheus_client import Counter
-from prometheus_client import Summary
+from prometheus_client import Summary, Info
 
 import bittensor
 import sys
@@ -321,6 +321,14 @@ def serve(
     training_iteration_prometheus = Counter('total_iterations', 'total_iterations')
     training_loss_prometheus = Summary('training_loss', 'training_loss')
     total_set_weights = Counter('total_set_weights', 'total_set_weights')
+
+    # General prometheus info.
+    prometheus_info = Info("neuron_info", "neuron_info")
+    prometheus_info.info( {'type': "server"} )
+    prometheus_info.info( {'network': config.subtensor.network } )
+    prometheus_info.info( {'coldkey': str(wallet.coldkeypub.ss58_address) } )
+    prometheus_info.info( {'hotkey': str(wallet.hotkey.ss58_address) } )
+    prometheus_info.info( {'uid': str(metagraph.hotkeys.index( wallet.hotkey.ss58_address )) } )
 
     # --- Run Forever.
     while True:
