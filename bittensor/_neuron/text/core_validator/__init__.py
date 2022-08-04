@@ -197,17 +197,11 @@ class neuron:
         # === Prometheus stats ===
         # Turn this off by passing the --prometheus.off flag
         self.prometheus_stats = {} # A dictionary of prometheus Gauges we can query. This replicates the neuron_stats dictionary every step.
+        self.prometheus_info = Info("neuron_info", "neuron_info")
         self.prometheus_epoch = Counter('validator_epoch', 'validator_epoch')
         self.prometheus_global_step = Counter('validator_global_step', 'validator_global_step')
         self.prometheus_loss = Summary('validator_loss', 'validator_loss')
         self.prometheus_step_time = Histogram('validator_step_time', 'validator_step_time', buckets=list(range(0,24,1)))
-
-        # General prometheus info.
-        self.prometheus_info = Info("neuron_info", "neuron_info")
-        self.prometheus_info.info( {'type': "validator"} )
-        self.prometheus_info.info( {'network': self.config.subtensor.network } )
-        self.prometheus_info.info( {'coldkey': str(self.wallet.coldkeypub.ss58_address) } )
-        self.prometheus_info.info( {'hotkey': str(self.wallet.hotkey.ss58_address) } )
 
     @classmethod
     def check_config( cls, config: 'bittensor.Config' ):
@@ -299,7 +293,17 @@ class neuron:
         # Get our uid from the chain. 
         # At this point we should have a uid because we are already registered.
         self.uid = self.wallet.get_uid( subtensor = self.subtensor )    
-        self.prometheus_info.info( {'uid': str(self.uid) } )
+
+        # General prometheus info.
+        self.prometheus_info.info ( 
+            {
+                'type': "validator",
+                'uid': str(self.uid),
+                'network': self.config.subtensor.network,
+                'coldkey': str(self.wallet.coldkeypub.ss58_address),
+                'hotkey': str(self.wallet.hotkey.ss58_address),
+            } 
+        )
 
     def forward(self):
         r""" Run the nucleus forward request
