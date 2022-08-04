@@ -299,7 +299,7 @@ def serve(
     if config.neuron.local_train:
         dataset = bittensor.dataset(config=config)
         dataset.set_data_size(10, 64)
-        data = next(dataset)
+        _ = next(dataset)
 
     # load our old model
     if not config.neuron.restart :

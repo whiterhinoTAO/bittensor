@@ -431,12 +431,10 @@ class neuron:
             self.prometheus_info.info( {'block': str(current_block) } )
             for uid, vals in self.neuron_stats.items():
                 for key in vals:
-                    if uid not in self.prometheus_stats:
-                        self.prometheus_stats[uid] = {}
                     if key not in self.prometheus_stats[uid]:
                         safe_promo_key = key.replace("!", "X").replace("~","Z")
-                        self.prometheus_stats[uid][key] = Summary('validator_stats_{}_{}'.format(safe_promo_key, uid), 'validator_stats_{}_{}'.format(safe_promo_key, uid))
-                    self.prometheus_stats[uid][key].observe( vals[key] )
+                        self.prometheus_stats[key] = Summary('validator_stats_{}'.format(safe_promo_key), 'validator_stats_{}'.format(safe_promo_key), ['uid'])
+                    self.prometheus_stats[key].labels( str(uid) ).observe( vals[key] )
 
             # === Logs ===
             if self.config.using_wandb:
