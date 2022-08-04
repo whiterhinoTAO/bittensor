@@ -88,7 +88,7 @@ class Dendrite(torch.autograd.Function):
                     self.prometheus_total_requests = Counter('dendrite_total_requests_{}'.format(suffix), 'dendrite_total_requests')
                     self.prometheus_latency = Histogram('dendrite_latency_{}'.format(suffix), 'dendrite_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
                     self.prometheus_latency_per_uid = Summary('dendrite_latency_per_uid_{}'.format(suffix), 'dendrite_latency_per_uid', ['uid'])
-                    self.prometheus_success_rate_per_uid = Summary('dendrite_success_rate_per_uid_{}'.format(suffix), 'dendrite_success_rate_per_uid', ['uid'])
+                    self.prometheus_success_rate_per_uid = Gauge('dendrite_success_rate_per_uid_{}'.format(suffix), 'dendrite_success_rate_per_uid', ['uid'])
                 except ValueError: 
                     suffix += 1
                     bittensor.__console__.print('Sending next dendrite prometheus args to suffix: {}'.format(suffix))
@@ -322,10 +322,10 @@ class Dendrite(torch.autograd.Function):
                 is_success = ((codes[i] == 1).sum().item() > 0) # One is a success.
                 if is_success:
                     self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( times[i].mean().item() )
-                    self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 1 ) # Should act like a moving average.
+                    self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).set( 1 ) # Should act like a moving average.
                 else:
                     self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( timeout )
-                    self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 0 )
+                    self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).set( 0 )
 
         return packed_outputs, packed_codes, packed_times
 
