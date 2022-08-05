@@ -196,12 +196,11 @@ class neuron:
 
         # === Prometheus stats ===
         # Turn this off by passing the --prometheus.off flag
-        self.prometheus_stats = {} # A dictionary of prometheus Gauges we can query. This replicates the neuron_stats dictionary every step.
         self.prometheus_info = Info("neuron_info", "neuron_info")
-        self.prometheus_epoch = Counter('validator_epoch', 'validator_epoch')
-        self.prometheus_global_step = Counter('validator_global_step', 'validator_global_step')
-        self.prometheus_loss = Summary('validator_loss', 'validator_loss')
+        self.prometheus_gauges = Gauge('validator_gauge', 'validator_gauge', ['gauge'])
+        self.prometheus_summaries = Summary('validator_summary', 'validator_summary', ["summary"])
         self.prometheus_step_time = Histogram('validator_step_time', 'validator_step_time', buckets=list(range(0,24,1)))
+        self.prometheus_stats = {} # A dictionary of prometheus Gauges we can query. This replicates the neuron_stats dictionary every step.
 
     @classmethod
     def check_config( cls, config: 'bittensor.Config' ):
@@ -374,7 +373,15 @@ class neuron:
         if (batch_size != self.dataset.batch_size) or (sequence_length + validation_len != self.dataset.block_size):
             self.dataset.set_data_size(batch_size, sequence_length + validation_len)
 
-        # === Logs ===
+        # === Logs (Wandb + Prometheus) ===
+        self.prometheus_summaries.labels("current_block").observe( current_block )
+        self.prometheus_summaries.labels("batch_size").observe( batch_size )
+        self.prometheus_summaries.labels("sequence_length").observe( sequence_length )
+        self.prometheus_summaries.labels("validation_len").observe( validation_len )
+        self.prometheus_summaries.labels("n_topk_peer_weights").observe( n_topk_peer_weights )
+        self.prometheus_summaries.labels("max_allowed_ratio").observe( max_allowed_ratio )
+        self.prometheus_summaries.labels("blocks_per_epoch").observe( blocks_per_epoch )
+        self.prometheus_summaries.labels("epochs_until_reset").observe( epochs_until_reset )
         if self.config.using_wandb:
             wandb.log({'era/batch_size': batch_size, 'era/sequence_length': sequence_length,
                        'era/validation_len': validation_len,
@@ -388,6 +395,7 @@ class neuron:
         # Here we run until blocks_per_epochs have progressed.
         self.metagraph_sync() # Reset metagraph.
         epoch_steps = 0
+        self.prometheus_gauges.labels("epoch_steps").set(0)
 
         start_block = self.subtensor.block
         while self.subtensor.block < start_block + blocks_per_epoch:
@@ -397,20 +405,35 @@ class neuron:
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
             loss, stats = self.forward_thread_queue.get()
+            self.prometheus_summaries.labels("loss").observe( loss.item() )
 
             # === Stats update ===
             # Updates moving averages and history.
             self.neuron_stats_update(stats)
 
-            # === State update ===
+            # === Step updates ===
             # Prints step logs to screen.
             epoch_steps += 1
             self.global_step += 1
+            self.prometheus_gauges.labels("global_step").inc()
+            self.prometheus_gauges.labels("epoch_steps").inc()
             
-            # Block state.
+            # === Block state ===
             current_block = self.subtensor.block
-            step_time = time.time() - start_time
+            self.prometheus_gauges.labels("current_block").set(current_block)
 
+            # === Step time ===
+            step_time = time.time() - start_time
+            self.prometheus_step_time.observe( step_time )
+
+            # === Log state ===
+            self.prometheus_gauges.labels("updated").observe( current_block - self.metagraph.last_update[self.uid] )
+            self.prometheus_summaries.labels("stake").observe( self.metagraph.stake[self.uid] )
+            self.prometheus_summaries.labels("rank").observe( self.metagraph.ranks[self.uid] )
+            self.prometheus_summaries.labels("trust").observe( self.metagraph.trust[self.uid] )
+            self.prometheus_summaries.labels("incentive").observe( self.metagraph.incentive[self.uid] )
+            self.prometheus_summaries.labels("dividends").observe( self.metagraph.dividends[self.uid] )
+            self.prometheus_summaries.labels("emission").observe( self.metagraph.emission[self.uid] )
             logger.info(f'UID {self.uid}   \t| '
                         f'Updated {current_block - self.metagraph.last_update[self.uid]} <dim>blocks ago</dim> | '
                         f'Dividends {self.metagraph.dividends[self.uid]:.5f} | '
@@ -434,19 +457,8 @@ class neuron:
                 self.weights_table(topk_uids, topk_weights,
                                    include_uids=list(stats.keys()), num_rows=2 * len(stats))  # print weights table
 
-            # === Stats to Prometheus ===
-            self.prometheus_global_step.inc()
-            self.prometheus_loss.observe( loss.item() )
-            self.prometheus_step_time.observe( step_time )
-            self.prometheus_info.info( {'block': str(current_block) } )
-            for uid, vals in self.neuron_stats.items():
-                for key in vals:
-                    if key not in self.prometheus_stats:
-                        safe_promo_key = key.replace("!", "X").replace("~","Z")
-                        self.prometheus_stats[key] = Summary('validator_stats_{}'.format(safe_promo_key), 'validator_stats_{}'.format(safe_promo_key), ['uid'])
-                    self.prometheus_stats[key].labels( str(uid) ).observe( vals[key] )
-
-            # === Logs ===
+            # === Logs Wands and stats table logs to Prometheus ===
+            self.stats_table_to_prometheus( self.neuron_stats )
             if self.config.using_wandb:
                 wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
                            'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
@@ -472,7 +484,7 @@ class neuron:
 
         # Iterate epochs.
         self.epoch += 1
-        self.prometheus_epoch.inc()
+        self.prometheus_gauges.labels("epoch").inc()
 
         # === Calculate neuron weights ===
         topk_uids, topk_weights = self.calculate_weights()
@@ -486,6 +498,7 @@ class neuron:
             wallet = self.wallet,
             wait_for_finalization = self.config.neuron.wait_for_finalization,
         )
+        self.prometheus_gauges.labels("set_weights").inc()
 
         # === Wandb Logs ===
         # Optionally send validator logs to wandb.
@@ -590,6 +603,7 @@ class neuron:
                 _neuron_stats[uid]['weight'] = weight
             else:
                 unvalidated += [uid]
+        self.stats_table_to_prometheus( _neuron_stats )
 
         avail_include_uids = None
         if include_uids is not None and num_rows is not None:
@@ -611,6 +625,14 @@ class neuron:
                     f'\[{topk_weights.max().item() / topk_weights.min().item():.1f}:1] '
                     f'({max_allowed_ratio} allowed)',  # caption
                     mark_uids=avail_include_uids)
+
+    def stats_table_to_prometheus( self, stats_table ):
+        for uid, vals in stats_table.items():
+            for key in vals:
+                if key not in self.prometheus_stats:
+                    safe_promo_key = key.replace("!", "X").replace("~","Z")
+                    self.prometheus_stats[key] = Summary('validator_stats_{}'.format(safe_promo_key), 'validator_stats_{}'.format(safe_promo_key), ['uid'])
+                self.prometheus_stats[key].labels( str(uid) ).observe( vals[key] )
 
 
 class nucleus( torch.nn.Module ):
