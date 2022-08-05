@@ -427,7 +427,7 @@ class neuron:
             self.prometheus_step_time.observe( step_time )
 
             # === Log state ===
-            self.prometheus_gauges.labels("updated").observe( current_block - self.metagraph.last_update[self.uid] )
+            self.prometheus_summaries.labels("updated").observe( current_block - self.metagraph.last_update[self.uid] )
             self.prometheus_summaries.labels("stake").observe( self.metagraph.stake[self.uid] )
             self.prometheus_summaries.labels("rank").observe( self.metagraph.ranks[self.uid] )
             self.prometheus_summaries.labels("trust").observe( self.metagraph.trust[self.uid] )
