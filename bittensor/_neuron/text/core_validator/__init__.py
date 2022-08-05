@@ -160,6 +160,7 @@ class neuron:
 
         # === Neuron statistics variables ===
         self.neuron_stats = {}
+        self.neuron_hotkeys = []
         self.alpha = 0.05  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
 
         if self.config.neuron.validation_synapse == 'TextCausalLMNext':
@@ -170,6 +171,10 @@ class neuron:
             self.weight_key = 'shapley_values_min'  # stat key + ! to calculate neuron weights with
             # stat keys to duplicate (['key']->['key!']) and push zero to its EMA if neuron non-responsive
             self.synapse_keys = ['shapley_values_min']
+
+        # load last saved validator values from the file system
+        if not config.neuron.restart:
+            self.load(config.neuron.full_path)
 
     @classmethod
     def check_config( cls, config: 'bittensor.Config' ):
@@ -199,6 +204,8 @@ class neuron:
         parser.add_argument('--neuron.validation_len', type=int, help='Number of tokens to holdout for phrase validation beyond sequence context.', default=8)
         parser.add_argument('--neuron.device', type=str, help='miner default training device cpu/cuda', default=("cuda" if torch.cuda.is_available() else "cpu"))
         parser.add_argument('--neuron.clip_gradients', type=float, help='Implement gradient clipping to avoid exploding loss on smaller architectures.', default=1.0 )
+        parser.add_argument('--neuron.print_neuron_stats', action='store_true', help='If True, print neuron_stats and exit.', default=False)
+        parser.add_argument('--neuron.restart', action='store_true', help='If True, reset neuron_stats and validate anew.', default=False)
         parser.add_argument('--neuron.restart_on_failure',  action='store_true', help='''Restart neuron on unknown error.''', default=True )
         parser.add_argument('--neuron._mock', action='store_true', help='To turn on neuron mocking for testing purposes.', default=False )
         parser.add_argument('--neuron.wait_for_finalization', action='store_true', help='''when setting weights the miner waits for trnasaction finalization.''', default=False)
@@ -264,6 +271,30 @@ class neuron:
                 root_dir = self.config.neuron.full_path
             )
 
+    def save(self, path):
+        r""" Save validated hotkeys and neuron_stats to filesystem. """
+        try:
+            state_dict = {
+                'neuron_stats': self.neuron_stats,
+                'neuron_hotkeys': self.neuron_hotkeys
+            }
+            torch.save(state_dict, f'{path}/model.torch')
+            bittensor.logging.success(prefix='Saved model', sufix=f'<blue>{path}/model.torch</blue>')
+
+        except Exception as e:
+            logger.warning('Failed to save model with error:', e)
+
+    def load(self, path):
+        r""" Load validated hotkeys and neuron_stats from filesystem. """
+        try:
+            state_dict = torch.load(f'{path}/model.torch')
+            self.neuron_stats = state_dict['neuron_stats']
+            self.neuron_hotkeys = state_dict['neuron_hotkeys']
+            bittensor.logging.success(prefix='Reloaded model', sufix=f'<blue>{path}/model.torch</blue>')
+
+        except Exception as e:
+            logger.warning('Failed to load model with error:', e)
+
     def forward(self):
         r""" Run the nucleus forward request
         This function is supposed to be ran multi-threaded.
@@ -283,6 +314,12 @@ class neuron:
     def run ( self ):
         r""" Run the validator and terminate on Keyboard interrupt.
         """
+        # === Print neuron_stats and exit
+        if self.config.neuron.print_neuron_stats:
+            topk_uids, topk_weights = self.calculate_weights()  # calculate neuron weights
+            self.neuron_stats_table(topk_uids, topk_weights)  # print neuron_stats
+            return
+
         # === Setup ===
         # Checks wallet and starts monitoring with wandb.
         with self:
@@ -473,12 +510,14 @@ class neuron:
     def metagraph_sync(self):
         r""" Syncing metagraph together with other metagraph-size related objects
         """
-        old_hotkeys = self.metagraph.hotkeys 
+        old_hotkeys = self.neuron_hotkeys if self.neuron_hotkeys else self.metagraph.hotkeys
+
         self.metagraph.sync()
+        self.neuron_hotkeys = self.metagraph.hotkeys
 
         # === Reset neuron stats if uid got replaced
         for uid, old_hotkey in enumerate(old_hotkeys):
-            if old_hotkey != self.metagraph.hotkeys[uid]:
+            if old_hotkey != self.neuron_hotkeys[uid]:
                 if uid in self.neuron_stats:
                     del self.neuron_stats[uid]
 
@@ -585,6 +624,33 @@ class neuron:
                     f'\[{topk_weights.max().item() / topk_weights.min().item():.1f}:1] '
                     f'({max_allowed_ratio} allowed)',  # caption
                     mark_uids=avail_include_uids)
+
+    def neuron_stats_table(self, topk_uids, topk_weights):
+        r""" Prints neuron_stats table given topk_uids and topk_weights.
+        """
+        n_topk_peer_weights = self.subtensor.min_allowed_weights
+        max_allowed_ratio = self.subtensor.max_allowed_min_max_ratio
+
+        # === neuron_stats table ===
+        # Prints exponential moving average statistics of observed neurons and latest weights
+        _neuron_stats = {uid: {k: v for k, v in stats.items()} for uid, stats in self.neuron_stats.items()}
+
+        for uid in _neuron_stats:
+            _neuron_stats[uid]['weight'] = 0
+
+        for uid, weight in zip(topk_uids.tolist(), topk_weights.tolist()):
+            _neuron_stats[uid]['weight'] = weight
+
+        print()
+        stats_table(_neuron_stats, 'weight', self.config.get('width', None),
+                    f'[white] Neuron statistics [/white] | ' + str(self),  # title
+                    f'Validated {n_topk_peer_weights}/'
+                    f'[bold]{len(self.neuron_stats)}[/bold] (min/[bold]valid[/bold]) | '
+                    f'sum:{topk_weights.sum().item():.2g} '
+                    f'[white] max:[bold]{topk_weights.max().item():.4g}[/bold] / '
+                    f'min:[bold]{topk_weights.min().item():.4g}[/bold] [/white] '
+                    f'\[{topk_weights.max().item() / topk_weights.min().item():.1f}:1] '
+                    f'({max_allowed_ratio} allowed)')  # caption
 
 
 class nucleus( torch.nn.Module ):
