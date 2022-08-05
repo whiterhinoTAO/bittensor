@@ -282,7 +282,7 @@ class neuron:
             bittensor.logging.success(prefix='Saved model', sufix=f'<blue>{path}/model.torch</blue>')
 
         except Exception as e:
-            logger.warning('Failed to save model with error:', e)
+            logger.warning(f'Failed to save model with error: {e}')
 
     def load(self, path):
         r""" Load validated hotkeys and neuron_stats from filesystem. """
@@ -293,7 +293,7 @@ class neuron:
             bittensor.logging.success(prefix='Reloaded model', sufix=f'<blue>{path}/model.torch</blue>')
 
         except Exception as e:
-            logger.warning('Failed to load model with error:', e)
+            logger.warning(f'Failed to load model with error: {e}')
 
     def forward(self):
         r""" Run the nucleus forward request
