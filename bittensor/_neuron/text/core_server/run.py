@@ -21,7 +21,7 @@ Example:
     $ python miners/text/template_client.py
 
 """
-from prometheus_client import Counter
+from prometheus_client import Counter, Guage, Histogram
 from prometheus_client import Summary, Info
 
 import bittensor
@@ -318,9 +318,10 @@ def serve(
 
     # --- Set prometheus summaries.
     # These will not be posted if the user passes the --prometheus.off
-    training_iteration_prometheus = Counter('total_iterations', 'total_iterations')
-    training_loss_prometheus = Summary('training_loss', 'training_loss')
-    total_set_weights = Counter('total_set_weights', 'total_set_weights')
+    prometheus_counters = Counter('server_counters', 'server_counters', ['counter_name'])
+    prometheus_guages = Guage('server_guages', 'server_guages', ['guage_name'])
+    prometheus_step_time = Histogram('server_step_time', 'server_step_time', buckets=list(range(0, 3*bittensor.__blocktime__, 3)))
+    prometheus_epoch_time = Histogram('server_epoch_time', 'server_epoch_time', buckets=list(range(0, config.neuron.blocks_per_epoch, bittensor.__blocktime__)))
 
     # General prometheus info.
     prometheus_info = Info("neuron_info", "neuron_info")
@@ -331,6 +332,7 @@ def serve(
             'network': config.subtensor.network,
             'coldkey': str(wallet.coldkeypub.ss58_address),
             'hotkey': str(wallet.hotkey.ss58_address) ,
+            'num_params': sum(p.numel() for p in model.parameters())
         } 
     )
 
@@ -344,26 +346,40 @@ def serve(
         current_block = subtensor.get_current_block()
         end_block = current_block + config.neuron.blocks_per_epoch
         if config.neuron.local_train:
-            # --- Training step.
+
+            # --- Train for full epoch.
+            epoch_start_time = time.time()
             while end_block >= current_block:
                 if current_block != subtensor.get_current_block():
+                    training_step_start = time.time()
+
                     loss, _ = model( next( dataset ).to(model.device) )
                     if iteration > 0 : 
                         losses += loss
                     else:
                         losses = loss
+
+                    # --- Update step.
                     iteration += 1
-
-                    # ---- Prometheus iterations.
-                    training_iteration_prometheus.inc()
-                    training_loss_prometheus.observe( losses.item() )
-
                     current_block = subtensor.get_current_block()
+
+                    # ---- Step update Prometheus.
+                    prometheus_step_time.observe( time.time() - training_step_start )
+                    prometheus_counters.labels("steps_this_epoch").inc()
+                    prometheus_guages.labels("step_training_loss").set( loss.item() )
+                    prometheus_guages.labels("current_block").set( current_block )
                     logger.info(f'local training\titeration: {iteration}\tloss: {loss}')
+
+            # --- Epoch update Prometheus.
+            prometheus_epoch_time.observe( time.time() - epoch_start_time )
+            prometheus_guages.labels("steps_this_epoch").set(0)
+            prometheus_guages.labels("epoch_training_loss").set( losses / iteration )
             
+            # --- Apply Epoch accumulated gradients.
             if iteration != 0:
                 (losses/iteration).backward()
-        
+                prometheus_counters.labels("loss_backward_count").inc()
+
         else:
             while end_block >= current_block:
                 time.sleep(12)
@@ -380,7 +396,11 @@ def serve(
 
             logger.info('Backpropagation Started')
             clip_grad_norm_(model.parameters(), 1.0)
+
+            # Apply gradient update.
             optimizer.step()
+            prometheus_counters.labels("optimizer_step_count").inc()
+
             optimizer.zero_grad()
             model.backward_gradients = 0
             logger.info('Backpropagation Successful: Model updated')
@@ -389,6 +409,8 @@ def serve(
             if local_data['local/loss'] < model.best_loss:
                 model.best_loss = local_data['local/loss']
                 model.save(config.neuron.full_path)
+                prometheus_counters.labels("model_saved").inc()
+
 
         wandb_data = {            
             'stake': nn.stake,
@@ -398,6 +420,13 @@ def serve(
             'incentive': nn.incentive,
             'emission': nn.emission,
         }
+        prometheus_guages.labels("stake").set( nn.stake )
+        prometheus_guages.labels("rank").set( nn.rank )
+        prometheus_guages.labels("trust").set( nn.trust )
+        prometheus_guages.labels("consensus").set( nn.consensus )
+        prometheus_guages.labels("incentive").set( nn.incentive )
+        prometheus_guages.labels("emission").set( nn.semissionake )
+
         
         if config.wandb.api_key != 'default':
 
@@ -411,7 +440,6 @@ def serve(
             wandb.log( { 'stats': wandb.Table( dataframe = df ) }, step = current_block )
 
         if current_block - last_set_block > config.neuron.blocks_per_set_weights:
-            total_set_weights.inc()
             try: 
                 bittensor.__console__.print('[green]Current Status:[/green]', {**wandb_data, **local_data})
 
@@ -426,6 +454,7 @@ def serve(
                     wait_for_inclusion = False,
                     wallet = wallet,
                 )
+                prometheus_counters.labels("set_weights").inc()
                 
                 metagraph.sync()
                 if did_set:
