@@ -238,11 +238,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 if self.prometheus:
                     self.forward_synapses.labels( str(synapse) ).inc()
                     self.forward_codes.labels( str(synapse_codes[ index ]) ).inc()
-                    if synapse_codes[ index ] == bittensor.proto.ReturnCode.Success:
-                        # Capture successful response rates.
-                        self.forward_successes.labels( str(synapse_codes[ index ]) ).inc()
-                        self.forward_response_bytes.labels( request.hotkey, str(synapse) ).inc( sys.getsizeof( synapse_responses[index] ) )
-
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
@@ -470,10 +465,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 if self.prometheus:
                     self.backward_synapses.labels( str(synapse) ).inc()
                     self.backward_codes.labels( str(synapse_codes[ index ]) ).inc()
-                    if synapse_codes[ index ] == bittensor.proto.ReturnCode.Success:
-                        # Capture successful synapses responses.
-                        self.backward_successes.labels( str(synapse) ).inc()
-
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
