@@ -85,15 +85,11 @@ class Axon( bittensor.grpc.BittensorServicer ):
         self.backward_timeout = backward_timeout
         self.synapse_callbacks = synapses
         self.synapse_checks = synapse_checks
-<<<<<<< HEAD
         self.started = None
-        self.prometheus = prometheus
-=======
         self.stats = self._init_stats()
-        self.started = None
+        self.prometheus = prometheus
         self.optimizer_step = None
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
-        
+
         # -- Priority 
         self.priority = priority 
         self.priority_threadpool= priority_threadpool
@@ -231,7 +227,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ==== Function which prints all log statements per synapse ====
         # ==============================================================
         def finalize_codes_stats_and_logs():
-<<<<<<< HEAD
             if self.prometheus:
                 self.total_forward.inc()
                 self.forward_latency.observe( clock.time() - start_time )
@@ -240,9 +235,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 if self.prometheus:
                     self.forward_synapses.labels( str(synapse) ).inc()
                     self.forward_codes.labels( str(synapse_codes[ index ]) ).inc()
-=======
-            for index, synapse in enumerate( synapses ):
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
@@ -343,11 +335,8 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ==== Catch forward request timeouts ====
         # ========================================
         except concurrent.futures.TimeoutError:
-<<<<<<< HEAD
-=======
             if self.priority != None:
                 future.cancel()
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
             code = bittensor.proto.ReturnCode.Timeout
             call_time = clock.time() - start_time
             message = "Request reached timeout"
@@ -464,7 +453,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ==== Function which prints all log statements per synapse ====
         # ==============================================================
         def finalize_codes_stats_and_logs():
-<<<<<<< HEAD
             if self.prometheus:
                 self.total_backward.inc()
                 self.backward_latency.observe( clock.time() - start_time )
@@ -473,9 +461,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 if self.prometheus:
                     self.backward_synapses.labels( str(synapse) ).inc()
                     self.backward_codes.labels( str(synapse_codes[ index ]) ).inc()
-=======
-            for index, synapse in enumerate( synapses ):
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
@@ -607,20 +592,12 @@ class Axon( bittensor.grpc.BittensorServicer ):
             synapse_messages = [ message for _ in synapses ]
             finalize_codes_stats_and_logs()
             return [], bittensor.proto.ReturnCode.UnknownException, request.synapses
-<<<<<<< HEAD
-        # Check if the call can stop here.
-        if check_if_should_return():
-            finalize_codes_stats_and_logs()
-            return [], synapse_codes[0], request.synapses
-
-=======
 
         # Check if the call can stop here.
         if check_if_should_return():
             finalize_codes_stats_and_logs()
             return [], synapse_codes[0], request.synapses
 
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
         # ==============================
         # ==== Finalize call times =====
         # ==============================
@@ -736,12 +713,9 @@ class Axon( bittensor.grpc.BittensorServicer ):
                     response_tensors.append(None)
                     response_codes.append(bittensor.proto.ReturnCode.UnknownException)
                     response_messages.append(str(e))
-<<<<<<< HEAD
-=======
 
         if self.optimizer_step != None:
             self.optimizer_step()
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
         
         return response_tensors, response_codes, response_messages
 
@@ -844,8 +818,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
             bittensor.axon.check_backward_callback(backward,index,pubkey)
         return self
 
-<<<<<<< HEAD
-=======
     def _init_stats(self):
         return SimpleNamespace(
             # Queries per second.
@@ -918,7 +890,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
         except:
             pass  
 
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
     def to_dataframe ( self, metagraph ):
         r""" Return a stats info as a pandas dataframe indexed by the metagraph or pubkey if not existend.
             Args:
