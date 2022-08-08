@@ -85,8 +85,14 @@ class Axon( bittensor.grpc.BittensorServicer ):
         self.backward_timeout = backward_timeout
         self.synapse_callbacks = synapses
         self.synapse_checks = synapse_checks
+<<<<<<< HEAD
         self.started = None
         self.prometheus = prometheus
+=======
+        self.stats = self._init_stats()
+        self.started = None
+        self.optimizer_step = None
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
         
         # -- Priority 
         self.priority = priority 
@@ -225,6 +231,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ==== Function which prints all log statements per synapse ====
         # ==============================================================
         def finalize_codes_stats_and_logs():
+<<<<<<< HEAD
             if self.prometheus:
                 self.total_forward.inc()
                 self.forward_latency.observe( clock.time() - start_time )
@@ -233,6 +240,9 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 if self.prometheus:
                     self.forward_synapses.labels( str(synapse) ).inc()
                     self.forward_codes.labels( str(synapse_codes[ index ]) ).inc()
+=======
+            for index, synapse in enumerate( synapses ):
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
@@ -333,6 +343,11 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ==== Catch forward request timeouts ====
         # ========================================
         except concurrent.futures.TimeoutError:
+<<<<<<< HEAD
+=======
+            if self.priority != None:
+                future.cancel()
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
             code = bittensor.proto.ReturnCode.Timeout
             call_time = clock.time() - start_time
             message = "Request reached timeout"
@@ -449,6 +464,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ==== Function which prints all log statements per synapse ====
         # ==============================================================
         def finalize_codes_stats_and_logs():
+<<<<<<< HEAD
             if self.prometheus:
                 self.total_backward.inc()
                 self.backward_latency.observe( clock.time() - start_time )
@@ -457,6 +473,9 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 if self.prometheus:
                     self.backward_synapses.labels( str(synapse) ).inc()
                     self.backward_codes.labels( str(synapse_codes[ index ]) ).inc()
+=======
+            for index, synapse in enumerate( synapses ):
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
@@ -588,11 +607,20 @@ class Axon( bittensor.grpc.BittensorServicer ):
             synapse_messages = [ message for _ in synapses ]
             finalize_codes_stats_and_logs()
             return [], bittensor.proto.ReturnCode.UnknownException, request.synapses
+<<<<<<< HEAD
         # Check if the call can stop here.
         if check_if_should_return():
             finalize_codes_stats_and_logs()
             return [], synapse_codes[0], request.synapses
 
+=======
+
+        # Check if the call can stop here.
+        if check_if_should_return():
+            finalize_codes_stats_and_logs()
+            return [], synapse_codes[0], request.synapses
+
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
         # ==============================
         # ==== Finalize call times =====
         # ==============================
@@ -708,6 +736,12 @@ class Axon( bittensor.grpc.BittensorServicer ):
                     response_tensors.append(None)
                     response_codes.append(bittensor.proto.ReturnCode.UnknownException)
                     response_messages.append(str(e))
+<<<<<<< HEAD
+=======
+
+        if self.optimizer_step != None:
+            self.optimizer_step()
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
         
         return response_tensors, response_codes, response_messages
 
@@ -810,6 +844,81 @@ class Axon( bittensor.grpc.BittensorServicer ):
             bittensor.axon.check_backward_callback(backward,index,pubkey)
         return self
 
+<<<<<<< HEAD
+=======
+    def _init_stats(self):
+        return SimpleNamespace(
+            # Queries per second.
+            qps = stat_utils.EventsPerSecondRollingAverage( 0, 0.01 ),
+            # Total requests.
+            total_requests = 0,
+            # Total bytes recieved per second.
+            total_in_bytes = 0,
+            # Total bytes responded per second.
+            total_out_bytes = 0,
+            # Bytes recieved per second.
+            avg_in_bytes_per_second = stat_utils.AmountPerSecondRollingAverage( 0, 0.01 ),
+            # Bytes responded per second.
+            avg_out_bytes_per_second = stat_utils.AmountPerSecondRollingAverage( 0, 0.01 ),
+            # Requests per pubkey.
+            requests_per_pubkey = {},
+            # Success per pubkey.
+            successes_per_pubkey = {},
+            # Query time per pubkey.
+            query_times_per_pubkey = {},
+            # Queries per second per pubkey.
+            qps_per_pubkey = {},
+            # Codes recieved per pubkey.
+            codes_per_pubkey = {},
+            # Bytes recieved per pubkey.
+            avg_in_bytes_per_pubkey = {},
+            # Bytes sent per pubkey.
+            avg_out_bytes_per_pubkey = {}
+        )
+
+    #TODO: Replace/update axon and dendrite stats 
+    def update_stats_for_request(self, request, response, time, code):
+        r""" Updates statistics for this request and response.
+            Args:
+                requests ( bittensor.proto.TensorMessage, `required`):
+                    The request.
+                response ( bittensor.proto.TensorMessage, `required`):
+                    The response.
+                time (:type:`float`, `required`):
+                    Length of call in seconds.
+                code (:obj:`bittensor.proto.ReturnCode, `required`)
+                    Return code associated with the call i.e. Success of Timeout.
+        """
+        self.stats.qps.event()
+        self.stats.total_requests += 1
+        self.stats.total_in_bytes += sys.getsizeof(request) 
+        self.stats.total_out_bytes += sys.getsizeof(response) 
+        self.stats.avg_in_bytes_per_second.event( float(sys.getsizeof(request)) )
+        self.stats.avg_out_bytes_per_second.event( float(sys.getsizeof(response)) )
+        pubkey = request.hotkey
+        if pubkey not in self.stats.requests_per_pubkey:
+            self.stats.requests_per_pubkey[ pubkey ] = 0
+            self.stats.successes_per_pubkey[ pubkey ] = 0
+            self.stats.query_times_per_pubkey[ pubkey ] = stat_utils.AmountPerSecondRollingAverage(0, 0.05)
+            self.stats.qps_per_pubkey[ pubkey ] = stat_utils.EventsPerSecondRollingAverage(0, 0.05)
+            self.stats.codes_per_pubkey[ pubkey ] = dict([(k,0) for k in bittensor.proto.ReturnCode.keys()])
+            self.stats.avg_in_bytes_per_pubkey[ pubkey ] = stat_utils.AmountPerSecondRollingAverage(0, 0.01)
+            self.stats.avg_out_bytes_per_pubkey[ pubkey ] = stat_utils.AmountPerSecondRollingAverage(0, 0.01)
+
+        # Add values.
+        self.stats.requests_per_pubkey[ pubkey ] += 1
+        self.stats.successes_per_pubkey[ pubkey ] += 1 if code == 1 else 0
+        self.stats.query_times_per_pubkey[ pubkey ].event( float(time) )
+        self.stats.avg_in_bytes_per_pubkey[ pubkey ].event( float(sys.getsizeof(request)) )
+        self.stats.avg_out_bytes_per_pubkey[ pubkey ].event( float(sys.getsizeof(response)) )
+        self.stats.qps_per_pubkey[ pubkey ].event()    
+        try:
+            if bittensor.proto.ReturnCode.Name( code ) in self.stats.codes_per_pubkey[ pubkey ].keys():
+                self.stats.codes_per_pubkey[ pubkey ][bittensor.proto.ReturnCode.Name( code )] += 1
+        except:
+            pass  
+
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
     def to_dataframe ( self, metagraph ):
         r""" Return a stats info as a pandas dataframe indexed by the metagraph or pubkey if not existend.
             Args:

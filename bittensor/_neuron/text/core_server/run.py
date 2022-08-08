@@ -47,7 +47,6 @@ def serve(
         axon= None,
         metagraph = None,
     ):
-
     config.to_defaults()
     model= model.to(model.device)
 
@@ -77,7 +76,7 @@ def serve(
     )
     mutex = Lock()
 
-    timecheck = {}
+    timecheck_dicts = {bittensor.proto.RequestType.FORWARD:{}, bittensor.proto.RequestType.BACKWARD:{}}
     n_topk_peer_weights = subtensor.min_allowed_weights
 
     def priority(pubkey:str, request_type:bittensor.proto.RequestType, inputs_x) -> float:
@@ -124,17 +123,20 @@ def serve(
         return None, model_output, bittensor_output
 
     def forward_hidden_state(inputs_x:torch.FloatTensor, synapse, model_output = None):
-        message, model_output, hidden = model.encode_forward(inputs_x.to(model.device), model_output=model_output)
+        with mutex:
+            message, model_output, hidden = model.encode_forward(inputs_x.to(model.device), model_output=model_output)
         return message, model_output, hidden
 
     def forward_casual_lm(inputs_x:torch.FloatTensor, synapse, model_output = None):
-        message, model_output, logits = model.encode_forward_causallm(inputs_x.to(model.device), model_output=model_output)
+        with mutex:
+            message, model_output, logits = model.encode_forward_causallm(inputs_x.to(model.device), model_output=model_output)
         return message, model_output, logits
 
     def forward_casual_lm_next(inputs_x: torch.FloatTensor, synapse, model_output=None):
-        message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x.to(model.device),
-                                                                                      topk=synapse.topk,
-                                                                                      model_output=model_output)
+        with mutex:
+            message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x.to(model.device),
+                                                                                        topk=synapse.topk,
+                                                                                        model_output=model_output)
         # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
         #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
         return message, model_output, topk_token_phrases
@@ -164,44 +166,37 @@ def serve(
 
         # Check for stake
         def stake_check() -> bool:
-                
             # Check stake.
             uid = metagraph.hotkeys.index(pubkey)
             if metagraph.S[uid].item() < config.neuron.blacklist.stake:
                 raise Exception('Stake blacklist')
             return False
 
-        def validator_check():
-
-            uid = metagraph.hotkeys.index(pubkey)
-            if (metagraph.W[uid] >0).sum() >= n_topk_peer_weights:
-                return False
-
-            raise Exception('Validator blacklist')
-
-
         # Check for time
         def time_check():
             current_time = datetime.now()
+            # Only check if the request are forward requests
+            timecheck = timecheck_dicts[request_type]
             if pubkey in timecheck.keys():
                 prev_time = timecheck[pubkey]
                 if current_time - prev_time >= timedelta(seconds=config.neuron.blacklist.time):
                     timecheck[pubkey] = current_time
-                    return False
                 else:
                     timecheck[pubkey] = current_time
-                    raise Exception('blacklist')
+                    raise Exception('Time blacklist')
             else:
                 timecheck[pubkey] = current_time
-                return False
+        
+            return False
+
 
         # Black list or not
         try:
             registration_check()
 
-            #stake_check()
+            time_check()
 
-            #validator_check()
+            #stake_check()
             
             return False
 
@@ -210,18 +205,41 @@ def serve(
     
     def synapse_check(synapse, hotkey):
         """
-        Custom synapse function to blacklist certain synapse functions depending on the stake
+            Custom synapse function to protect certain synapse functions depending on the stake and weight.
+            Certain synapses require more compute than others. For instance, TEXT_SEQ_2_SEQ requires a significantly
+            more commitment by the server than a requeset for TEXT_CAUSAL_LM_NEXT.
+
+            Args:
+                synapse (:obj:`bittensor.proto.SynapseArgs`, `required`): 
+                    The proto message that contains additional args for individual synapse functions
+                hotkey (:obj:`torch.FloatTensor`, `required`):
+                    The hotkey that sent the request
+
         """
-        #TODO turn on synapse checking function
+        ## Uid that sent the request
+        incoming_uid = metagraph.hotkeys.index(hotkey)
         if synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE:
-            pass
+            
+            if metagraph.S[incoming_uid] < config.neuron.lasthidden_stake:
+                return False
             
         elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM:
-            pass
-            
+
+            if metagraph.S[incoming_uid] < config.neuron.causallm_stake:
+                return False
+
+        elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM_NEXT:
+
+            if metagraph.S[incoming_uid] < config.neuron.causallmnext_stake:
+                return False
+
         elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_SEQ_2_SEQ:
-            pass
-        
+
+            if (metagraph.S[incoming_uid] < config.neuron.seq2seq_stake) and (metagraph.S[incoming_uid,  uid]):
+                return False     
+        else:
+            return False
+
         return True
 
     def backward_callback(inputs_x:torch.FloatTensor, grads_dy:torch.FloatTensor, synapses=[] ):
@@ -285,6 +303,7 @@ def serve(
         axon = bittensor.axon(
             config = config,
             wallet = wallet,
+            synapse_checks=synapse_check,
             synapse_last_hidden = forward_hidden_state if model.config.neuron.lasthidden else None,
             synapse_causal_lm = forward_casual_lm if model.config.neuron.causallm else None,
             synapse_causal_lm_next = forward_casual_lm_next if model.config.neuron.causallmnext else None,
@@ -299,7 +318,7 @@ def serve(
     if config.neuron.local_train:
         dataset = bittensor.dataset(config=config)
         dataset.set_data_size(10, 64)
-        _ = next(dataset)
+        data = next(dataset)
 
     # load our old model
     if not config.neuron.restart :
@@ -319,7 +338,7 @@ def serve(
     # --- Set prometheus summaries.
     # These will not be posted if the user passes the --prometheus.off
     prometheus_counters = Counter('server_counters', 'server_counters', ['counter_name'])
-    prometheus_guages = Guage('server_guages', 'server_guages', ['guage_name'])
+    prometheus_guages = Gauge('server_guages', 'server_guages', ['guage_name'])
     prometheus_step_time = Histogram('server_step_time', 'server_step_time', buckets=list(range(0, 3*bittensor.__blocktime__, 3)))
     prometheus_epoch_time = Histogram('server_epoch_time', 'server_epoch_time', buckets=list(range(0, config.neuron.blocks_per_epoch, bittensor.__blocktime__)))
 

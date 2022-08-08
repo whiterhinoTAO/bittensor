@@ -22,6 +22,7 @@ Example:
 
 """
 import argparse
+import datetime
 import time
 import bittensor
 import torch
@@ -56,7 +57,7 @@ install(show_locals=True)
 #   [Column_name, key_name, format_string, rich_style]  # description
 neuron_stats_columns = [
     ['UID', 'uid', '{:.0f}', 'cyan'],  # neuron UID
-    ['Upd', 'updates', '{}', 'bright_yellow'],  # number of exponential moving average updates with zeroing on
+    ['Upd!', 'updates!', '{}', 'bright_yellow'],  # number of exponential moving average updates with zeroing on
     ['nUpd', 'updates_shapley_values_nxt', '{}', 'bright_yellow'],  # number of exponential moving average updates to nShap
     ['mUpd', 'updates_shapley_values_min', '{}', 'bright_yellow'],  # number of exponential moving average updates to mShap
     ['nTime', 'response_time_nxt', '{:.2f}', 'yellow'],  # response time to TextCausalLMNext forward requests [TextCausalLMNext]
@@ -177,7 +178,6 @@ class neuron:
         )
 
         # === Create thread queue ===
-        self.forward_thread_queue = ThreadQueue(num_jobs = self.config.neuron.forward_num, target = self.forward)
         self.loss = None
         self.loss_agg_mutex = Lock()
 
@@ -201,8 +201,6 @@ class neuron:
         self.prometheus_gauges = Gauge('validator_gauge', 'validator_gauge', ['gauge'])
         self.prometheus_summaries = Summary('validator_summary', 'validator_summary', ["summary"])
         self.prometheus_step_time = Histogram('validator_step_time', 'validator_step_time', buckets=list(range(0,2*bittensor.__blocktime__,1)))
-        self.prometheus_forward_time = Histogram('prometheus_forward_time', 'prometheus_forward_time', buckets=list(range(0,2*bittensor.__blocktime__,1)))
-        self.prometheus_backward_time = Histogram('prometheus_backward_time', 'prometheus_backward_time', buckets=list(range(0,2*bittensor.__blocktime__,1)))
         self.prometheus_stats = {} # A dictionary of prometheus Gauges we can query. This replicates the neuron_stats dictionary every step.
 
     @classmethod
@@ -308,28 +306,6 @@ class neuron:
             } 
         )
 
-    def forward(self):
-        r""" Run the nucleus forward request
-        This function is supposed to be ran multi-threaded.
-        """
-
-        # ==== Forward ===
-        start_forward_time = time.time()
-        loss, stats = self.nucleus( next(self.dataset) , self.metagraph, self.dendrite )
-        self.prometheus_forward_time.observe( time.time() - start_forward_time )
-
-        # === Backward ===
-        # Backwards gradients through model to train gating and remote endpoints.
-        if hasattr(loss, 'grad_fn') and loss.grad_fn is not None:
-            logger.info(f'Backward <dim>(loss: {loss:.3f})</dim>')
-            start_backward_time = time.time()
-            (loss / self.config.neuron.forward_num).backward()
-            logger.info(f'Backward <dim>[{time.time() - start_forward_time:.3g}s]</dim>')
-            self.prometheus_backward_time.observe( time.time() - start_backward_time )
-
-
-        return loss, stats
-
     def run ( self ):
         r""" Run the validator and terminate on Keyboard interrupt.
         """
@@ -339,7 +315,6 @@ class neuron:
 
             # === Start forward requests ===
             self.metagraph_sync()
-            self.forward_thread_queue.start()
             
             # === Run ===
             # Iterates through epochs.
@@ -415,14 +390,22 @@ class neuron:
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
-            loss, stats = self.forward_thread_queue.get()
+            loss, stats = self.nucleus( next(self.dataset) , self.metagraph, self.dendrite )
             self.prometheus_summaries.labels("loss").observe( loss.item() )
+
+            # === Backward ===
+            # Backwards gradients through model to train gating and remote endpoints.
+            if hasattr(loss, 'grad_fn') and loss.grad_fn is not None:
+                logger.info(f'Backward <dim>(loss: {loss:.3f})</dim>')
+                start_time = time.time()
+                (loss / self.config.neuron.forward_num).backward()
+                logger.info(f'Backward <dim>[{time.time() - start_time:.3g}s]</dim>')
 
             # === Stats update ===
             # Updates moving averages and history.
-            self.neuron_stats_update(stats)
+            responsive_uids, queried_uids = self.neuron_stats_update(stats)
 
-            # === Step updates ===
+            # === State update ===
             # Prints step logs to screen.
             epoch_steps += 1
             self.global_step += 1
@@ -445,11 +428,38 @@ class neuron:
             self.prometheus_gauges.labels("incentive").set( self.metagraph.incentive[self.uid] )
             self.prometheus_gauges.labels("dividends").set( self.metagraph.dividends[self.uid] )
             self.prometheus_gauges.labels("emission").set( self.metagraph.emission[self.uid] )
-            logger.info(f'UID {self.uid}   \t| '
-                        f'Updated {current_block - self.metagraph.last_update[self.uid]} <dim>blocks ago</dim> | '
-                        f'Dividends {self.metagraph.dividends[self.uid]:.5f} | '
-                        f'Stake \u03C4{self.metagraph.stake[self.uid]:.5f} '
-                        f'<dim>(retrieved {current_block - start_block} blocks ago from {self.subtensor.network})</dim>')
+            
+            if epoch_steps % 25 == 1:
+                # validator identifier status console message (every 25 validation steps)
+                print(f"[white not bold]{datetime.datetime.now():%Y-%m-%d %H:%M:%S}[/white not bold]{' ' * 4} | "
+                      f"{f'[bright_white]core_validator[/bright_white]'.center(16 + len('[bright_white][/bright_white]'))} | "
+                      f"UID [cyan]{self.uid}[/cyan] "
+                      f"[dim white not bold][{self.dendrite.receptor_pool.external_ip}][/dim white not bold] "
+                      f"[white not bold]cold:[bold]{self.wallet.name}[/bold]:"
+                      f"[bright_white not bold]{self.wallet.coldkeypub.ss58_address}[/bright_white not bold] "
+                      f"[dim white]/[/dim white] "
+                      f"hot:[bold]{self.config.wallet.hotkey}[/bold]:"
+                      f"[bright_white not bold]{self.wallet.hotkey.ss58_address}[/bright_white not bold][/white not bold]")
+
+                # validator update status console message
+                print(f"[white not bold]{datetime.datetime.now():%Y-%m-%d %H:%M:%S}[/white not bold]{' ' * 4} | "
+                      f"{f'UID [bright_cyan]{self.uid}[/bright_cyan]'.center(16 + len('[bright_cyan][/bright_cyan]'))} | "
+                      f'Updated [yellow]{current_block - self.metagraph.last_update[self.uid]}[/yellow] [dim]blocks ago[/dim] | '
+                      f'Dividends [green not bold]{self.metagraph.dividends[self.uid]:.5f}[/green not bold] | '
+                      f'Stake \u03C4[magenta not bold]{self.metagraph.stake[self.uid]:.5f}[/magenta not bold] '
+                      f'[dim](retrieved [yellow]{current_block - start_block}[/yellow] blocks ago from {self.subtensor.network})[/dim]')
+
+            # step update console message (every validation step)
+            print(f"[white not bold]{datetime.datetime.now():%Y-%m-%d %H:%M:%S}[/white not bold]{' ' * 4} | "
+                  f"{f'[magenta dim not bold]#{current_block}[/magenta dim not bold]'.center(16 + len('[magenta dim not bold][/magenta dim not bold]'))} | "
+                  f'[green not bold]{current_block - start_block}[/green not bold]/'
+                  f'[white not bold]{blocks_per_epoch}[/white not bold] [dim]blocks/epoch[/dim] | '
+                  f'[white not bold]Step {epoch_steps}[white not bold] '
+                  f'[dim] Epoch {self.epoch}[/dim] | '
+                  f'[bright_green not bold]{len(responsive_uids)}[/bright_green not bold]/'
+                  f'[white]{len(queried_uids)}[/white] '
+                  f'[dim white not bold][green]responsive[/green]/queried[/dim white not bold] '
+                  f'[[yellow]{step_time:.3g}[/yellow]s]')
 
             if self.config.logging.debug or self.config.logging.trace:
                 # === Print stats update (table) ===
@@ -468,18 +478,18 @@ class neuron:
                 self.weights_table(topk_uids, topk_weights,
                                    include_uids=list(stats.keys()), num_rows=2 * len(stats))  # print weights table
 
-            # === Logs Wands and stats table logs to Prometheus ===
-            self.stats_table_to_prometheus( self.neuron_stats )
+            # === Logs ===
             if self.config.using_wandb:
-                wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
-                           'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
-                           'epoch/time': step_time}, step=current_block)
                 for uid, vals in self.neuron_stats.items():
                     for key in vals:  # detailed neuron evaluation fields, e.g. loss, shapley_values, synergy
-                        wandb.log({f'stats/{key}_{uid}': vals[key]}, step=current_block)
+                        wandb.log({f'stats/{key}_{uid}': vals[key]}, step=current_block, commit=False)
+
+                wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
+                           'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
+                           'epoch/time': step_time}, step=current_block, commit=True)
 
             # Do the backward request after the a queue of forward requests got finished.  
-            if self.forward_thread_queue.paused() and self.forward_thread_queue.is_empty():
+            if epoch_steps % self.config.neuron.forward_num == 1:
                 start_time = time.time()
                 logger.info('Model update \t| Optimizer step')
 
@@ -490,12 +500,15 @@ class neuron:
                 self.optimizer.zero_grad()
                 logger.info(f'Model update \t| Optimizer step <dim>[{time.time() - start_time:.3g}s]</dim>')
                 
-                # === Get another round of forward requests ===
-                self.forward_thread_queue.resume()
-
         # Iterate epochs.
         self.epoch += 1
         self.prometheus_gauges.labels("epoch").inc()
+
+        # === Calculate neuron weights ===
+        topk_uids, topk_weights = self.calculate_weights()
+
+        if self.config.logging.debug or self.config.logging.trace:
+            self.weights_table(topk_uids, topk_weights)  # print weights table
 
         # === Calculate neuron weights ===
         topk_uids, topk_weights = self.calculate_weights()
@@ -520,9 +533,10 @@ class neuron:
                 self.dendrite.to_dataframe( metagraph = self.metagraph )
             ], axis = 1); df['uid'] = df.index
             wandb_data_dend = self.dendrite.to_wandb()
+            wandb_weight = {f'stats/weight_{uid}': weight for uid, weight in zip (topk_uids, topk_weights)}
             wandb_data = { 'stake': self.metagraph.S[ self.uid ].item(), 'dividends': self.metagraph.D[ self.uid ].item() } 
-            wandb.log( { 'stats': wandb.Table( dataframe = df ) }, step = current_block )
-            wandb.log( { **wandb_data, **wandb_data_dend }, step = current_block )
+            wandb.log( { 'stats': wandb.Table( dataframe = df ) }, step = current_block, commit=False)
+            wandb.log( { **wandb_data, **wandb_data_dend, **wandb_weight }, step = current_block, commit=True)
 
     def metagraph_sync(self):
         r""" Syncing metagraph together with other metagraph-size related objects
@@ -539,6 +553,7 @@ class neuron:
     def neuron_stats_update(self, neuron_stats: Dict[int, Dict[str, Any]]):
         r""" Updates self.neuron_stats with new individual dictionaries per uid.
         """
+        responsive_uids = []
         for _uid, _stats in neuron_stats.items():
             stats = self.neuron_stats.setdefault(_uid, {})
 
@@ -565,6 +580,7 @@ class neuron:
                     updates = 'updates_' + key
                     if updates in stats:
                         stats[updates] += 1  # increment number of normal EMA updates made
+                        responsive_uids += [_uid]
                     else:
                         stats.setdefault(updates, 1)  # add updates fields for new uid entries
 
@@ -575,6 +591,8 @@ class neuron:
                     stats[key] = (1 - self.alpha) * stats[key] + self.alpha * _stats[key]  # update EMA
                 else:
                     stats.setdefault(key, _stats[key])
+
+        return responsive_uids, list(neuron_stats.keys())  # responsive_uids, queried_uids
 
     def calculate_weights(self):
         r""" Calculates neuron set-weights from weight_key mapped values. Defines weight_key as the neuron stats key
@@ -817,7 +835,6 @@ class nucleus( torch.nn.Module ):
         # query_responses.shape = self.config.nucleus.topk * num_synapses * [batch_size, sequence_len, synapse_dim]
         # return_ops: (torch.int64): Return ops.
         # return_ops.shape = self.config.nucleus.topk * [num_synapses]
-        # TODO: WORK IN PROGRESS, prototype
         query_responses, return_ops, times = dendrite.text(
             endpoints=random_endpoints,
             inputs=inputs_seq,

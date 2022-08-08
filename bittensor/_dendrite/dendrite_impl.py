@@ -17,16 +17,20 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
 # DEALINGS IN THE SOFTWARE.
 
+# Types
 from types import SimpleNamespace
 from typing import Tuple, List, Union, Optional
 
+# Misc
 import sys
-import torch
 import pandas
 import time
 
+# Torch
+import torch
 from torch.autograd.function import once_differentiable
 
+# Bittensor
 import bittensor
 from bittensor._synapse import synapse
 import bittensor.utils.stats as stat_utils
@@ -41,7 +45,6 @@ logger = logger.opt(colors=True)
 
 # dummy tensor that triggers autograd 
 DUMMY = torch.empty(0, requires_grad=True)
-
 
 class Dendrite(torch.autograd.Function):
     r""" This is the implementation class for a bittensor.dendrite(). The dendrite class operates as a normal torch autograd friendly operation
@@ -314,7 +317,6 @@ class Dendrite(torch.autograd.Function):
         outputs: List[torch.Tensor] = forward_response[2:]
         packed_outputs: List[ List[torch.Tensor] ] = [  outputs[ s : s + len(synapses) ] for s in range (0, len(outputs), len( synapses )) ]
 
-        # Update prometheus vars.
         if self.config.dendrite.prometheus:
             self.prometheus_counters.labels('total_requests').inc()
             self.prometheus_latency.observe( time.time() - start_time )
@@ -330,6 +332,9 @@ class Dendrite(torch.autograd.Function):
                 else:
                     self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( timeout )
                     self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 0 )
+
+        return packed_outputs, packed_codes, packed_times
+
 
         return packed_outputs, packed_codes, packed_times
 
@@ -813,7 +818,10 @@ class Dendrite(torch.autograd.Function):
         self.stats.total_requests += 1
         total_in_bytes_per_second = 0
         self.stats.avg_out_bytes_per_second.event( float(sys.getsizeof(inputs)) )
+<<<<<<< HEAD
         self.stats.avg_in_bytes_per_second.event( float( total_in_bytes_per_second ) )
+=======
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
         for (end_i, syn_i, inps_i, outs_i, codes_i, times_i) in list( zip ( endpoints, synapses, inputs, outputs, codes, times ) ):
             pubkey = end_i.hotkey
             # First time for this pubkey we create a new entry.
@@ -827,8 +835,13 @@ class Dendrite(torch.autograd.Function):
                 self.stats.qps_per_pubkey[pubkey] = stat_utils.EventsPerSecondRollingAverage( 0, 0.01 )
 
             self.stats.requests_per_pubkey[pubkey] += 1
+<<<<<<< HEAD
             self.stats.successes_per_pubkey[pubkey] = 0.90 * self.stats.successes_per_pubkey[pubkey] + (0.10) * ( ( codes_i == 1).sum().item() / len(codes_i) )
             self.stats.query_times_per_pubkey[pubkey] = 0.90 * self.stats.query_times_per_pubkey[pubkey] +  (0.10) * float( times_i.max() )
+=======
+            self.stats.successes_per_pubkey[pubkey] += (codes_i == 1).sum().int()
+            self.stats.query_times_per_pubkey[pubkey].event( float( times_i.max() ) )
+>>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
             self.stats.avg_in_bytes_per_pubkey[pubkey].event( float(sys.getsizeof( outs_i )) )
             self.stats.avg_out_bytes_per_pubkey[pubkey].event( float(sys.getsizeof( inps_i )) )
             self.stats.qps_per_pubkey[pubkey].event()
