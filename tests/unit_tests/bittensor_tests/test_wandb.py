@@ -19,15 +19,12 @@ import bittensor
 
 def test_axon():
     axon = bittensor.axon()
-    axon.to_wandb()
 
 def test_dendrite():
     dendrite = bittensor.dendrite()
-    dendrite.to_wandb()
     del dendrite
 
 def test_metagraph():
     config = bittensor.subtensor.config()
     subtensor = bittensor.subtensor(network='mock', config=config, )
     metagraph = bittensor.metagraph( subtensor=subtensor )
-    metagraph.to_wandb()

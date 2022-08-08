@@ -27,9 +27,7 @@ import time
 import bittensor
 import torch
 import os
-import wandb
 import math
-import pandas
 import traceback
 from rich import print
 from rich.console import Console
@@ -154,13 +152,6 @@ class neuron:
             config = self.config, 
             port = config.prometheus.port if config.axon.port == bittensor.defaults.axon.port else config.axon.port - 1000
         )
-        if self.config.using_wandb:
-            bittensor.wandb (
-                config = self.config,
-                cold_pubkey = self.wallet.coldkeypub.ss58_address,
-                hot_pubkey = self.wallet.hotkey.ss58_address,
-                root_dir = self.config.neuron.full_path
-            )
 
         # === Create Bittensor objects ===
         self.wallet = bittensor.wallet ( config = self.config ) if wallet == None else wallet
@@ -215,11 +206,9 @@ class neuron:
         bittensor.dataset.check_config( config )
         bittensor.dendrite.check_config( config )
         bittensor.axon.check_config( config )
-        bittensor.wandb.check_config( config )
         bittensor.prometheus.check_config( config )
         full_path = os.path.expanduser('{}/{}/{}/{}'.format( config.logging.logging_dir, config.wallet.name, config.wallet.hotkey, config.neuron.name ))
         config.neuron.full_path = os.path.expanduser(full_path)
-        config.using_wandb = config.wandb.api_key != 'default'
         if not os.path.exists(config.neuron.full_path):
             os.makedirs(config.neuron.full_path)
 
@@ -250,7 +239,6 @@ class neuron:
         bittensor.metagraph.add_args( parser )
         bittensor.logging.add_args( parser )
         bittensor.dataset.add_args( parser )
-        bittensor.wandb.add_args(parser)
         bittensor.prometheus.add_args( parser )
         bittensor.axon.add_args( parser )
         return bittensor.config( parser )
@@ -310,7 +298,6 @@ class neuron:
         r""" Run the validator and terminate on Keyboard interrupt.
         """
         # === Setup ===
-        # Checks wallet and starts monitoring with wandb.
         with self:
 
             # === Start forward requests ===
@@ -342,7 +329,7 @@ class neuron:
     def run_epoch( self ):
         r""" Runs a validator epoch. We apply batches until the epoch length is exhausted.
             Occasionally the validator nucleus is completely reset to ensure we dont converge to far.
-            At the end of the epoch we set weights on the chain and optionally log to wandb.
+            At the end of the epoch we set weights on the chain and optionally log to prometheus
         """
         # === Get params for epoch ===
         # Pulling the latest chain parameters.
@@ -359,7 +346,7 @@ class neuron:
         if (batch_size != self.dataset.batch_size) or (sequence_length + validation_len != self.dataset.block_size):
             self.dataset.set_data_size(batch_size, sequence_length + validation_len)
 
-        # === Logs (Wandb + Prometheus) ===
+        # === Logs Prometheus ===
         self.prometheus_gauges.labels("current_block").set( current_block )
         self.prometheus_gauges.labels("batch_size").set( batch_size )
         self.prometheus_gauges.labels("sequence_length").set( sequence_length )
@@ -368,12 +355,6 @@ class neuron:
         self.prometheus_gauges.labels("max_allowed_ratio").set( max_allowed_ratio )
         self.prometheus_gauges.labels("blocks_per_epoch").set( blocks_per_epoch )
         self.prometheus_gauges.labels("epochs_until_reset").set( epochs_until_reset )
-        if self.config.using_wandb:
-            wandb.log({'era/batch_size': batch_size, 'era/sequence_length': sequence_length,
-                       'era/validation_len': validation_len,
-                       'era/n_topk_peer_weights': n_topk_peer_weights, 'era/max_allowed_ratio': max_allowed_ratio,
-                       'era/blocks_per_epoch': blocks_per_epoch, 'era/epochs_until_reset': epochs_until_reset},
-                      step=current_block)
 
         # === Run Epoch ===
         # Each block length lasts blocks_per_epoch blocks.
@@ -478,16 +459,6 @@ class neuron:
                 self.weights_table(topk_uids, topk_weights,
                                    include_uids=list(stats.keys()), num_rows=2 * len(stats))  # print weights table
 
-            # === Logs ===
-            if self.config.using_wandb:
-                for uid, vals in self.neuron_stats.items():
-                    for key in vals:  # detailed neuron evaluation fields, e.g. loss, shapley_values, synergy
-                        wandb.log({f'stats/{key}_{uid}': vals[key]}, step=current_block, commit=False)
-
-                wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
-                           'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
-                           'epoch/time': step_time}, step=current_block, commit=True)
-
             # Do the backward request after the a queue of forward requests got finished.  
             if epoch_steps % self.config.neuron.forward_num == 1:
                 start_time = time.time()
@@ -523,20 +494,6 @@ class neuron:
             wait_for_finalization = self.config.neuron.wait_for_finalization,
         )
         self.prometheus_gauges.labels("set_weights").inc()
-
-        # === Wandb Logs ===
-        # Optionally send validator logs to wandb.
-        if self.config.using_wandb:
-            # Logging history to wandb.
-            df = pandas.concat( [
-                bittensor.utils.indexed_values_to_dataframe( prefix = 'weights', index = topk_uids, values = torch.zeros( self.metagraph.n ).scatter( dim = 0, src = topk_weights, index = topk_uids ) ),
-                self.dendrite.to_dataframe( metagraph = self.metagraph )
-            ], axis = 1); df['uid'] = df.index
-            wandb_data_dend = self.dendrite.to_wandb()
-            wandb_weight = {f'stats/weight_{uid}': weight for uid, weight in zip (topk_uids, topk_weights)}
-            wandb_data = { 'stake': self.metagraph.S[ self.uid ].item(), 'dividends': self.metagraph.D[ self.uid ].item() } 
-            wandb.log( { 'stats': wandb.Table( dataframe = df ) }, step = current_block, commit=False)
-            wandb.log( { **wandb_data, **wandb_data_dend, **wandb_weight }, step = current_block, commit=True)
 
     def metagraph_sync(self):
         r""" Syncing metagraph together with other metagraph-size related objects

@@ -27,7 +27,6 @@ def test_run_core_server_config():
     assert config['axon']['backward_timeout'] == 20
     assert config['dataset']['data_dir'] == '~/.bittensor/data/'
     assert config['logging']['debug'] == False
-    assert config['wandb']['api_key'] == 'default'
 
 if __name__ == "__main__":
     test_run_core_server_config()

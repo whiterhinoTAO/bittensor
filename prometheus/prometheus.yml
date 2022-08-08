@@ -12,6 +12,4 @@ scrape_configs:
     - job_name: bittensor
       static_configs:
         - targets: 
-            - ip-1:7091
-            - ip-2:7091
-            - ip-3:7091
+            - localhost:7091

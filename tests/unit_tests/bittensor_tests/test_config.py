@@ -43,7 +43,6 @@ def test_strict():
     bittensor.metagraph.add_args( parser )
     bittensor.dataset.add_args( parser )
     bittensor.axon.add_args( parser )
-    bittensor.wandb.add_args( parser )
     bittensor.config( parser, strict=False)
     bittensor.config( parser, strict=True)
 
@@ -70,9 +69,6 @@ def test_prefix():
 
     bittensor.axon.add_args( parser )
     bittensor.axon.add_args( parser, prefix = 'second' )
-
-    bittensor.wandb.add_args( parser )
-    bittensor.wandb.add_args( parser, prefix = 'second' )
 
     config_non_strict = bittensor.config( parser, strict=False)
     config_strict = bittensor.config( parser, strict=True)
@@ -112,14 +108,6 @@ def test_prefix():
     bittensor.logging( config_strict.second )
     bittensor.logging( config_non_strict.second )
 
-    # This is the only place we call bittensor.wandb() outside of neuron code.
-    # It fails because we don't have a key set up for this.
-    # TODO: Actually test bittensor.wandb
-    #bittensor.wandb( config_strict )
-    #bittensor.wandb( config_non_strict )
-    #bittensor.wandb( config_strict.second )
-    #bittensor.wandb( config_non_strict.second )
-
 
 def construct_config():
     defaults = bittensor.Config()
@@ -129,7 +117,6 @@ def construct_config():
     bittensor.wallet.add_defaults( defaults )
     bittensor.dataset.add_defaults( defaults )
     bittensor.logging.add_defaults( defaults )
-    bittensor.wandb.add_defaults( defaults )
     
     return defaults
 

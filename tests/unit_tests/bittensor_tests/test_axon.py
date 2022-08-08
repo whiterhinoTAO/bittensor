@@ -58,10 +58,8 @@ def test_forward_wandb():
         version = bittensor.__version_as_int__,
         tensors=[inputs_serialized]
     )
-    response, code, synapses = axon._forward( request )
-    #axon.update_stats_for_request( request, response, call_time, code )
-    print( axon.to_wandb() )
-
+    axon._forward( request )
+    # wandb is deprecated.
 
 def test_forward_not_implemented():
     inputs_raw = torch.rand(3, 3)

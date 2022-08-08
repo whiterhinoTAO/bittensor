@@ -25,7 +25,6 @@ from prometheus_client import Counter, Gauge, Histogram
 from prometheus_client import Summary, Info
 
 import bittensor
-import sys
 import time
 import datetime
 from threading import Lock
@@ -33,8 +32,6 @@ from datetime import datetime,timedelta
 from loguru import logger; logger = logger.opt(colors=True)
 from torch.nn.utils.rnn import pad_sequence
 
-import wandb
-import pandas
 import torch
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
@@ -324,15 +321,6 @@ def serve(
     if not config.neuron.restart :
         model.load(config.neuron.full_path)
 
-    if config.wandb.api_key != 'default':
-        # --- Init Wandb.
-        bittensor.wandb(
-            config = config,
-            cold_pubkey = wallet.coldkeypub.ss58_address,
-            hot_pubkey = wallet.hotkey.ss58_address,
-            root_dir = config.neuron.full_path
-        )
-
     last_set_block = subtensor.get_current_block()
 
     # --- Set prometheus summaries.
@@ -431,14 +419,7 @@ def serve(
                 prometheus_counters.labels("model_saved").inc()
 
 
-        wandb_data = {            
-            'stake': nn.stake,
-            'rank': nn.rank,
-            'trust': nn.trust,
-            'consensus': nn.consensus,
-            'incentive': nn.incentive,
-            'emission': nn.emission,
-        }
+        # === Prometheus logging.
         prometheus_guages.labels("stake").set( nn.stake )
         prometheus_guages.labels("rank").set( nn.rank )
         prometheus_guages.labels("trust").set( nn.trust )
@@ -446,21 +427,10 @@ def serve(
         prometheus_guages.labels("incentive").set( nn.incentive )
         prometheus_guages.labels("emission").set( nn.semissionake )
 
-        
-        if config.wandb.api_key != 'default':
-
-            df = pandas.concat( [
-                bittensor.utils.indexed_values_to_dataframe( prefix = 'w_i_{}'.format(nn.uid), index = metagraph.uids, values = metagraph.W[:, uid] ),
-                axon.to_dataframe( metagraph = metagraph ),
-            ], axis = 1)
-            df['uid'] = df.index
-            wandb_info_axon = axon.to_wandb()                
-            wandb.log( { **wandb_data, **wandb_info_axon, **local_data }, step = current_block )
-            wandb.log( { 'stats': wandb.Table( dataframe = df ) }, step = current_block )
-
+    
         if current_block - last_set_block > config.neuron.blocks_per_set_weights:
             try: 
-                bittensor.__console__.print('[green]Current Status:[/green]', {**wandb_data, **local_data})
+                bittensor.__console__.print('[green]Current Status:[/green]', {**local_data})
 
                 last_set_block = current_block
                 # Set self weights to maintain activity.

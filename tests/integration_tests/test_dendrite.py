@@ -53,7 +53,6 @@ def test_dendrite_forward_text_endpoints_tensor():
     resp,  _, _ = dendrite.text( endpoints = endpoints, inputs = x, synapses = synapses )
     check_resp_shape(resp,  num_resp = 1, block_size = 2, seq_len = 3 )
     assert dendrite.stats.total_requests == 1
-    dendrite.to_wandb()
 
 def test_dendrite_forward_text_multiple_endpoints_tensor():
     endpoints_1 = neuron_obj.to_tensor()

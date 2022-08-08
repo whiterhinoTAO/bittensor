@@ -16,10 +16,8 @@
 # THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION 
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
 # DEALINGS IN THE SOFTWARE.
-import traceback
 
 import bittensor
-from bittensor._synapse import synapse
 import bittensor.utils.stats as stat_utils
 
 import torch
@@ -34,7 +32,6 @@ from types import SimpleNamespace
 from typing import Tuple, List, Union
 from loguru import logger
 from grpc import _common
-
 
 
 class Receptor(nn.Module):
