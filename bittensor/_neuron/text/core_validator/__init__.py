@@ -18,8 +18,8 @@
 """ The bittensor base validator
 
 Example:
-    $ python3 miners/text/core_validator.py --logging.debug
-
+    $ python3 bittensor/_neurons/text/core_validator/main.py ...
+    
 """
 import argparse
 import datetime
