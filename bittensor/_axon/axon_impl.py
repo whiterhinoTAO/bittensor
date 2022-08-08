@@ -22,6 +22,7 @@ from typing import List, Tuple, Callable
 
 import torch
 import grpc
+import sys
 from loguru import logger
 import concurrent
 
@@ -107,7 +108,10 @@ class Axon( bittensor.grpc.BittensorServicer ):
                     self.forward_codes = Counter('axon_forward_codes_{}'.format(suffix), 'forward_codes', ["code"])
                     self.backward_codes = Counter('axon_backward_codes_{}'.format(suffix), 'backward_codes', ["code"])
                     self.forward_hotkeys = Counter('axon_forward_hotkeys_{}'.format(suffix), 'forward_hotkeys', ["hotkey"])
-                    self.backward_hotkeys = Counter('axon:backward_hotkeys_{}'.format(suffix), 'backward_hotkeys', ["hotkey"])
+                    self.backward_hotkeys = Counter('axon_backward_hotkeys_{}'.format(suffix), 'backward_hotkeys', ["hotkey"])
+                    self.forward_bytes = Counter('axon_forward_bytes_{}'.format(suffix), 'forward_bytes', ["hotkey"])
+                    self.backward_bytes = Counter('axon_backward_bytes_{}'.format(suffix), 'backward_bytes', ["hotkey"])
+                    
                 except ValueError: 
                     suffix += 1
                     bittensor.__console__.print('Sending next axon prometheus args to suffix: {}'.format(suffix))
@@ -229,10 +233,16 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 self.total_forward.inc()
                 self.forward_latency.observe( clock.time() - start_time )
                 self.forward_hotkeys.labels( request.hotkey ).inc()
+                self.forward_bytes.labels( request.hotkey ).inc( sys.getsizeof( request.hotkey) )
             for index, synapse in enumerate( synapses ):
                 if self.prometheus:
                     self.forward_synapses.labels( str(synapse) ).inc()
                     self.forward_codes.labels( str(synapse_codes[ index ]) ).inc()
+                    if synapse_codes[ index ] == bittensor.proto.ReturnCode.Success:
+                        # Capture successful response rates.
+                        self.forward_successes.labels( str(synapse_codes[ index ]) ).inc()
+                        self.forward_response_bytes.labels( request.hotkey, str(synapse) ).inc( sys.getsizeof( synapse_responses[index] ) )
+
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
@@ -455,10 +465,15 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 self.total_backward.inc()
                 self.backward_latency.observe( clock.time() - start_time )
                 self.backward_hotkeys.labels( request.hotkey ).inc()
+                self.backward_bytes.labels( request.hotkey ).inc( sys.getsizeof( request.hotkey) )
             for index, synapse in enumerate( synapses ):
                 if self.prometheus:
                     self.backward_synapses.labels( str(synapse) ).inc()
                     self.backward_codes.labels( str(synapse_codes[ index ]) ).inc()
+                    if synapse_codes[ index ] == bittensor.proto.ReturnCode.Success:
+                        # Capture successful synapses responses.
+                        self.backward_successes.labels( str(synapse) ).inc()
+
                 request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
                 request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
                 bittensor.logging.rpc_log ( 
