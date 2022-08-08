@@ -425,8 +425,7 @@ def serve(
         prometheus_guages.labels("trust").set( nn.trust )
         prometheus_guages.labels("consensus").set( nn.consensus )
         prometheus_guages.labels("incentive").set( nn.incentive )
-        prometheus_guages.labels("emission").set( nn.semissionake )
-
+        prometheus_guages.labels("emission").set( nn.emission )
     
         if current_block - last_set_block > config.neuron.blocks_per_set_weights:
             try: 
