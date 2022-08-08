@@ -818,10 +818,6 @@ class Dendrite(torch.autograd.Function):
         self.stats.total_requests += 1
         total_in_bytes_per_second = 0
         self.stats.avg_out_bytes_per_second.event( float(sys.getsizeof(inputs)) )
-<<<<<<< HEAD
-        self.stats.avg_in_bytes_per_second.event( float( total_in_bytes_per_second ) )
-=======
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
         for (end_i, syn_i, inps_i, outs_i, codes_i, times_i) in list( zip ( endpoints, synapses, inputs, outputs, codes, times ) ):
             pubkey = end_i.hotkey
             # First time for this pubkey we create a new entry.
@@ -835,13 +831,8 @@ class Dendrite(torch.autograd.Function):
                 self.stats.qps_per_pubkey[pubkey] = stat_utils.EventsPerSecondRollingAverage( 0, 0.01 )
 
             self.stats.requests_per_pubkey[pubkey] += 1
-<<<<<<< HEAD
-            self.stats.successes_per_pubkey[pubkey] = 0.90 * self.stats.successes_per_pubkey[pubkey] + (0.10) * ( ( codes_i == 1).sum().item() / len(codes_i) )
-            self.stats.query_times_per_pubkey[pubkey] = 0.90 * self.stats.query_times_per_pubkey[pubkey] +  (0.10) * float( times_i.max() )
-=======
             self.stats.successes_per_pubkey[pubkey] += (codes_i == 1).sum().int()
             self.stats.query_times_per_pubkey[pubkey].event( float( times_i.max() ) )
->>>>>>> 4bc9e6933e6783b37ae97782fec689f6c21ae4a4
             self.stats.avg_in_bytes_per_pubkey[pubkey].event( float(sys.getsizeof( outs_i )) )
             self.stats.avg_out_bytes_per_pubkey[pubkey].event( float(sys.getsizeof( inps_i )) )
             self.stats.qps_per_pubkey[pubkey].event()
