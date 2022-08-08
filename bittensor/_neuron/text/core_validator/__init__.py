@@ -341,9 +341,9 @@ class neuron:
             # Backwards gradients through model to train gating and remote endpoints.
             if hasattr(loss, 'grad_fn') and loss.grad_fn is not None:
                 logger.info(f'Backward <dim>(loss: {loss:.3f})</dim>')
-                start_time = time.time()
+                bw_start_time = time.time()
                 (loss / self.config.neuron.forward_num).backward()
-                logger.info(f'Backward <dim>[{time.time() - start_time:.3g}s]</dim>')
+                logger.info(f'Backward <dim>[{time.time() - bw_start_time:.3g}s]</dim>')
 
             # === Stats update ===
             # Updates moving averages and history.
