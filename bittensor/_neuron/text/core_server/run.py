@@ -339,7 +339,7 @@ def serve(
             'network': config.subtensor.network,
             'coldkey': str(wallet.coldkeypub.ss58_address),
             'hotkey': str(wallet.hotkey.ss58_address) ,
-            'num_params': sum(p.numel() for p in model.parameters())
+            'num_params': str(sum(p.numel() for p in model.parameters()))
         } 
     )
 
