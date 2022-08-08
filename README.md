@@ -70,7 +70,7 @@ import bittensor
 import torch
 wallet = bittensor.wallet().create().register()
 graph = bittensor.metagraph().sync()
-representations, _, _ = bittensor.dendrite( wallet = wallet ).forward_text (
+representations, _, _ = bittensor.dendrite( wallet = wallet ).text_last_hidden_state(
     endpoints = graph.endpoints,
     inputs = "The quick brown fox jumped over the lazy dog"
 )
@@ -106,7 +106,7 @@ def backward_text( pubkey, inputs_x, grads_dy ):
         optimizer.step()
         optimizer.zero_grad() 
 
-wallet = bittensor.wallet().create().register()
+wallet = bittensor.wallet()
 axon = bittensor.axon (
     wallet = wallet,
     forward_text = forward_text,

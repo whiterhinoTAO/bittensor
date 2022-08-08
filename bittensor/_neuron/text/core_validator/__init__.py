@@ -197,9 +197,12 @@ class neuron:
         # === Prometheus stats ===
         # Turn this off by passing the --prometheus.off flag
         self.prometheus_info = Info("neuron_info", "neuron_info")
+        self.prometheus_counters = Gauge('validator_counters', 'validator_counters', ['counter'])
         self.prometheus_gauges = Gauge('validator_gauge', 'validator_gauge', ['gauge'])
         self.prometheus_summaries = Summary('validator_summary', 'validator_summary', ["summary"])
-        self.prometheus_step_time = Histogram('validator_step_time', 'validator_step_time', buckets=list(range(0,24,1)))
+        self.prometheus_step_time = Histogram('validator_step_time', 'validator_step_time', buckets=list(range(0,2*bittensor.__blocktime__,1)))
+        self.prometheus_forward_time = Histogram('prometheus_forward_time', 'prometheus_forward_time', buckets=list(range(0,2*bittensor.__blocktime__,1)))
+        self.prometheus_backward_time = Histogram('prometheus_backward_time', 'prometheus_backward_time', buckets=list(range(0,2*bittensor.__blocktime__,1)))
         self.prometheus_stats = {} # A dictionary of prometheus Gauges we can query. This replicates the neuron_stats dictionary every step.
 
     @classmethod
@@ -293,7 +296,7 @@ class neuron:
         # At this point we should have a uid because we are already registered.
         self.uid = self.wallet.get_uid( subtensor = self.subtensor )    
 
-        # General prometheus info.
+        # === Set prometheus run info ===
         self.prometheus_info.info ( 
             {
                 'type': "validator",
@@ -309,15 +312,21 @@ class neuron:
         r""" Run the nucleus forward request
         This function is supposed to be ran multi-threaded.
         """
+
+        # ==== Forward ===
+        start_forward_time = time.time()
         loss, stats = self.nucleus( next(self.dataset) , self.metagraph, self.dendrite )
+        self.prometheus_forward_time.observe( time.time() - start_forward_time )
 
         # === Backward ===
         # Backwards gradients through model to train gating and remote endpoints.
         if hasattr(loss, 'grad_fn') and loss.grad_fn is not None:
             logger.info(f'Backward <dim>(loss: {loss:.3f})</dim>')
-            start_time = time.time()
+            start_backward_time = time.time()
             (loss / self.config.neuron.forward_num).backward()
-            logger.info(f'Backward <dim>[{time.time() - start_time:.3g}s]</dim>')
+            logger.info(f'Backward <dim>[{time.time() - start_forward_time:.3g}s]</dim>')
+            self.prometheus_backward_time.observe( time.time() - start_backward_time )
+
 
         return loss, stats
 
@@ -348,6 +357,7 @@ class neuron:
                 except KeyboardInterrupt:
                     break
                 except Exception as e:
+                    self.prometheus_counters.labels('failures').inc()
                     console.print_exception(show_locals=False)
                     print( traceback.format_exc() )
                     print( 'Unknown exception: {}', e )
@@ -375,14 +385,14 @@ class neuron:
             self.dataset.set_data_size(batch_size, sequence_length + validation_len)
 
         # === Logs (Wandb + Prometheus) ===
-        self.prometheus_summaries.labels("current_block").observe( current_block )
-        self.prometheus_summaries.labels("batch_size").observe( batch_size )
-        self.prometheus_summaries.labels("sequence_length").observe( sequence_length )
-        self.prometheus_summaries.labels("validation_len").observe( validation_len )
-        self.prometheus_summaries.labels("n_topk_peer_weights").observe( n_topk_peer_weights )
-        self.prometheus_summaries.labels("max_allowed_ratio").observe( max_allowed_ratio )
-        self.prometheus_summaries.labels("blocks_per_epoch").observe( blocks_per_epoch )
-        self.prometheus_summaries.labels("epochs_until_reset").observe( epochs_until_reset )
+        self.prometheus_gauges.labels("current_block").set( current_block )
+        self.prometheus_gauges.labels("batch_size").set( batch_size )
+        self.prometheus_gauges.labels("sequence_length").set( sequence_length )
+        self.prometheus_gauges.labels("validation_len").set( validation_len )
+        self.prometheus_gauges.labels("n_topk_peer_weights").set( n_topk_peer_weights )
+        self.prometheus_gauges.labels("max_allowed_ratio").set( max_allowed_ratio )
+        self.prometheus_gauges.labels("blocks_per_epoch").set( blocks_per_epoch )
+        self.prometheus_gauges.labels("epochs_until_reset").set( epochs_until_reset )
         if self.config.using_wandb:
             wandb.log({'era/batch_size': batch_size, 'era/sequence_length': sequence_length,
                        'era/validation_len': validation_len,
@@ -428,13 +438,13 @@ class neuron:
             self.prometheus_step_time.observe( step_time )
 
             # === Log state ===
-            self.prometheus_summaries.labels("updated").observe( current_block - self.metagraph.last_update[self.uid] )
-            self.prometheus_summaries.labels("stake").observe( self.metagraph.stake[self.uid] )
-            self.prometheus_summaries.labels("rank").observe( self.metagraph.ranks[self.uid] )
-            self.prometheus_summaries.labels("trust").observe( self.metagraph.trust[self.uid] )
-            self.prometheus_summaries.labels("incentive").observe( self.metagraph.incentive[self.uid] )
-            self.prometheus_summaries.labels("dividends").observe( self.metagraph.dividends[self.uid] )
-            self.prometheus_summaries.labels("emission").observe( self.metagraph.emission[self.uid] )
+            self.prometheus_gauges.labels("updated").set( current_block - self.metagraph.last_update[self.uid] )
+            self.prometheus_gauges.labels("stake").set( self.metagraph.stake[self.uid] )
+            self.prometheus_gauges.labels("rank").set( self.metagraph.ranks[self.uid] )
+            self.prometheus_gauges.labels("trust").set( self.metagraph.trust[self.uid] )
+            self.prometheus_gauges.labels("incentive").set( self.metagraph.incentive[self.uid] )
+            self.prometheus_gauges.labels("dividends").set( self.metagraph.dividends[self.uid] )
+            self.prometheus_gauges.labels("emission").set( self.metagraph.emission[self.uid] )
             logger.info(f'UID {self.uid}   \t| '
                         f'Updated {current_block - self.metagraph.last_update[self.uid]} <dim>blocks ago</dim> | '
                         f'Dividends {self.metagraph.dividends[self.uid]:.5f} | '

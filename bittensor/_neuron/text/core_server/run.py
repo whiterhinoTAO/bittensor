@@ -21,7 +21,7 @@ Example:
     $ python miners/text/template_client.py
 
 """
-from prometheus_client import Counter, Guage, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 from prometheus_client import Summary, Info
 
 import bittensor
