@@ -180,7 +180,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # when all codes are non-success or the function finishes completely.
         synapse_messages = [ "Success" for _ in synapses ]
         synapse_codes = [ bittensor.proto.ReturnCode.Success for _ in synapses ]
-        synapse_inputs = [ None for _ in synapses ]
+        deserialized_forward_tensors = [ None for _ in synapses]
         synapse_responses = [ synapse.empty() for synapse in synapses ] # We fill nones for non success.
         synapse_is_response = [ False for _ in synapses ]
         synapse_call_times = [ 0 for _ in synapses ]
@@ -210,7 +210,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
                     code = synapse_codes[ index ], 
                     call_time = synapse_call_times[ index ], 
                     pubkey = request.hotkey, 
-                    inputs = synapse_inputs [index] , 
+                    inputs = None if deserialized_forward_tensors [index] == None else deserialized_forward_tensors [index] , 
                     outputs = None if synapse_responses[index] == None else list( synapse_responses[index].shape ), 
                     message = synapse_messages[ index ],
                     synapse = synapse.synapse_type
@@ -248,7 +248,6 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ===================================
         # ==== Deserialize/Check inputs ====
         # ===================================
-        deserialized_forward_tensors = [ None for _ in synapses]
         for index, synapse in enumerate( synapses ):
             try:
                 deserialized_forward_tensors [index] = synapse.deserialize_forward_request_tensor ( request.tensors [index] )
