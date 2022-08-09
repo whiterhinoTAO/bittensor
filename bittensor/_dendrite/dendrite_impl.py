@@ -84,7 +84,7 @@ class Dendrite(torch.autograd.Function):
             suffix = 0
             while True:
                 try:
-                    self.prometheus_counters = Counter('dendrite_counters_'.format(suffix), 'dendrite_counters', ['name'])
+                    self.prometheus_counters = Counter('dendrite_counters_{}'.format(suffix), 'dendrite_counters', ['name'])
                     self.prometheus_latency = Histogram('dendrite_latency_{}'.format(suffix), 'dendrite_latency', buckets=list(range(0,2*bittensor.__blocktime__,1))) 
                     self.prometheus_latency_per_uid = Summary('dendrite_latency_per_uid_{}'.format(suffix), 'dendrite_latency_per_uid', ['uid'])
                     self.prometheus_success_rate_per_uid = Summary('dendrite_success_rate_per_uid_{}'.format(suffix), 'dendrite_success_rate_per_uid', ['uid'])
@@ -321,7 +321,6 @@ class Dendrite(torch.autograd.Function):
             for i in range(len(endpoints)):
                 n_success = (codes[i] == 1).sum().item()
                 is_success = (n_success > 0) # One is a success.
-                self.prometheus_counters.labels( "_count_{}".format( str(endpoints[i].uid) ) ).inc()
                 if is_success:
                     self.prometheus_latency_per_uid.labels(str(endpoints[i].uid)).observe( times[i].mean().item() )
                     self.prometheus_success_rate_per_uid.labels(str(endpoints[i].uid)).observe( 1 ) # Should act like a moving average.

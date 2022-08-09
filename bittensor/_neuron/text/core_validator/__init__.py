@@ -188,8 +188,8 @@ class neuron:
         # === Prometheus stats ===
         # Turn this off by passing the --prometheus.off flag
         self.prometheus_info = Info("neuron_info", "neuron_info")
-        self.prometheus_counters = Gauge('validator_counters', 'validator_counters', ['counter'])
-        self.prometheus_gauges = Gauge('validator_gauge', 'validator_gauge', ['gauge'])
+        self.prometheus_counters = Counter('validator_counters', 'validator_counters', ['counter'])
+        self.prometheus_gauges = Gauge('validator_gauges', 'validator_gauge', ['gauge'])
         self.prometheus_summaries = Summary('validator_summary', 'validator_summary', ["summary"])
         self.prometheus_step_time = Histogram('validator_step_time', 'validator_step_time', buckets=list(range(0,2*bittensor.__blocktime__,1)))
         self.prometheus_stats = {} # A dictionary of prometheus Gauges we can query. This replicates the neuron_stats dictionary every step.
@@ -411,6 +411,7 @@ class neuron:
             self.prometheus_gauges.labels("emission").set( self.metagraph.emission[self.uid] )
             
             if epoch_steps % 25 == 1:
+                self.stats_table_to_prometheus( self.neuron_stats )
                 # validator identifier status console message (every 25 validation steps)
                 print(f"[white not bold]{datetime.datetime.now():%Y-%m-%d %H:%M:%S}[/white not bold]{' ' * 4} | "
                       f"{f'[bright_white]core_validator[/bright_white]'.center(16 + len('[bright_white][/bright_white]'))} | "
