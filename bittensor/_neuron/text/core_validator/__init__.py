@@ -290,7 +290,7 @@ class neuron:
                 'network': self.config.subtensor.network,
                 'coldkey': str(self.wallet.coldkeypub.ss58_address),
                 'hotkey': str(self.wallet.hotkey.ss58_address),
-                'num_params': sum(p.numel() for p in self.nucleus.parameters())
+                'num_params': str(sum(p.numel() for p in self.nucleus.parameters()))
             } 
         )
 
