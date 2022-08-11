@@ -376,6 +376,8 @@ To run a local node (See: docs/running_a_validator.md) \n
         wait_for_inclusion: bool = False,
         wait_for_finalization: bool = True,
         prompt: bool = False,
+        wallet: 'bittensor.Wallet' = None,
+        port: int = None,
     ) -> bool:
         r""" Serves the axon to the network.
         Args:
@@ -397,8 +399,19 @@ To run a local node (See: docs/running_a_validator.md) \n
                 flag is true if extrinsic was finalized or uncluded in the block. 
                 If we did not wait for finalization / inclusion, the response is true.
         """
-        axon.wallet.hotkey
-        axon.wallet.coldkeypub
+
+        # if wallet ==  None:
+        #     axon.wallet.hotkey
+        #     axon.wallet.coldkeypub
+        # else:
+        #     wallet.hotkey
+        #     wallet.coldkeypub
+        _wallet = axon.wallet if wallet == None else wallet
+
+        axon.wallet.hotkey if wallet == None else wallet.hotkey
+        axon.wallet.coldkeypub if wallet == None else wallet.coldkeypub
+
+        # _port = axon.port if port == None else port
 
         # ---- Setup UPNPC ----
         if use_upnpc:
@@ -412,7 +425,7 @@ To run a local node (See: docs/running_a_validator.md) \n
             except net.UPNPCException as upnpc_exception:
                 raise RuntimeError('Failed to hole-punch with upnpc with exception {}'.format( upnpc_exception )) from upnpc_exception
         else:
-            external_port = axon.port
+            external_port = axon.port if port == None else port
 
         # ---- Get external ip ----
         try:
@@ -424,7 +437,7 @@ To run a local node (See: docs/running_a_validator.md) \n
             
         # ---- Subscribe to chain ----
         serve_success = self.serve(
-                wallet = axon.wallet,
+                wallet = _wallet,
                 ip = external_ip,
                 port = external_port,
                 modality = 0,
