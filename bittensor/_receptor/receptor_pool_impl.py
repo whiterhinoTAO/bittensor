@@ -27,6 +27,7 @@ import concurrent
 import bittensor
 import bittensor.utils.networking as net
 from concurrent.futures import ThreadPoolExecutor
+from memory_profiler import profile
 
 logger = logger.opt(colors=True)
 
@@ -79,6 +80,7 @@ class ReceptorPool ( torch.nn.Module ):
         """
         return {hotkey: v.state() for hotkey, v in self.receptors.items()}
 
+    # @profile(precision = 4)
     def forward (
             self, 
             endpoints: List [ 'bittensor.Endpoint' ],
@@ -130,13 +132,49 @@ class ReceptorPool ( torch.nn.Module ):
                 'timeout': timeout
             }) 
 
-        # Init function.
-        def call_forward( args ):
-            return args['receptor'].forward( args['synapses'], args['inputs'], args['timeout'] )
+        # # Init function.
+        # def call_forward( args ):
+        #     return args['receptor'].forward( args['synapses'], args['inputs'], args['timeout'] )
 
-        # Submit calls to receptors.
+        # # Submit calls to receptors.
+        # with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
+        #     responses = executor.map( call_forward, call_args, timeout=10*timeout)
+
+        def call_forward_build_request( args ):
+            return args['receptor'].forward_build_request( args['synapses'], args['inputs'], args['timeout'] )
+
+        def call_forward_grpc( args ):
+            call, (response, intermediate_result) = args
+            if response == None:
+                return call['receptor'].forward_grpc( *intermediate_result.values() )
+            else:
+                return (response, {})
+
+        def call_forward_deserialize( args ):
+            call, (response, intermediate_result) = args
+            if response == None:
+                return call['receptor'].forward_deserialize( *intermediate_result.values() )
+            else:
+                return response
+
         with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
-            responses = executor.map( call_forward, call_args, timeout=10*timeout)
+            response_1 = executor.map( call_forward_build_request, call_args, timeout=10*timeout)
+        
+        # with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
+        #     response_2 = executor.map( call_forward_grpc, zip(call_args, response_1), timeout=10*timeout)
+        
+        response_2 = []  
+        for call, response in zip(call_args, response_1):
+            (response, result) = response
+            if response == None:
+                result = call['receptor'].forward_grpc( *result.values() )
+            else:
+                result = (response, {})
+            response_2.append(result)
+
+        with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
+            responses = executor.map( call_forward_deserialize, zip(call_args, response_2), timeout=10*timeout)
+
         
         # Release semephore.
         for receptor in receptors:
@@ -252,7 +290,7 @@ class ReceptorPool ( torch.nn.Module ):
         """
         with self.cull_mutex:
             # ---- Finally: Kill receptors over max allowed ----
-            while len(self.receptors) > self.max_active_receptors:
+            while len(self.receptors) > 0: # self.max_active_receptors:
                 min_receptor_qps = math.inf
                 receptor_to_remove = None
                 for next_receptor in self.receptors.values():

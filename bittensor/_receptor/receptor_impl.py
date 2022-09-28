@@ -34,6 +34,8 @@ from types import SimpleNamespace
 from typing import Tuple, List, Union
 from loguru import logger
 from grpc import _common
+from memory_profiler import profile
+import random
 
 
 
@@ -349,6 +351,7 @@ class Receptor(nn.Module):
         finalize_stats_and_logs()
         return synapse_responses, synapse_codes, synapse_call_times       
 
+    # @profile(precision = 4)
     def forward (
         self, 
         synapses: List[ 'bittensor.Synapse' ],
@@ -622,6 +625,401 @@ class Receptor(nn.Module):
                 synapse_call_times[index] = clock.time() - start_time
         finalize_stats_and_logs()
         return synapse_responses, synapse_codes, synapse_call_times       
+            
+
+        
+
+
+    def forward_finalize_stats_and_logs(
+        self,
+        start_time,
+        synapses,
+        synapse_codes,
+        synapse_is_response,
+        synapse_call_times,
+        inputs,
+        synapse_responses,
+        synapse_messages
+    ):
+        # ==============================================================
+        # ==== Function which prints all log statements per synapse ====
+        # ==============================================================
+        self.stats.forward_elapsed_time.update( clock.time() - start_time )
+        for index, synapse in enumerate( synapses ):
+            self.stats.codes[ synapse_codes[ index ] ] += 1
+            bittensor.logging.rpc_log (
+                axon = False, 
+                forward = True, 
+                is_response = synapse_is_response [index], 
+                code = synapse_codes[ index ], 
+                call_time = synapse_call_times[ index ], 
+                pubkey = self.endpoint.hotkey, 
+                uid = self.endpoint.uid, 
+                inputs = list(inputs.shape), 
+                outputs = None if synapse_codes[ index ] != bittensor.proto.ReturnCode.Success else list( synapse_responses[index].shape ), 
+                message = synapse_messages[ index ],
+                synapse = synapse.synapse_type
+            )
+
+
+    # ==================================================================
+    # ==== Function which returns true if all codes are non success ====
+    # ==================================================================
+    def check_if_should_return(self, synapse_codes) -> bool:
+        for code in synapse_codes:
+            if code == bittensor.proto.ReturnCode.Success:
+                return False
+        return True 
+
+    def forward_build_request (
+        self, 
+        synapses: List[ 'bittensor.Synapse' ],
+        inputs: torch.Tensor, 
+        timeout: int,
+    ) -> Tuple[ List[ torch.FloatTensor ], List['bittensor.proto.ReturnCode'], List[float] ]:
+        r""" Triggers the grpc call to the remote endpoint.
+            This triggers the synapse calls with arguments.
+            Call returns a list of output tensors one per synapse with corresponding time and bittensor.proto.ReturnCode.
+
+            Args:
+                synapses (:obj:`List[ 'bittensor.Synapse' ]` of shape :obj:`(num_synapses)`, `required`):
+                    Bittensor synapse objects with arguments. Each corresponds to a synapse function on the axon.
+                    Responses are packed in this ordering. 
+
+                inputs (:obj:`torch.Tensor` of shape :obj:`(shape)`, `required`):
+                    Single torch tensor to be sent to the remote endpoint.
+                    TODO(const): Make this a multi-forward tensor.
+
+                timeout (:obj:`int`, `required`):
+                    Request max timeout
+            Returns:
+                outputs (:obj:`List[ Union[torch.FloatTensor, torch.LongTensor] ]`, `required`):
+                    outputs.shape = [batch_size, synapse_length, response] 
+                    List of result tensors from the forward call each corresponding to a passed synapse enum.
+
+                codes (:obj:`bittensor.proto.ReturnCode`, `required`):
+                    List of return codes associated with each passed synapse enum.
+                    Connection failures return all the same code, otherwise a unique code per synapse. 
+
+                times (:obj:`float`, `required`):
+                    List of times for each call associated with each passed synapse enum. 
+                    Success responses all get the same time.
+
+        """
+        # =====================
+        # ==== Init params ====        
+        # =====================
+        # These items are filled through the call and the function returns 
+        # when all codes are non-success or the function finishes completely.
+        synapse_messages = [ "Success" for _ in synapses ]
+        synapse_codes = [ bittensor.proto.ReturnCode.Success for _ in synapses ]
+        synapse_responses = [ synapse.nill_forward_response_tensor( inputs ) for synapse in synapses ]
+        synapse_is_response = [ False for _ in synapses ]
+        synapse_call_times = [ 0 for _ in synapses ]
+        start_time = clock.time()
+
+
+        # ===========================
+        # ==== Check inputs size ====
+        # ===========================
+        if torch.numel(inputs) == 0:
+            # Inputs are nill.
+            code = bittensor.proto.ReturnCode.EmptyRequest
+            call_time = clock.time() - start_time
+            message = "Empty Request"
+            synapse_codes = [ code for _ in synapses ]
+            synapse_call_times = [ call_time for _ in synapses ]
+            synapse_messages = [ message for _ in synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return ((synapse_responses, synapse_codes, synapse_call_times), {})
+        
+        # ========================
+        # ==== Check endpoint ====
+        # ========================
+        if self.endpoint.hotkey  == 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX':
+            # Endpoint is dummy.
+            code = bittensor.proto.ReturnCode.BadEndpoint
+            call_time = clock.time() - start_time
+            message =  "Bad endpoint."
+            synapse_call_times = [ call_time for _ in synapses ]
+            synapse_codes = [ code for _ in synapses ]
+            synapse_messages = [ message for _ in synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return ((synapse_responses, synapse_codes, synapse_call_times), {})
+
+        # ==========================
+        # ==== Serialize inputs ====
+        # ==========================
+        serialized_forward_tensors = []
+        serialized_synapses = []
+        for index, synapse in enumerate( synapses ):
+            try:
+                serialized_forward_tensors.append( synapse.serialize_forward_request_tensor ( inputs ))
+                serialized_synapses.append(synapse.serialize_to_wire_proto())
+            except Exception as e:
+                synapse_codes [index] = bittensor.proto.ReturnCode.RequestSerializationException
+                synapse_call_times [index] = clock.time() - start_time
+                synapse_messages [index] = 'Input serialization exception with error:{}'.format(str(e))
+        # Check if the call can stop here.
+        if self.check_if_should_return(synapse_codes):
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return ((synapse_responses, synapse_codes, synapse_call_times), {})
+
+        # ============================
+        # ==== Build proto request ====
+        # ============================
+        try: 
+            grpc_request = bittensor.proto.TensorMessage (
+                version = bittensor.__version_as_int__,
+                hotkey = self.wallet.hotkey.ss58_address,
+                tensors = serialized_forward_tensors,
+                synapses = serialized_synapses,
+                requires_grad = True,
+            )
+        except Exception as e:
+            # Synapse request creation failed.
+            code = bittensor.proto.ReturnCode.UnknownException
+            call_time = clock.time() - start_time
+            message = 'Request proto creation failed with error:{}'.format(str(e)) 
+            synapse_codes = [code for _ in synapses ]
+            synapse_call_times = [call_time for _ in synapses ]
+            synapse_messages = [ message for _ in synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return ((synapse_responses, synapse_codes, synapse_call_times), {})
+
+        result = {
+            'start_time': start_time,
+            'inputs': inputs,
+            'grpc_request': grpc_request,
+            'timeout': timeout,
+            'synapse_is_response': synapse_is_response,
+            'synapses': synapses,
+            'synapse_responses': synapse_responses,
+            'synapse_codes': synapse_codes,
+            'synapse_call_times': synapse_call_times,
+            'synapse_messages': synapse_messages,
+        }
+        return (None, result)
+        
+    def forward_grpc(
+        self,
+        start_time, 
+        inputs,
+        grpc_request, 
+        timeout, 
+        synapse_is_response, 
+        synapses, 
+        synapse_responses,
+        synapse_codes, 
+        synapse_call_times, 
+        synapse_messages, 
+    ):
+        # =======================
+        # ==== Fire RPC Call ====
+        # =======================
+        grpc_response = None
+        try:
+            self.stats.forward_qps.update(1)
+            self.stats.forward_bytes_out.update( sys.getsizeof( grpc_request ) )
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            
+            re = {
+                'request': grpc_request,
+                'timeout': timeout,
+                'metadata': (
+                    ('rpc-auth-header','Bittensor'),
+                    ('bittensor-signature',self.sign()),
+                    ('bittensor-version',str(bittensor.__version_as_int__)),
+                    ('request_type', str(bittensor.proto.RequestType.FORWARD)),
+                )
+            }
+
+            grpc_future = self.stub.Forward.future(                 
+                request = grpc_request,
+                timeout = timeout,
+                metadata = (
+                    ('rpc-auth-header','Bittensor'),
+                    ('bittensor-signature',self.sign()),
+                    ('bittensor-version',str(bittensor.__version_as_int__)),
+                    ('request_type', str(bittensor.proto.RequestType.FORWARD)),
+                ) 
+            )
+            synapse_is_response = [ True for _ in synapses ]
+            # Set successful response booleans to true
+
+        # ====================================
+        # ==== Handle GRPC Errors ====
+        # ====================================
+        except grpc.RpcError as rpc_error_call:
+            # Request failed with GRPC code.
+            call_time = clock.time() - start_time
+            grpc_code = rpc_error_call.code()
+            if grpc_code == grpc.StatusCode.DEADLINE_EXCEEDED:
+                code = bittensor.proto.ReturnCode.Timeout
+                message = 'grpc.StatusCode.DEADLINE_EXCEEDED'+': '+ rpc_error_call.details()
+            elif grpc_code == grpc.StatusCode.UNAVAILABLE:
+                code = bittensor.proto.ReturnCode.Unavailable
+                message = 'grpc.StatusCode.UNAVAILABLE'+': '+ rpc_error_call.details()
+            elif grpc_code == grpc.StatusCode.UNAUTHENTICATED:
+                code = bittensor.proto.ReturnCode.Unauthenticated
+                message = 'grpc.StatusCode.UNAUTHENTICATED'+': '+ rpc_error_call.details()
+            else:
+                code = bittensor.proto.ReturnCode.UnknownException
+                message = 'GRPC error code: {}, details: {}'.format( grpc_code, str(rpc_error_call.details()) )
+            synapse_codes = [code for _ in synapses ]
+            synapse_call_times = [call_time for _ in synapses ]
+            synapse_messages = [ message for _ in synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return ((synapse_responses, synapse_codes, synapse_call_times), {})
+
+        # ====================================
+        # ==== Handle GRPC Unknown Errors ====
+        # ====================================
+        except Exception as e:
+            # Request failed with unknown exception.
+            code = bittensor.proto.ReturnCode.UnknownException
+            call_time = clock.time() - start_time
+            message = 'GRPC request failed with unknown exception:{}'.format(str(e))
+            synapse_codes = [code for _ in synapses ]
+            synapse_call_times = [call_time for _ in synapses ]
+            synapse_messages = [ message for _ in synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return ((synapse_responses, synapse_codes, synapse_call_times), {})
+
+        result = {
+            'start_time': start_time,
+            'inputs': inputs,
+            'grpc_future': grpc_future,
+            'timeout': timeout,
+            'synapse_is_response': synapse_is_response,
+            'synapses': synapses,
+            'synapse_responses': synapse_responses,
+            'synapse_codes': synapse_codes,
+            'synapse_call_times': synapse_call_times,
+            'synapse_messages': synapse_messages,
+        }
+        return (None, result)
+
+    def forward_deserialize(
+        self, 
+        start_time, 
+        inputs,
+        grpc_future, 
+        timeout, 
+        synapse_is_response, 
+        synapses, 
+        synapse_responses,
+        synapse_codes, 
+        synapse_call_times, 
+        synapse_messages, 
+    ):
+        rand_id = random.randint(0,100)
+        try:
+            grpc_response = grpc_future.result()
+            self.stats.forward_bytes_in.update( grpc_response.ByteSize() )
+        # ====================================
+        # ==== Handle GRPC Errors ====
+        # ====================================
+        except grpc.RpcError as rpc_error_call:
+            # Request failed with GRPC code.
+            call_time = clock.time() - start_time
+            grpc_code = rpc_error_call.code()
+            if grpc_code == grpc.StatusCode.DEADLINE_EXCEEDED:
+                code = bittensor.proto.ReturnCode.Timeout
+                message = 'grpc.StatusCode.DEADLINE_EXCEEDED'+': '+ rpc_error_call.details()
+            elif grpc_code == grpc.StatusCode.UNAVAILABLE:
+                code = bittensor.proto.ReturnCode.Unavailable
+                message = 'grpc.StatusCode.UNAVAILABLE'+': '+ rpc_error_call.details()
+            elif grpc_code == grpc.StatusCode.UNAUTHENTICATED:
+                code = bittensor.proto.ReturnCode.Unauthenticated
+                message = 'grpc.StatusCode.UNAUTHENTICATED'+': '+ rpc_error_call.details()
+            else:
+                code = bittensor.proto.ReturnCode.UnknownException
+                message = 'GRPC error code: {}, details: {}'.format( grpc_code, str(rpc_error_call.details()) )
+            synapse_codes = [code for _ in synapses ]
+            synapse_call_times = [call_time for _ in synapses ]
+            synapse_messages = [ message for _ in synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return (synapse_responses, synapse_codes, synapse_call_times)
+
+        # ====================================
+        # ==== Handle GRPC Unknown Errors ====
+        # ====================================
+        except Exception as e:
+            # Request failed with unknown exception.
+            code = bittensor.proto.ReturnCode.UnknownException
+            call_time = clock.time() - start_time
+            message = 'GRPC request failed with unknown exception:{}'.format(str(e))
+            synapse_codes = [code for _ in synapses ]
+            synapse_call_times = [call_time for _ in synapses ]
+            synapse_messages = [ message for _ in synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return (synapse_responses, synapse_codes, synapse_call_times)
+
+        # ==========================================
+        # ==== Handle Non Success GRPC Response ====
+        # ==========================================
+        if grpc_response.return_code != bittensor.proto.ReturnCode.Success:
+            # Request failed with unknown exception.
+            call_time = clock.time() - start_time
+            synapse_call_times = [call_time for _ in synapses ]
+            if len(grpc_response.synapses) == len(synapses):
+                synapse_codes = [synapse.return_code for synapse in grpc_response.synapses ]
+                synapse_messages = ['Remote Server Failure: '+ synapse.message for synapse in grpc_response.synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return (synapse_responses, synapse_codes, synapse_call_times)
+
+        # ======================================
+        # ==== Check response length ====
+        # ======================================
+        if ( len(grpc_response.tensors) != len(grpc_response.synapses) ) or ( len(grpc_response.tensors) != len(synapses) ):
+            # Not enough responses per request.
+            code = bittensor.proto.ReturnCode.ResponseShapeException
+            call_time = clock.time() - start_time
+            message = "Responses dont match synape length"
+            synapse_codes = [code for _ in synapses ]
+            synapse_call_times = [call_time for _ in synapses ]
+            synapse_messages = [ message for _ in synapses ]
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return (synapse_responses, synapse_codes, synapse_call_times)
+
+        # ======================================
+        # ==== Check for non success response codes ====
+        # ======================================
+        for index, wire_synapse in enumerate( grpc_response.synapses ):
+            if wire_synapse.return_code != bittensor.proto.ReturnCode.Success: 
+                synapse_codes[index] = wire_synapse.return_code
+                synapse_messages[index] = wire_synapse.message
+                synapse_call_times[index] = clock.time() - start_time
+
+        # Check if the call can stop here.
+        if self.check_if_should_return(synapse_codes):
+            self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+            return (synapse_responses, synapse_codes, synapse_call_times)
+
+        # ======================================
+        # ==== Deserialize synapse responses ====
+        # ======================================
+        for index, response_proto in enumerate(grpc_response.tensors):
+            try:
+                synapse = synapses[index]
+                if synapse_codes[index] == bittensor.proto.ReturnCode.Success:
+                    synapse_responses[index] = synapse.deserialize_forward_response_proto ( inputs, response_proto ) 
+            except Exception as e:
+                # Input Serialization failed.
+                synapse_codes[index] = bittensor.proto.ReturnCode.ResponseDeserializationException
+                synapse_call_times[index] = clock.time() - start_time
+                synapse_messages[index] = 'Response deserialization exception with error:{}'.format(str(e))
+
+        # ======================================
+        # ==== Finalize forward call times ====
+        # ======================================
+        for index, _ in enumerate( synapses ):
+            if synapse_codes[index] == bittensor.proto.ReturnCode.Success:
+                synapse_call_times[index] = clock.time() - start_time
+        self.forward_finalize_stats_and_logs(start_time, synapses, synapse_codes, synapse_is_response, synapse_call_times, inputs, synapse_responses, synapse_messages)
+        # pdb.set_trace()
+        return (synapse_responses, synapse_codes, synapse_call_times)
             
 
         

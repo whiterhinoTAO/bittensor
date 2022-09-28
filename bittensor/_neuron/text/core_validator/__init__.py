@@ -47,6 +47,8 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from loguru import logger
 from threading import Lock
 
+from memory_profiler import profile
+import gc
 logger = logger.opt( colors=True )
 console = Console()
 install(show_locals=True)
@@ -334,6 +336,7 @@ class neuron:
                     if not self.config.neuron.restart_on_failure:
                         break
 
+    @profile(precision = 4)
     def run_epoch( self ):
         r""" Runs a validator epoch. We apply batches until the epoch length is exhausted.
             Occasionally the validator nucleus is completely reset to ensure we dont converge to far.
@@ -771,6 +774,7 @@ class nucleus( torch.nn.Module ):
         self.encoder.apply( init_xavier )
         torch.nn.init.xavier_uniform_( self.gates.weight )
 
+    @profile(precision = 4)
     def forward(
             self,
             inputs: torch.FloatTensor,
@@ -916,7 +920,6 @@ class nucleus( torch.nn.Module ):
                 neuron_stats[_uid].update(_stats)  # gather neuron synapse validation measures and statistics
 
         return loss, neuron_stats
-
 
 def scaling_law_loss_to_params(loss):
     r""" (OpenAI scaling laws) Kaplan, Jared, et al. "Scaling laws for neural language models." arXiv:2001.08361 (2020)
