@@ -134,12 +134,16 @@ class ReceptorPool ( torch.nn.Module ):
         # Init function.
         def call_forward( args ):
             return args['receptor'].forward( args['synapses'], args['inputs'], args['timeout'] )
+        
         responses=[]
-
         # Unpack responses
         forward_outputs = []
         forward_codes = []
         forward_times = []
+
+        assert min_success > 0
+        if min_success < 1:
+            min_success = int(min_success*len(endpoints))
 
         # Submit calls to receptors.
         with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
@@ -158,11 +162,10 @@ class ReceptorPool ( torch.nn.Module ):
                             
                 if response[1][0] == 1:
                     success_response_cnt += 1
-                    if return_success_only:
 
-                        forward_outputs.append( response[0] )
-                        forward_codes.append( response[1] )
-                        forward_times.append( response[2] )
+                    forward_outputs.append( response[0] )
+                    forward_codes.append( response[1] )
+                    forward_times.append( response[2] )
                 else:
                     if not return_success_only:
                         forward_outputs.append( response[0] )
