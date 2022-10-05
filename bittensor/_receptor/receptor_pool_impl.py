@@ -79,45 +79,46 @@ class ReceptorPool ( torch.nn.Module ):
         """
         return {hotkey: v.state() for hotkey, v in self.receptors.items()}
 
+
     def forward (
             self, 
             endpoints: List [ 'bittensor.Endpoint' ],
             synapses: List[ 'bittensor.Synapse' ],
             inputs: List [ torch.Tensor ],
             timeout: int,
+            min_success = 5,
+            return_success_only=False, 
         ) -> Tuple[List[torch.Tensor], List[int], List[float]]:
         r""" Forward tensor inputs to endpoints.
-
             Args:
                 endpoints (:obj:`List[ bittensor.Endpoint ]` of shape :obj:`(num_endpoints)`, `required`):
                     List of remote endpoints which match length of inputs. Tensors from x are sent forward to these endpoints.
-
                 synapses (:obj:`List[ 'bittensor.Synapse' ]` of shape :obj:`(num_synapses)`, `required`):
                     Bittensor synapse objects with arguments. Each corresponds to a synapse function on the axon.
                     Responses are packed in this ordering. 
-
                 inputs (:obj:`List[torch.Tensor]` of shape :obj:`(num_endpoints * [shape])`, `required`):
                     TODO(const): Allow multiple tensors.
                     List of tensors to send to corresponsing endpoints. Tensors are of arbitrary type and shape depending on the
                     modality.
-
                 timeout (int):
                     Request timeout.
-
             Returns:
                 forward_outputs (:obj:`List[ List[ torch.FloatTensor ]]` of shape :obj:`(num_endpoints * (num_synapses * (shape)))`, `required`):
                     Output encodings of tensors produced by remote endpoints. Non-responses are zeroes of common shape.
-
                 forward_codes (:obj:`List[ List[bittensor.proto.ReturnCodes] ]` of shape :obj:`(num_endpoints * ( num_synapses ))`, `required`):
                     dendrite backward call return ops.
-
                 forward_times (:obj:`List[ List [float] ]` of shape :obj:`(num_endpoints * ( num_synapses ))`, `required`):
                     dendrite backward call times
         """
+        if not isinstance(inputs, list):
+            inputs = [inputs]
         if len(endpoints) != len(inputs):
-            raise ValueError('Endpoints must have the same length as passed inputs. Got {} and {}'.format(len(endpoints), len(inputs)))
+            if len(inputs) == 1:
+                inputs = len(endpoints)*inputs
+            else:
+                raise ValueError('Endpoints must have the same length as passed inputs. Got {} and {}'.format(len(endpoints), len(inputs)))
 
-        # Init receptors.
+
         receptors = [ self._get_or_create_receptor_for_endpoint( endpoint ) for endpoint in endpoints ]
 
         # Init argument iterables.
@@ -133,28 +134,57 @@ class ReceptorPool ( torch.nn.Module ):
         # Init function.
         def call_forward( args ):
             return args['receptor'].forward( args['synapses'], args['inputs'], args['timeout'] )
+        responses=[]
 
-        # Submit calls to receptors.
-        with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
-            responses = executor.map( call_forward, call_args, timeout=10*timeout)
-        
-        # Release semephore.
-        for receptor in receptors:
-            receptor.semaphore.release()
-            
         # Unpack responses
         forward_outputs = []
         forward_codes = []
         forward_times = []
-        for response in responses:
-            forward_outputs.append( response[0] )
-            forward_codes.append( response[1] )
-            forward_times.append( response[2] )
 
-        # ---- Kill receptors ----
+        # Submit calls to receptors.
+        with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
+            future_map = {}
+
+            for idx, call_arg in enumerate(call_args):
+                future = executor.submit( call_forward, call_arg)
+                future_map[future] = call_arg
+
+            success_response_cnt = 0
+            for i,future in enumerate(concurrent.futures.as_completed(future_map)):
+                response = future.result()
+                
+
+
+                            
+                if response[1][0] == 1:
+                    success_response_cnt += 1
+                    if return_success_only:
+
+                        forward_outputs.append( response[0] )
+                        forward_codes.append( response[1] )
+                        forward_times.append( response[2] )
+                else:
+                    if not return_success_only:
+                        forward_outputs.append( response[0] )
+                        forward_codes.append( response[1] )
+                        forward_times.append( response[2] )
+                                
+                if success_response_cnt >= min_success:
+                    for receptor in receptors:
+                        receptor.semaphore.release()
+                    self._destroy_receptors_over_max_allowed()
+                    # ---- Return ----
+                    return forward_outputs, forward_codes, forward_times
+
+
+        # Release semephore.
+        for receptor in receptors:
+            receptor.semaphore.release()
         self._destroy_receptors_over_max_allowed()
         # ---- Return ----
         return forward_outputs, forward_codes, forward_times
+
+
 
     def backward(
                 self, 
