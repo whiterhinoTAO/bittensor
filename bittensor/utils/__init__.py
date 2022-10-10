@@ -317,7 +317,14 @@ def solve_for_difficulty_fast( subtensor, wallet, num_processes: Optional[int] =
     """
     if num_processes == None:
         # get the number of allowed processes for this process
-        num_processes = len(os.sched_getaffinity(0))
+        try:
+            num_processes = len(os.sched_getaffinity(0))
+        except AttributeError:
+            # Some distributions dont have os.sched_getaffinity i.e. mac machines.
+            # Backing off to use multiprocessing cpu_count()
+            import multiprocessing
+            num_processes = multiprocessing.cpu_count()
+
 
     if update_interval is None:
         update_interval = 50_000
