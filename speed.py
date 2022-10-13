@@ -163,13 +163,13 @@ start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 
 
 # Run each query concurrently then get results as completed.
-tresults = []
-tfutures = []
+exp_results = []
+exp_futures = []
 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
     for i in tqdm(range(n_steps), desc='Submitting', leave=True):
-        tfutures.append(executor.submit(forward))
-    for future in tqdm(concurrent.futures.as_completed(tfutures), desc='Filling', leave=True):
-        tresults.append( future.result() )     
+        exp_futures.append(executor.submit(forward))
+    for future in tqdm(concurrent.futures.as_completed(exp_futures), desc='Filling', leave=True):
+        exp_results.append( future.result() )     
         
 # Measure state after.
 io_2 = psutil.net_io_counters()
@@ -186,7 +186,7 @@ def get_size(bytes):
         bytes /= 1024
         
 
-total_success = sum([sum(ri) for ri in tresults])
+total_success = sum([sum(ri) for ri in exp_results])
 total_sent = n_queried * n_steps
 total_failed = total_sent - total_success
 
