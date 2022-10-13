@@ -63,22 +63,20 @@ parser.add_argument(
 )
 bittensor.wallet.add_args(parser)
 bittensor.logging.add_args(parser)
+bittensor.subtensor.add_args(parser)
 config = bittensor.config(parser = parser)
 
 ##########################
 ##### Setup objects ######
 ##########################
-import bittensor
-bittensor.logging(debug=False)
-from rich.traceback import install
-install(show_locals=False)
-
 # Sync graph and load power wallet.
-graph = bittensor.metagraph().sync()
-wallet = bittensor.wallet(name="const", hotkey='Tiberius')
+bittensor.logging( config = config )
+subtensor = bittensor.subtensor( config = config )
+graph = bittensor.metagraph( subtensor = subtensor ).sync()
+wallet = bittensor.wallet( config =config )
 
 # A list of pre instantiated endpoints with stub connections.
-eps = [bittensor.receptor( wallet=wallet, endpoint = graph.endpoint_objs[i] ) for i in range(graph.n)]
+eps = [bittensor.receptor( wallet = wallet, endpoint = graph.endpoint_objs[i] ) for i in range(graph.n)]
 
 ##########################
 ##### Run experiment #####
