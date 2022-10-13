@@ -29,6 +29,7 @@ import yaml
 from loguru import logger
 
 from . import config_impl
+from munch import Munch
 
 logger = logger.opt(colors=True)
     
@@ -54,7 +55,8 @@ class config:
                 Nested config object created from parser arguments.
         """
         if parser == None:
-            parser = ArgumentParser()
+            return config_impl.Config()
+            #parser = ArgumentParser()
 
         # Optionally add config specific arguments
         try:

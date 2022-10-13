@@ -8,6 +8,7 @@ import psutil
 import random
 import argparse
 from tqdm import tqdm
+import bittensor
 
 
 ##########################
@@ -60,7 +61,9 @@ parser.add_argument(
     default=20,
     help='''Input sequence length'''
 )
-args = parser.parse_args()
+bittensor.wallet.add_args(parser)
+bittensor.logging.add_args(parser)
+config = bittensor.config(parser = parser)
 
 ##########################
 ##### Setup objects ######
@@ -81,16 +84,19 @@ eps = [bittensor.receptor( wallet=wallet, endpoint = graph.endpoint_objs[i] ) fo
 ##### Run experiment #####
 ##########################
 # Timeout for each set of queries (we always wait this long)
-timeout = args.timeout
+timeout = config.timeout
 
 # The number of endpoints we query each step.
-n_queried = args.n_queried
+n_queried = config.n_queried
 
 # The number of concurrent steps we run.
-n_steps = args.n_steps
+n_steps = config.n_steps
+
+# The number of workers in the thread pool
+max_workers = config.max_workers
 
 # The tensor we are going to send over the wire
-inputs = torch.ones([args.batch_size, args.sequence_length], dtype=torch.int64)
+inputs = torch.ones([config.batch_size, config.sequence_length], dtype=torch.int64)
 
 # Forward function queries (n_queried) random endpoints with the inputs
 # then waits timeout before checking for success from each query.
@@ -156,7 +162,7 @@ start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 # Run each query concurrently then get results as completed.
 tresults = []
 tfutures = []
-with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
     for i in tqdm(range(n_steps), desc='Submitting', leave=True):
         tfutures.append(executor.submit(forward))
     for future in tqdm(concurrent.futures.as_completed(tfutures), desc='Filling', leave=True):
