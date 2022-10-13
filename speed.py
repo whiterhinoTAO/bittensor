@@ -73,14 +73,14 @@ config = bittensor.config(parser = parser)
 bittensor.logging( config = config )
 subtensor = bittensor.subtensor( config = config )
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
-wallet = bittensor.wallet( config =config )
+wallet = bittensor.wallet( config = config )
 
-# A list of pre instantiated endpoints with stub connections.
-eps = [bittensor.receptor( wallet = wallet, endpoint = graph.endpoint_objs[i] ) for i in range(graph.n)]
+################################
+##### Experiment arguments #####
+################################
+# A list of pre-instantiated endpoints with stub connections.
+endpoints = [bittensor.receptor( wallet = wallet, endpoint = graph.endpoint_objs[i] ) for i in range(graph.n)]
 
-##########################
-##### Run experiment #####
-##########################
 # Timeout for each set of queries (we always wait this long)
 timeout = config.timeout
 
@@ -96,6 +96,9 @@ max_workers = config.max_workers
 # The tensor we are going to send over the wire
 inputs = torch.ones([config.batch_size, config.sequence_length], dtype=torch.int64)
 
+############################
+##### Forward Function #####
+############################
 # Forward function queries (n_queried) random endpoints with the inputs
 # then waits timeout before checking for success from each query.
 # The function returns a list of booleans True or false depending on the query result.
@@ -119,12 +122,12 @@ def forward():
         )
         
         # Fire off the future.
-        futures.append( eps[i].stub.Forward.future(
+        futures.append( endpoints[i].stub.Forward.future(
             request = grpc_request, 
             timeout = timeout,
             metadata = (
                 ('rpc-auth-header','Bittensor'),
-                ('bittensor-signature', eps[i].sign() ),
+                ('bittensor-signature', endpoints[i].sign() ),
                 ('bittensor-version',str(bittensor.__version_as_int__)),
                 ('request_type', str(bittensor.proto.RequestType.FORWARD)),
             )
@@ -150,7 +153,9 @@ def forward():
     return result
 
 
-
+##########################
+##### Run experiment #####
+##########################
 # Measure state before.
 start_time = time.time()
 io_1 = psutil.net_io_counters()
