@@ -80,7 +80,7 @@ wallet = bittensor.wallet( config = config )
 ##### Experiment arguments #####
 ################################
 # A list of pre-instantiated endpoints with stub connections.
-endpoints = [bittensor.receptor( wallet = wallet, endpoint = graph.endpoint_objs[i] ) for i in range(graph.n)]
+receptors = [bittensor.receptor( wallet = wallet, endpoint = graph.endpoint_objs[i] ) for i in range(graph.n)]
 
 # Timeout for each set of queries (we always wait this long)
 timeout = config.timeout
@@ -123,12 +123,12 @@ def forward():
         )
         
         # Fire off the future.
-        futures.append( endpoints[i].stub.Forward.future(
+        futures.append( receptors[i].stub.Forward.future(
             request = grpc_request, 
             timeout = timeout,
             metadata = (
                 ('rpc-auth-header','Bittensor'),
-                ('bittensor-signature', endpoints[i].sign() ),
+                ('bittensor-signature', receptors[i].sign() ),
                 ('bittensor-version',str(bittensor.__version_as_int__)),
                 ('request_type', str(bittensor.proto.RequestType.FORWARD)),
             )
@@ -142,8 +142,8 @@ def forward():
             is_response = False, 
             code = bittensor.proto.ReturnCode.Success, 
             call_time = 0, 
-            pubkey = endpoints[i].endpoint.hotkey, 
-            uid = endpoints[i].endpoint.uid, 
+            pubkey = receptors[i].endpoint.hotkey, 
+            uid = receptors[i].endpoint.uid, 
             inputs = list(inputs.shape), 
             outputs = None, 
             message = 'Success',
@@ -170,8 +170,8 @@ def forward():
                         is_response = True, 
                         code = bittensor.proto.ReturnCode.Success, 
                         call_time = timeout, 
-                        pubkey = endpoints[i].endpoint.hotkey, 
-                        uid = endpoints[i].endpoint.uid, 
+                        pubkey = receptors[i].endpoint.hotkey, 
+                        uid = receptors[i].endpoint.uid, 
                         inputs = list(inputs.shape), 
                         outputs = list(response_tensor.shape), 
                         message = 'Success',
@@ -186,8 +186,8 @@ def forward():
                         is_response = True, 
                         code = bittensor.proto.ReturnCode.Timeout, 
                         call_time = timeout, 
-                        pubkey = endpoints[i].endpoint.hotkey, 
-                        uid = endpoints[i].endpoint.uid, 
+                        pubkey = receptors[i].endpoint.hotkey, 
+                        uid = receptors[i].endpoint.uid, 
                         inputs = list(inputs.shape), 
                         outputs = None, 
                         message = 'Timeout',
@@ -202,8 +202,8 @@ def forward():
                 is_response = True, 
                 code = bittensor.proto.ReturnCode.UnknownException, 
                 call_time = timeout, 
-                pubkey = endpoints[i].endpoint.hotkey, 
-                uid = endpoints[i].endpoint.uid, 
+                pubkey = receptors[i].endpoint.hotkey, 
+                uid = receptors[i].endpoint.uid, 
                 inputs = list(inputs.shape), 
                 outputs = None, 
                 message = str(e),
@@ -252,7 +252,7 @@ total_sent = n_queried * n_steps
 total_failed = total_sent - total_success
 
 total_seconds =  end_time - start_time
-print ('\nElapsed:', total_seconds) 
+print ('\nElapsed:', total_seconds, 's') 
 print ('\nSteps:', n_steps ) 
 print ('Step speed:', n_steps / (total_seconds), "/s" ) 
 
