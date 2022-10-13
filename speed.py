@@ -65,6 +65,7 @@ bittensor.wallet.add_args(parser)
 bittensor.logging.add_args(parser)
 bittensor.subtensor.add_args(parser)
 config = bittensor.config(parser = parser)
+print (config)
 
 ##########################
 ##### Setup objects ######
@@ -133,6 +134,21 @@ def forward():
             )
           )
         )
+
+        # Logging
+        bittensor.logging.rpc_log ( 
+            axon = False, 
+            forward = True, 
+            is_response = False, 
+            code = bittensor.proto.ReturnCode.Success, 
+            call_time = 0, 
+            pubkey = endpoints[i].endpoint.hotkey, 
+            uid = endpoints[i].endpoint.uid, 
+            inputs = list(inputs.shape), 
+            outputs = None, 
+            message = 'Success',
+            synapse = synapse.synapse_type
+        )
         
     # We force the wait period. 
     time.sleep(timeout)
@@ -144,10 +160,55 @@ def forward():
                 fresult = f.result()
                 if fresult.return_code == 1:
                     # We return a True on success and skip deserialization.
-                    #result[i] = synapse.deserialize_forward_response_proto ( inputs, fresult.tensors[0] ).shape
+                    response_tensor = synapse.deserialize_forward_response_proto ( inputs, fresult.tensors[0] )
                     result[i] = True
-        except:
-            pass
+
+                    # Success logging.
+                    bittensor.logging.rpc_log ( 
+                        axon = False, 
+                        forward = True, 
+                        is_response = True, 
+                        code = bittensor.proto.ReturnCode.Success, 
+                        call_time = timeout, 
+                        pubkey = endpoints[i].endpoint.hotkey, 
+                        uid = endpoints[i].endpoint.uid, 
+                        inputs = list(inputs.shape), 
+                        outputs = list(response_tensor.shape), 
+                        message = 'Success',
+                        synapse = synapse.synapse_type
+                    )
+
+                else:
+                    # Timeout Logging.
+                    bittensor.logging.rpc_log ( 
+                        axon = False, 
+                        forward = True, 
+                        is_response = True, 
+                        code = bittensor.proto.ReturnCode.Timeout, 
+                        call_time = timeout, 
+                        pubkey = endpoints[i].endpoint.hotkey, 
+                        uid = endpoints[i].endpoint.uid, 
+                        inputs = list(inputs.shape), 
+                        outputs = None, 
+                        message = 'Timeout',
+                        synapse = synapse.synapse_type
+                    )
+
+        except Exception as e:
+            # Unknown error logging.
+            bittensor.logging.rpc_log ( 
+                axon = False, 
+                forward = True, 
+                is_response = True, 
+                code = bittensor.proto.ReturnCode.UnknownException, 
+                call_time = timeout, 
+                pubkey = endpoints[i].endpoint.hotkey, 
+                uid = endpoints[i].endpoint.uid, 
+                inputs = list(inputs.shape), 
+                outputs = None, 
+                message = str(e),
+                synapse = synapse.synapse_type
+            )
         
     # Return the list of booleans.
     return result
@@ -189,10 +250,6 @@ def get_size(bytes):
 total_success = sum([sum(ri) for ri in exp_results])
 total_sent = n_queried * n_steps
 total_failed = total_sent - total_success
-
-print ('\n')
-for arg in vars(args):
-    print (arg, ":", getattr(args, arg))
 
 total_seconds =  end_time - start_time
 print ('\nElapsed:', total_seconds) 
