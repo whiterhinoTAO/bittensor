@@ -34,6 +34,9 @@ from password_strength import PasswordPolicy
 from substrateinterface.utils.ss58 import ss58_encode
 from termcolor import colored
 
+from cached_property import cached_property
+
+
 class KeyFileError(Exception):
     """ Error thrown when the keyfile is corrupt, non-writable, nno-readable or the password used to decrypt is invalid.
     """
@@ -278,7 +281,7 @@ class Keyfile( object ):
         """
         return self.get_keypair()
 
-    @property
+    @cached_property
     def data( self ) -> bytes:
         """ Returns keyfile data under path.
             Returns:
@@ -290,7 +293,7 @@ class Keyfile( object ):
         """
         return self._read_keyfile_data_from_file()
 
-    @property
+    @cached_property
     def keyfile_data( self ) -> bytes:
         """ Returns keyfile data under path.
             Returns:
@@ -445,7 +448,7 @@ class Keyfile( object ):
         """ Reads keyfile data from path.
             Returns:
                 keyfile_data: (bytes, required):
-                    Keyfile data sotred under path.
+                    Keyfile data stored under path.
             Raises:
                 KeyFileError:
                     Raised if the file does not exists or is not readable.
