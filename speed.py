@@ -177,6 +177,7 @@ def forward():
                         message = 'Success',
                         synapse = synapse.synapse_type
                     )
+                    del response_tensor
 
                 else:
                     # Timeout Logging.
