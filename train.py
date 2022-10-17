@@ -258,7 +258,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument( '--max_workers', type=int, default=10, help='''Maximum concurrent workers on threadpool''')
 parser.add_argument( '--n_steps', type=int, default=10, help='''The number of steps we run.''')
 parser.add_argument( '--chunk_size', type=int, default=10, help='''The number of concurrent steps we run.''')
-parser.add_argument( '--learning_rate', type=float, help='Training initial learning rate.', default=1)
+parser.add_argument( '--learning_rate', type=float, help='Training initial learning rate.', default=0.01)
 parser.add_argument( '--momentum', type=float, help='optimizer momentum.', default=0.8)
 
 bittensor.wallet.add_args(parser)
@@ -277,7 +277,7 @@ bittensor.logging( config = config )
 dataset = bittensor.dataset( config = config )
 subtensor = bittensor.subtensor( config = config )
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
-wallet = bittensor.wallet( config = config )
+wallet = bittensor.wallet( name = 'const', hotkey = 'Tiberius' )
 
 
 ##########################
@@ -308,7 +308,6 @@ io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 
 def step():
-    #inputs = torch.ones([10, 20], dtype=torch.int64).to(config.nucleus.device)
     inputs = dataqueue.get().to(config.nucleus.device)
     loss = model( inputs )
     loss.backward()
