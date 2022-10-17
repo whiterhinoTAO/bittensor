@@ -313,6 +313,7 @@ success_results = []
 def step():
     inputs = dataqueue.get().to(config.nucleus.device)
     loss, successes = model( inputs )
+    loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
     return loss
