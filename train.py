@@ -370,7 +370,7 @@ print ('Sequence Length:', config.dataset.block_size
 print ('\nSuccess', total_success) 
 print ('Failed', total_failed ) 
 print ('Rate', total_success / (total_success + total_failed))
- ) 
+
 print ("\nAvg batches per endpoint:", (total_sent / 4096 ))
 print ("Avg examples per endpoint:", (total_sent * config.dataset.batch_size / 4096 ))
 print ("Avg tokens per endpoint:", ( (total_sent * config.dataset.batch_size * config.dataset.block_size) / 4096 ))
