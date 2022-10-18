@@ -212,15 +212,16 @@ class Nucleus(nn.Module):
         
         # Query
         uid_sample = random.sample( range(4096), self.config.nucleus.n_queried )
-        responses, successes = self.query( uid_sample, inputs)
+        responses, successes = self.query( uid_sample, inputs )
         
         # Evaluate.
         weighted_responses = sum([ r  * w for r, w in list(zip( responses, routing_score[uid_sample])) ])
         loss = self.cal_loss(inputs, weighted_responses )
     
+        # Clear GPU memory.
         del inputs
         for r in responses:
-            del responses
+            del r
         
         return loss, successes
     
@@ -284,15 +285,11 @@ start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
 
 def step(idx):
-    print(f'Step {idx}: start')
-    start_time = time.time()
     inputs = next(dataset)
-    print(f'Step {idx}: got data', round(time.time() - start_time, 3))
     loss, successes = model( inputs )
     loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
-    print(f'Step {idx}: finished', round(time.time() - start_time, 3))
     return loss
 
 avg_loss_history = []
