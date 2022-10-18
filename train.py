@@ -380,7 +380,7 @@ print ('Step speed:', config.n_steps / (total_seconds), "/s" )
 print ('\nQueried:', total_sent )
 print ('Query speed:', total_sent / (total_seconds), "/s" ) 
 print ('\nBatch size:', config.dataset.batch_size ) 
-print ('Sequence Length:', config.dataset.block_size
+print ('Sequence Length:', config.dataset.block_size )
 
 print ('\nSuccess', total_success) 
 print ('Failed', total_failed ) 
