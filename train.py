@@ -227,20 +227,13 @@ class Nucleus(nn.Module):
         return [ r.to(self.config.nucleus.device) for r in results ] 
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
-        print(f'\n\n\n cal loss, {inputs.shape}, {query_response.shape}  \n\n\n')
-        inputs_seq = inputs[..., :-validation_len]  # input sequence without last token [batch_size, sequence_len]
-        inputs_val = inputs[..., -validation_len:]  # input validation with next token [batch_size]
         
-        _stats = {}
-        
-        _stats.update({'logits': query_response[:, :-validation_len, :],
-                    'logits_val': query_response[:, -validation_len:, :]})
+        _logits = query_response.contiguous()
+        _labels = inputs.contiguous()
+        loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
 
-        for target, _ext in [(inputs_seq, ''), (inputs_val, '_val')]:
-            _loss = calc_loss_fct(torch.nn.CrossEntropyLoss(), _stats['logits' + _ext], target)  # CausalLM loss
-            _stats.update({'loss' + _ext: _loss})
-        
-        return _loss
+        print(f'\n\n\n cal_loss {_logits.shape, _labels.shape, loss}\n\n\n')
+        return loss
 
     def forward(self, inputs):
         inputs = inputs.to(self.config.nucleus.device)
