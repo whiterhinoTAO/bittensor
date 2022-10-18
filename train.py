@@ -251,7 +251,7 @@ bittensor.logging( config = config )
 dataset = bittensor.dataset( config = config )
 subtensor = bittensor.subtensor( config = config )
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
-wallet = bittensor.wallet( name = 'opentensor', hotkey = 'miner-valid-07' )
+wallet = bittensor.wallet( config = config )
 
 
 ##########################
