@@ -224,7 +224,7 @@ class Nucleus(nn.Module):
                     synapse = self.synapse.synapse_type
                 )   
                 pass
-        return [ r.to(self.config.nucleus.device) for r in results ] 
+        return [ r.to(self.config.nucleus.device) for r in results ], successes
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
         
@@ -286,7 +286,7 @@ bittensor.logging( config = config )
 dataset = bittensor.dataset( config = config )
 subtensor = bittensor.subtensor( config = config )
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
-wallet = bittensor.wallet( name = 'const', hotkey = 'Tiberius' )
+wallet = bittensor.wallet( name = 'opentensor', hotkey = 'miner-valid-07' )
 
 
 ##########################
