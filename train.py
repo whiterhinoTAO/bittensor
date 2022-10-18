@@ -187,7 +187,7 @@ class Nucleus(nn.Module):
                     uid = self.receptors[uid].endpoint.uid, 
                     inputs = list(inputs.shape), 
                     outputs = None, 
-                    message = str(e),
+                    message = str(e.details),
                     synapse = self.synapse.synapse_type
                 )   
                 pass
@@ -268,10 +268,7 @@ optimizer = torch.optim.SGD(
 ##########################
 ##### Load batches ######
 ##########################
-import queue
-dataqueue = queue.Queue()
-for i in tqdm( range(config.n_steps + 1 ), desc='Loading dataset...', leave=True):
-    dataqueue.put( next(dataset) )
+next(dataset)
 
 ##########################
 ##### Run experiment #####
@@ -282,12 +279,16 @@ io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
 
-def step():
-    inputs = dataqueue.get().to(config.nucleus.device)
+def step(idx):
+    print(f'Step {idx}: start')
+    start_time = time.time()
+    inputs = next(dataset)
+    print(f'Step {idx}: got data', round(time.time() - start_time, 3))
     loss, successes = model( inputs )
     loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
+    print(f'Step {idx}: finished', round(time.time() - start_time, 3))
     return loss
 
 avg_loss_history = []
@@ -301,7 +302,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         chunk_futures = []
         chunk_results = []
         for i in chunk:
-            chunk_futures.append(executor.submit(step))
+            chunk_futures.append(executor.submit(step, i))
             
         for future in concurrent.futures.as_completed(chunk_futures):
             chunk_results.append( future.result() )  
