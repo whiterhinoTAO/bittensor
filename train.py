@@ -13,6 +13,7 @@ from tqdm import tqdm
 from torch import nn
 from torch.nn.utils import clip_grad_norm_
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
+from bittensor._neuron.text.neuron_utilities import ThreadQueue, PositionalEncoding, calc_loss_fct
 from rich.traceback import install
 install(show_locals=False)
 
@@ -74,7 +75,7 @@ class Nucleus(nn.Module):
         self.wallet = wallet
         self.graph = graph
         self.sigmoid = torch.nn.Sigmoid()
-        self.synapse = bittensor.TextLastHiddenState()
+        self.synapse = bittensor.TextCausalLM()
         self.loss_fct = torch.nn.CrossEntropyLoss()
         self.tokenizer = bittensor.tokenizer()
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
@@ -222,7 +223,23 @@ class Nucleus(nn.Module):
                 )   
                 pass
         return [ r.to(self.config.nucleus.device) for r in results ] 
-    
+
+    def cal_loss(self, inputs, query_response, validation_len = 1):
+        print(f'\n\n\n cal loss, {inputs.shape}, {query_response.shape}  \n\n\n')
+        inputs_seq = inputs[..., :-validation_len]  # input sequence without last token [batch_size, sequence_len]
+        inputs_val = inputs[..., -validation_len:]  # input validation with next token [batch_size]
+        
+        _stats = {}
+        
+        _stats.update({'logits': query_response[:, :-validation_len, :],
+                    'logits_val': query_response[:, -validation_len:, :]})
+
+        for target, _ext in [(inputs_seq, ''), (inputs_val, '_val')]:
+            _loss = calc_loss_fct(torch.nn.CrossEntropyLoss(), _stats['logits' + _ext], target)  # CausalLM loss
+            _stats.update({'loss' + _ext: _loss})
+        
+        return _loss
+
     def forward(self, inputs):
         inputs = inputs.to(self.config.nucleus.device)
 
@@ -236,13 +253,8 @@ class Nucleus(nn.Module):
         # Query
         uid_sample = random.sample( range(4096), self.config.nucleus.n_queried )
         responses = self.query( uid_sample, inputs)
-        
-        # Evaluate.
         weighted_responses = sum([ r  * w for r, w in list(zip( responses, routing_score[uid_sample])) ])
-        logits = self.decoder_head( self.decoder( weighted_responses ))
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = inputs[..., 1:].contiguous()   
-        loss = self.loss_fct( shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1) )
+        loss = self.cal_loss(inputs, weighted_responses )
         
         return loss
     
