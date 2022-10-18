@@ -138,6 +138,7 @@ class Nucleus(nn.Module):
     def query( self, uids, inputs ):
         futures = []
         results = [self.synapse.nill_forward_response_tensor(inputs) for _ in uids ]
+        successes = [ False for _ in uids ]
         for index, uid in enumerate(uids):        
             grpc_request = bittensor.proto.TensorMessage (
                 version = bittensor.__version_as_int__,
@@ -178,6 +179,7 @@ class Nucleus(nn.Module):
                     if fresult.return_code == 1:
                         response_tensor = self.synapse.deserialize_forward_response_proto ( inputs, fresult.tensors[0] )
                         results[index] = response_tensor
+                        successes[index] = True
                         bittensor.logging.rpc_log ( 
                             axon = False, 
                             forward = True, 
@@ -252,11 +254,13 @@ class Nucleus(nn.Module):
         
         # Query
         uid_sample = random.sample( range(4096), self.config.nucleus.n_queried )
-        responses = self.query( uid_sample, inputs)
+        responses, successes = self.query( uid_sample, inputs)
+        
+        # Evaluate.
         weighted_responses = sum([ r  * w for r, w in list(zip( responses, routing_score[uid_sample])) ])
         loss = self.cal_loss(inputs, weighted_responses )
         
-        return loss
+        return loss, successes
     
     
 ##############################
@@ -318,11 +322,14 @@ for i in tqdm( range(config.n_steps + 1 ), desc='Loading dataset...', leave=True
 start_time = time.time()
 io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
+success_results = []
 
 def step():
     inputs = dataqueue.get().to(config.nucleus.device)
-    loss = model( inputs )
+    loss, successes = model( inputs )
+    loss = loss / config.chunk_size
     loss.backward()
+    success_results.append(successes)
     return loss
 
 avg_loss_history = []
@@ -361,7 +368,11 @@ end_time = time.time()
 ##########################
 
 total_seconds =  end_time - start_time
+
+total_success = sum([sum(ri) for ri in success_results])
 total_sent = config.nucleus.n_queried * config.n_steps
+total_failed = total_sent - total_success
+
 
 print ('\nElapsed:', total_seconds) 
 print ('\nSteps:', config.n_steps ) 
@@ -369,7 +380,12 @@ print ('Step speed:', config.n_steps / (total_seconds), "/s" )
 print ('\nQueried:', total_sent )
 print ('Query speed:', total_sent / (total_seconds), "/s" ) 
 print ('\nBatch size:', config.dataset.batch_size ) 
-print ('Sequence Length:', config.dataset.block_size ) 
+print ('Sequence Length:', config.dataset.block_size
+
+print ('\nSuccess', total_success) 
+print ('Failed', total_failed ) 
+print ('Rate', total_success / (total_success + total_failed))
+
 print ("\nAvg batches per endpoint:", (total_sent / 4096 ))
 print ("Avg examples per endpoint:", (total_sent * config.dataset.batch_size / 4096 ))
 print ("Avg tokens per endpoint:", ( (total_sent * config.dataset.batch_size * config.dataset.block_size) / 4096 ))
