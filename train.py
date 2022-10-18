@@ -231,8 +231,6 @@ class Nucleus(nn.Module):
         _logits = query_response.contiguous()
         _labels = inputs.contiguous()
         loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
-
-        print(f'\n\n\n cal_loss {_logits.shape, _labels.shape, loss}\n\n\n')
         return loss
 
     def forward(self, inputs):
