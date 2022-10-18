@@ -217,6 +217,10 @@ class Nucleus(nn.Module):
         # Evaluate.
         weighted_responses = sum([ r  * w for r, w in list(zip( responses, routing_score[uid_sample])) ])
         loss = self.cal_loss(inputs, weighted_responses )
+    
+        del inputs
+        for r in responses:
+            del responses
         
         return loss, successes
     
@@ -225,8 +229,8 @@ class Nucleus(nn.Module):
 ##### Build config ###########
 ##############################
 parser = argparse.ArgumentParser( 
-    description=f"Bittensor Speed Test ",
-    usage="python3 speed.py <command args>",
+    description=f"Bittensor Validator Training ",
+    usage="python3 train.py <command args>",
     add_help=True
 )
 parser.add_argument( '--max_workers', type=int, default=10, help='''Maximum concurrent workers on threadpool''')
@@ -251,7 +255,7 @@ bittensor.logging( config = config )
 dataset = bittensor.dataset( config = config )
 subtensor = bittensor.subtensor( config = config )
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
-wallet = bittensor.wallet( config = config )
+wallet = bittensor.wallet()
 
 
 ##########################
@@ -280,12 +284,15 @@ start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
 
 def step(idx):
+    print(f'Step {idx}: start')
     start_time = time.time()
     inputs = next(dataset)
+    print(f'Step {idx}: got data', round(time.time() - start_time, 3))
     loss, successes = model( inputs )
     loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
+    print(f'Step {idx}: finished', round(time.time() - start_time, 3))
     return loss
 
 avg_loss_history = []
