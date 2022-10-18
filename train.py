@@ -280,15 +280,12 @@ start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
 
 def step(idx):
-    print(f'Step {idx}: start')
     start_time = time.time()
     inputs = next(dataset)
-    print(f'Step {idx}: got data', round(time.time() - start_time, 3))
     loss, successes = model( inputs )
     loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
-    print(f'Step {idx}: finished', round(time.time() - start_time, 3))
     return loss
 
 avg_loss_history = []
