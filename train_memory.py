@@ -293,7 +293,7 @@ for step in range( config.n_steps):
     clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
     success_results.append(successes)
-    print ('step:', step, '/', len(config.n_steps), '\tloss:', loss.item() )
+    print ('step:', step, '/', config.n_steps, '\tloss:', loss.item() )
 
 # Measure state after.
 io_2 = psutil.net_io_counters()
