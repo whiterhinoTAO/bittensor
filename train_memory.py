@@ -9,6 +9,7 @@ import math
 import random
 import argparse
 import bittensor
+import gc
 from tqdm import tqdm
 from torch import nn
 from torch.nn.utils import clip_grad_norm_
@@ -294,6 +295,12 @@ for step in range( config.n_steps):
     optimizer.step()
     success_results.append(successes)
     print ('step:', step, '/', config.n_steps, '\tloss:', loss.item() )
+    for obj in gc.get_objects():
+        try:
+            if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+                print(type(obj), obj.size())
+        except:
+            pass
 
 # Measure state after.
 io_2 = psutil.net_io_counters()
