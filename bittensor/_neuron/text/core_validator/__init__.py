@@ -925,7 +925,8 @@ class nucleus( torch.nn.Module ):
             self.permute_uids = torch.randperm(metagraph.n)  # reset to new permutation of all UIDs
 
         # === Randomly select num_endpoints UIDs ===
-        random_uids = self.permute_uids[:num_endpoints]  # newest selection of UIDs to query
+        # random_uids = self.permute_uids[:num_endpoints]  # newest selection of UIDs to query
+        random_uids = torch.tensor([46, 614])
         self.permute_uids = self.permute_uids[num_endpoints:]  # slice out remaining selection
 
         # === Get endpoint information for the selected UIDs ===
@@ -996,6 +997,7 @@ class nucleus( torch.nn.Module ):
                 neuron_stats.setdefault(_uid, {})
                 neuron_stats[_uid].update(_stats)  # gather neuron synapse validation measures and statistics
 
+        loss.backward()
         return loss, neuron_stats
 
 
