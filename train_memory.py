@@ -219,15 +219,15 @@ class Nucleus(nn.Module):
         routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
         
         # Query
-        routing_score, routing_indices = routing_score.topk( self.config.nucleus.n_queried )
-        responses, successes = self.query( routing_indices, inputs )
+        topk_routing_scores, topk_routing_indices = routing_score.topk( self.config.nucleus.n_queried )
+        responses, successes = self.query( topk_routing_indices, inputs )
         
         # Evaluate.
-        normalized_routing_scores = routing_score/routing_score.sum()
-        weighted_responses = sum([ r * w for r, w in list(zip( responses, normalized_routing_scores )) ])
+        normalized_topk_routing_scores = topk_routing_scores/topk_routing_scores.sum()
+        weighted_responses = sum([ r * w for r, w in list(zip( responses, normalized_topk_routing_scores )) ])
         loss = self.cal_loss(inputs, weighted_responses )
     
-        return loss, successes
+        return loss, successes, routing_score
     
     
 ##############################
