@@ -296,7 +296,7 @@ def step(idx):
     loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
-    scores_history.append(scores.detach().tolist())
+    scores_history.append(scores.detach())
     return loss
 
 avg_loss_history = []
@@ -321,6 +321,12 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         losses = [l.item() for l in chunk_results]
         avg_loss_history.append( sum( losses )/ len( losses ) )
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
+
+        # average scores
+        average_scores = sum( scores_history ) / len(scores_history)
+        topk_vals, topk_uids = average_scores.topk( 50 )
+        print ('\n50 top scores:', topk_vals.tolist() )
+        print ('\n50 top uids:', topk_uids.tolist(), '\n\n')
         
         # Clean mem.
         gc.collect()
