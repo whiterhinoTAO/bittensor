@@ -322,7 +322,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
 
         # average scores
         average_scores = sum( scores_history ) / len(scores_history)
-        topk_vals, topk_uids = average_scores.topk( 50 )
+        topk_vals, topk_uids = average_scores.topk( config.nucleus.n_queried )
         print ('\n50 top scores:', topk_vals.tolist() )
         print ('\n50 top uids:', topk_uids.tolist(), '\n\n')
         
