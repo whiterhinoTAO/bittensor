@@ -345,7 +345,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         print ('\ntopk uids:', topk_uids.tolist(), '\n\n')
 
         if config.use_wandb:
-            wandb.log({'loss':  losses.detach()/ config.chunk_size}, step=ci)
+            wandb.log({'loss':  sum( losses )/ len( losses )}, step=ci)
 
 # Measure state after.
 io_2 = psutil.net_io_counters()
