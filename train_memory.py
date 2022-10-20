@@ -47,7 +47,6 @@ class Nucleus(nn.Module):
         self.loss_fct = torch.nn.CrossEntropyLoss()
         self.tokenizer = bittensor.tokenizer()
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
-        self.receptors = [bittensor.receptor( wallet=self.wallet, endpoint = self.graph.endpoint_objs[i] ) for i in range(self.graph.n)]
 
         self.token_embedding = torch.nn.Embedding( 
             bittensor.__vocab_size__,  
@@ -105,22 +104,23 @@ class Nucleus(nn.Module):
         
     def query( self, uids, inputs ):
         futures = []
-        results = [self.synapse.nill_forward_response_tensor(inputs) for _ in uids ]
-        successes = [ False for _ in uids ]
-        for index, uid in enumerate(uids):        
+        results = [self.synapse.nill_forward_response_tensor( inputs.detach() ) for _ in uids ]
+        successes = [ False for _ in uids ]    
+        receptors = [ bittensor.receptor( wallet = self.wallet, endpoint = self.graph.endpoint_objs[uid] ) for uid in uids]
+        for index, uid in enumerate(uids):   
             grpc_request = bittensor.proto.TensorMessage (
                 version = bittensor.__version_as_int__,
                 hotkey = self.wallet.hotkey.ss58_address,
-                tensors = [ self.synapse.serialize_forward_request_tensor ( inputs )],
+                tensors = [ self.synapse.serialize_forward_request_tensor ( inputs.detach() )],
                 synapses = [ self.synapse.serialize_to_wire_proto() ],
                 requires_grad = False,
             )
-            futures.append( self.receptors[uid].stub.Forward.future(
+            futures.append( receptors[index].stub.Forward.future(
                 request = grpc_request, 
                 timeout = self.config.nucleus.timeout,
                 metadata = (
                     ('rpc-auth-header','Bittensor'),
-                    ('bittensor-signature', self.receptors[uid].sign() ),
+                    ('bittensor-signature', receptors[index].sign() ),
                     ('bittensor-version',str(bittensor.__version_as_int__)),
                     ('request_type', str(bittensor.proto.RequestType.FORWARD)),
                 )
@@ -132,20 +132,21 @@ class Nucleus(nn.Module):
                 is_response = False, 
                 code = bittensor.proto.ReturnCode.Success, 
                 call_time = 0, 
-                pubkey = self.receptors[uid].endpoint.hotkey, 
-                uid = self.receptors[uid].endpoint.uid, 
+                pubkey = receptors[index].endpoint.hotkey, 
+                uid = receptors[index].endpoint.uid, 
                 inputs = list(inputs.shape), 
                 outputs = None, 
                 message = 'Success',
                 synapse = self.synapse.synapse_type
             )
+            
         time.sleep( self.config.nucleus.timeout )
-        for i,f in enumerate( futures ):
+        for index, f in enumerate( futures ):
             try:
                 if f.done():
                     fresult = f.result()
                     if fresult.return_code == 1:
-                        response_tensor = self.synapse.deserialize_forward_response_proto ( inputs, fresult.tensors[0] )
+                        response_tensor = self.synapse.deserialize_forward_response_proto ( inputs.detach(), fresult.tensors[0] )
                         results[index] = response_tensor
                         successes[index] = True
                         bittensor.logging.rpc_log ( 
@@ -154,14 +155,16 @@ class Nucleus(nn.Module):
                             is_response = True, 
                             code = bittensor.proto.ReturnCode.Success, 
                             call_time = self.config.nucleus.timeout, 
-                            pubkey = self.receptors[uid].endpoint.hotkey, 
-                            uid = self.receptors[uid].endpoint.uid, 
+                            pubkey = receptors[index].endpoint.hotkey, 
+                            uid = receptors[index].endpoint.uid, 
                             inputs = list(inputs.shape), 
                             outputs = list(response_tensor.shape), 
                             message = 'Success',
                             synapse = self.synapse.synapse_type
                         )
+                    del fresult
                 else:
+                    f.cancel()
                     # Timeout Logging.
                     bittensor.logging.rpc_log ( 
                         axon = False, 
@@ -169,14 +172,15 @@ class Nucleus(nn.Module):
                         is_response = True, 
                         code = bittensor.proto.ReturnCode.Timeout, 
                         call_time = self.config.nucleus.timeout, 
-                        pubkey = self.receptors[uid].endpoint.hotkey, 
-                        uid = self.receptors[uid].endpoint.uid, 
+                        pubkey = receptors[index].endpoint.hotkey, 
+                        uid = receptors[index].endpoint.uid, 
                         inputs = list(inputs.shape), 
                         outputs = None, 
                         message = 'Timeout',
                         synapse = self.synapse.synapse_type
                     )
             except Exception as e:
+                
                 # Unknown error logging.
                 bittensor.logging.rpc_log ( 
                     axon = False, 
@@ -184,15 +188,17 @@ class Nucleus(nn.Module):
                     is_response = True, 
                     code = bittensor.proto.ReturnCode.UnknownException, 
                     call_time = self.config.nucleus.timeout, 
-                    pubkey = self.receptors[uid].endpoint.hotkey, 
-                    uid = self.receptors[uid].endpoint.uid, 
+                    pubkey = receptors[index].endpoint.hotkey, 
+                    uid = receptors[index].endpoint.uid, 
                     inputs = list(inputs.shape), 
                     outputs = None, 
                     message = str(e.details),
                     synapse = self.synapse.synapse_type
                 )   
-                pass
-        return [ r.to(self.config.nucleus.device) for r in results ], successes
+                pass     
+        for r in receptors: del r
+        for f in futures: del f
+        return [ r.to(self.config.nucleus.device) for r in results], successes
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
         
@@ -216,14 +222,9 @@ class Nucleus(nn.Module):
         responses, successes = self.query( uid_sample, inputs )
         
         # Evaluate.
-        weighted_responses = sum([ r  * w for r, w in list(zip( responses, routing_score[uid_sample])) ])
+        weighted_responses = sum([ r * w for r, w in list(zip( responses, routing_score[uid_sample] ) )])
         loss = self.cal_loss(inputs, weighted_responses )
     
-        # Clear GPU memory.
-        del inputs
-        for r in responses:
-            del r
-        
         return loss, successes
     
     
@@ -286,19 +287,26 @@ start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
 
 avg_loss_history = []
+import psutil
+
 for step in range( config.n_steps):
-    optimizer.zero_grad() 
     inputs = next(dataset)
     loss, successes = model( inputs )
     loss.backward()
     clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
+    optimizer.zero_grad() 
     success_results.append(successes)
     print ('step:', step, '/', config.n_steps, '\tloss:', loss.item() )
+    del loss
+    del inputs
+    gc.collect()
+    torch.cuda.empty_cache()
     for obj in gc.get_objects():
         try:
             if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                print(type(obj), obj.size())
+                if not isinstance( obj, torch.nn.Parameter ):
+                    del obj
         except:
             pass
 
