@@ -16,6 +16,8 @@ from torch.nn.utils import clip_grad_norm_
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from bittensor._neuron.text.neuron_utilities import ThreadQueue, PositionalEncoding, calc_loss_fct
 from rich.traceback import install
+from memory_profiler import profile
+
 install(show_locals=False)
 
 ###################
@@ -101,10 +103,11 @@ class Nucleus(nn.Module):
         parser = argparse.ArgumentParser()    
         cls.add_args( parser )
         return bittensor.config( parser )
-        
+
+    @profile   
     def query( self, uids, inputs ):
         futures = []
-        results = [self.synapse.nill_forward_response_tensor( inputs.detach() ) for _ in uids ]
+        results = [None for _ in uids ]
         successes = [ False for _ in uids ]    
         receptors = [ bittensor.receptor( wallet = self.wallet, endpoint = self.graph.endpoint_objs[uid] ) for uid in uids]
         for index, uid in enumerate(uids):   
@@ -198,6 +201,10 @@ class Nucleus(nn.Module):
                 pass     
         for r in receptors: del r
         for f in futures: del f
+        inp = inputs.detach()
+        null_response = self.synapse.nill_forward_response_tensor( inp )
+        results = [ r if r != None else null_response for r in results ]
+        del null_response
         return [ r.to(self.config.nucleus.device) for r in results], successes
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
@@ -301,14 +308,6 @@ for step in range( config.n_steps):
     del loss
     del inputs
     gc.collect()
-    torch.cuda.empty_cache()
-    for obj in gc.get_objects():
-        try:
-            if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                if not isinstance( obj, torch.nn.Parameter ):
-                    del obj
-        except:
-            pass
 
 # Measure state after.
 io_2 = psutil.net_io_counters()
