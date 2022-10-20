@@ -47,6 +47,7 @@ class Nucleus(nn.Module):
         self.loss_fct = torch.nn.CrossEntropyLoss()
         self.tokenizer = bittensor.tokenizer()
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
+        self.receptors = [bittensor.receptor( wallet=self.wallet, endpoint = self.graph.endpoint_objs[i] ) for i in range(self.graph.n)]
 
         self.token_embedding = torch.nn.Embedding( 
             bittensor.__vocab_size__,  
@@ -207,7 +208,7 @@ class Nucleus(nn.Module):
         loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
         return loss
 
-    def forward(self, inputs):
+    def forward(self, inputs ):
         inputs = inputs.to(self.config.nucleus.device)
 
         # Route
@@ -218,11 +219,12 @@ class Nucleus(nn.Module):
         routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
         
         # Query
-        uid_sample = random.sample( range(4096), self.config.nucleus.n_queried )
-        responses, successes = self.query( uid_sample, inputs )
+        routing_score, routing_indices = routing_score.topk()
+        responses, successes = self.query( routing_indices, inputs )
         
         # Evaluate.
-        weighted_responses = sum([ r * w for r, w in list(zip( responses, routing_score[uid_sample] ) )])
+        normalized_routing_scores = routing_score/routing_score.sum()
+        weighted_responses = sum([ r * w for r, w in list(zip( responses, normalized_routing_scores )) ])
         loss = self.cal_loss(inputs, weighted_responses )
     
         return loss, successes
@@ -285,30 +287,49 @@ start_time = time.time()
 io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
-
 avg_loss_history = []
-import psutil
 
-for step in range( config.n_steps):
+def step(idx):
     inputs = next(dataset)
     loss, successes = model( inputs )
+    loss = loss / config.chunk_size
     loss.backward()
-    clip_grad_norm_(model.parameters(), 1.0)
-    optimizer.step()
-    optimizer.zero_grad() 
     success_results.append(successes)
-    print ('step:', step, '/', config.n_steps, '\tloss:', loss.item() )
-    del loss
-    del inputs
-    gc.collect()
-    torch.cuda.empty_cache()
-    for obj in gc.get_objects():
-        try:
-            if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                if not isinstance( obj, torch.nn.Parameter ):
-                    del obj
-        except:
-            pass
+    return loss
+
+avg_loss_history = []
+with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
+    step_chunks = list( chunks( list(range(config.n_steps)), config.chunk_size ) )
+    for ci, chunk in enumerate( step_chunks ):
+        
+        # Fire batches.
+        chunk_futures = []
+        chunk_results = []
+        for i in chunk:
+            chunk_futures.append(executor.submit(step, i))
+            
+        for future in concurrent.futures.as_completed(chunk_futures):
+            chunk_results.append( future.result() )  
+            
+        # Apply step.
+        clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        optimizer.zero_grad() 
+        
+        losses = [l.item() for l in chunk_results]
+        avg_loss_history.append( sum( losses )/ len( losses ) )
+        print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
+        
+        # Clean mem.
+        gc.collect()
+        torch.cuda.empty_cache()
+        for obj in gc.get_objects():
+            try:
+                if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+                    if not isinstance( obj, torch.nn.Parameter ):
+                        del obj
+            except: pass
+
 
 # Measure state after.
 io_2 = psutil.net_io_counters()

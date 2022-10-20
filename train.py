@@ -311,7 +311,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         losses = [l.item() for l in chunk_results]
-        avg_loss_history.append( sum( losses )/ config.chunk_size )
+        avg_loss_history.append( sum( losses ) / len( losses ) )
         
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
 
