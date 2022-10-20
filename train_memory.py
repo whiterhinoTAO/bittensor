@@ -201,13 +201,6 @@ class Nucleus(nn.Module):
         for f in futures: del f
         return [ r.to(self.config.nucleus.device) for r in results], successes
 
-    def cal_loss(self, inputs, query_response, validation_len = 1):
-        
-        _logits = query_response.contiguous()
-        _labels = inputs.contiguous()
-        loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
-        return loss
-
     def forward(self, inputs ):
         inputs = inputs.to(self.config.nucleus.device)
 
@@ -222,11 +215,16 @@ class Nucleus(nn.Module):
         topk_routing_scores, topk_routing_indices = routing_score.topk( self.config.nucleus.n_queried )
         responses, successes = self.query( topk_routing_indices, inputs )
         
-        # Evaluate.
+        # Join responses
         normalized_topk_routing_scores = topk_routing_scores/topk_routing_scores.sum()
         weighted_responses = sum([ r * w for r, w in list(zip( responses, normalized_topk_routing_scores )) ])
-        loss = self.cal_loss(inputs, weighted_responses )
-    
+
+        # Compute loss.
+        _logits = weighted_responses.contiguous()
+        _labels = inputs.contiguous()
+        loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
+
+        # Return.
         return loss, successes, routing_score
     
     
