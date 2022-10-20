@@ -139,7 +139,7 @@ class Nucleus(nn.Module):
                 synapse = self.synapse.synapse_type
             )
         time.sleep( self.config.nucleus.timeout )
-        for i,f in enumerate( futures ):
+        for index,f in enumerate( futures ):
             try:
                 if f.done():
                     fresult = f.result()
@@ -153,8 +153,8 @@ class Nucleus(nn.Module):
                             is_response = True, 
                             code = bittensor.proto.ReturnCode.Success, 
                             call_time = self.config.nucleus.timeout, 
-                            pubkey = self.receptors[uid].endpoint.hotkey, 
-                            uid = self.receptors[uid].endpoint.uid, 
+                            pubkey = self.receptors[uids[index]].endpoint.hotkey, 
+                            uid = self.receptors[uids[index]].endpoint.uid, 
                             inputs = list(inputs.shape), 
                             outputs = list(response_tensor.shape), 
                             message = 'Success',
@@ -168,8 +168,8 @@ class Nucleus(nn.Module):
                         is_response = True, 
                         code = bittensor.proto.ReturnCode.Timeout, 
                         call_time = self.config.nucleus.timeout, 
-                        pubkey = self.receptors[uid].endpoint.hotkey, 
-                        uid = self.receptors[uid].endpoint.uid, 
+                        pubkey = self.receptors[uids[index]].endpoint.hotkey, 
+                        uid = self.receptors[uids[index]].endpoint.uid, 
                         inputs = list(inputs.shape), 
                         outputs = None, 
                         message = 'Timeout',
@@ -183,14 +183,13 @@ class Nucleus(nn.Module):
                     is_response = True, 
                     code = bittensor.proto.ReturnCode.UnknownException, 
                     call_time = self.config.nucleus.timeout, 
-                    pubkey = self.receptors[uid].endpoint.hotkey, 
-                    uid = self.receptors[uid].endpoint.uid, 
+                    pubkey = self.receptors[uids[index]].endpoint.hotkey, 
+                    uid = self.receptors[uids[index]].endpoint.uid, 
                     inputs = list(inputs.shape), 
                     outputs = None, 
                     message = str(e.details),
                     synapse = self.synapse.synapse_type
                 )   
-                pass
         return [ r.to(self.config.nucleus.device) for r in results ], successes
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
