@@ -219,7 +219,7 @@ class Nucleus(nn.Module):
         routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
         
         # Query
-        routing_score, routing_indices = routing_score.topk()
+        routing_score, routing_indices = routing_score.topk( self.config.nucleus.n_queried )
         responses, successes = self.query( routing_indices, inputs )
         
         # Evaluate.
