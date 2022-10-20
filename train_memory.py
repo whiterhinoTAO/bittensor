@@ -287,14 +287,16 @@ start_time = time.time()
 io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
+scores_history = []
 avg_loss_history = []
 
 def step(idx):
     inputs = next(dataset)
-    loss, successes = model( inputs )
+    loss, successes, scores = model( inputs )
     loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
+    scores_history.append(scores.detach().tolist())
     return loss
 
 avg_loss_history = []
