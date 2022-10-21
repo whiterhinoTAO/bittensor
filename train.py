@@ -9,6 +9,7 @@ import math
 import random
 import argparse
 import bittensor
+import gc
 from tqdm import tqdm
 from torch import nn
 from torch.nn.utils import clip_grad_norm_
@@ -16,6 +17,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from bittensor._neuron.text.neuron_utilities import ThreadQueue, PositionalEncoding, calc_loss_fct
 from rich.traceback import install
 install(show_locals=False)
+import wandb 
 
 ###################
 ##### Helpers #####
@@ -102,104 +104,7 @@ class Nucleus(nn.Module):
         cls.add_args( parser )
         return bittensor.config( parser )
         
-    def query( self, uids, inputs ):
-        futures = []
-        results = [self.synapse.nill_forward_response_tensor(inputs) for _ in uids ]
-        successes = [ False for _ in uids ]
-        for index, uid in enumerate(uids):        
-            grpc_request = bittensor.proto.TensorMessage (
-                version = bittensor.__version_as_int__,
-                hotkey = self.wallet.hotkey.ss58_address,
-                tensors = [ self.synapse.serialize_forward_request_tensor ( inputs )],
-                synapses = [ self.synapse.serialize_to_wire_proto() ],
-                requires_grad = False,
-            )
-            futures.append( self.receptors[uid].stub.Forward.future(
-                request = grpc_request, 
-                timeout = self.config.nucleus.timeout,
-                metadata = (
-                    ('rpc-auth-header','Bittensor'),
-                    ('bittensor-signature', self.receptors[uid].sign() ),
-                    ('bittensor-version',str(bittensor.__version_as_int__)),
-                    ('request_type', str(bittensor.proto.RequestType.FORWARD)),
-                )
-              )
-            )
-            bittensor.logging.rpc_log ( 
-                axon = False, 
-                forward = True, 
-                is_response = False, 
-                code = bittensor.proto.ReturnCode.Success, 
-                call_time = 0, 
-                pubkey = self.receptors[uid].endpoint.hotkey, 
-                uid = self.receptors[uid].endpoint.uid, 
-                inputs = list(inputs.shape), 
-                outputs = None, 
-                message = 'Success',
-                synapse = self.synapse.synapse_type
-            )
-        time.sleep( self.config.nucleus.timeout )
-        for index,f in enumerate( futures ):
-            try:
-                if f.done():
-                    fresult = f.result()
-                    if fresult.return_code == 1:
-                        response_tensor = self.synapse.deserialize_forward_response_proto ( inputs, fresult.tensors[0] )
-                        results[index] = response_tensor
-                        successes[index] = True
-                        bittensor.logging.rpc_log ( 
-                            axon = False, 
-                            forward = True, 
-                            is_response = True, 
-                            code = bittensor.proto.ReturnCode.Success, 
-                            call_time = self.config.nucleus.timeout, 
-                            pubkey = self.receptors[uids[index]].endpoint.hotkey, 
-                            uid = self.receptors[uids[index]].endpoint.uid, 
-                            inputs = list(inputs.shape), 
-                            outputs = list(response_tensor.shape), 
-                            message = 'Success',
-                            synapse = self.synapse.synapse_type
-                        )
-                else:
-                    # Timeout Logging.
-                    bittensor.logging.rpc_log ( 
-                        axon = False, 
-                        forward = True, 
-                        is_response = True, 
-                        code = bittensor.proto.ReturnCode.Timeout, 
-                        call_time = self.config.nucleus.timeout, 
-                        pubkey = self.receptors[uids[index]].endpoint.hotkey, 
-                        uid = self.receptors[uids[index]].endpoint.uid, 
-                        inputs = list(inputs.shape), 
-                        outputs = None, 
-                        message = 'Timeout',
-                        synapse = self.synapse.synapse_type
-                    )
-            except Exception as e:
-                # Unknown error logging.
-                bittensor.logging.rpc_log ( 
-                    axon = False, 
-                    forward = True, 
-                    is_response = True, 
-                    code = bittensor.proto.ReturnCode.UnknownException, 
-                    call_time = self.config.nucleus.timeout, 
-                    pubkey = self.receptors[uids[index]].endpoint.hotkey, 
-                    uid = self.receptors[uids[index]].endpoint.uid, 
-                    inputs = list(inputs.shape), 
-                    outputs = None, 
-                    message = str(e.details),
-                    synapse = self.synapse.synapse_type
-                )   
-        return [ r.to(self.config.nucleus.device) for r in results ], successes
-
-    def cal_loss(self, inputs, query_response, validation_len = 1):
-        
-        _logits = query_response.contiguous()
-        _labels = inputs.contiguous()
-        loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
-        return loss
-
-    def forward(self, inputs):
+    def forward(self, inputs, dendrite):
         inputs = inputs.to(self.config.nucleus.device)
 
         # Route
@@ -210,19 +115,33 @@ class Nucleus(nn.Module):
         routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
         
         # Query
-        uid_sample = random.sample( range(4096), self.config.nucleus.n_queried )
-        responses, successes = self.query( uid_sample, inputs )
-        
-        # Evaluate.
-        weighted_responses = sum([ r  * w for r, w in list(zip( responses, routing_score[uid_sample])) ])
-        loss = self.cal_loss(inputs, weighted_responses )
-    
-        # Clear GPU memory.
-        del inputs
-        for r in responses:
-            del r
-        
-        return loss, successes
+        topk_routing_scores, topk_routing_indices = routing_score.topk( self.config.nucleus.n_queried )
+        with torch.no_grad():
+            responses, return_ops, times = dendrite.text(
+                    endpoints = [graph.endpoint_objs[i] for i in topk_routing_indices],
+                    inputs = inputs,
+                    synapses = [self.synapse],
+                    timeout = self.config.nucleus.timeout
+                )
+            successes = [ op.item() == 1 for op in return_ops]
+
+        # Join responses.
+        batch_size, sequence_len = inputs.shape
+        normalized_topk_routing_scores = topk_routing_scores/topk_routing_scores.sum()
+        logits = torch.ones((batch_size, sequence_len, bittensor.__vocab_size__)).to(self.config.nucleus.device)
+        for r, w in list(zip(responses, normalized_topk_routing_scores )):
+            r = r[0].to(self.config.nucleus.device)
+            topk_values = w * r[..., :self.synapse.topk] # topk probs: [batch_size, sequence_len, topk]
+            topk_indices = r[..., self.synapse.topk:].long()  # topk probs indices: [batch_size, sequence_len, topk]
+            logits.scatter_add_(-1, topk_indices, torch.log(topk_values + 1e-40))  # insert add topk probs: [batch_size, sequence_len, vocab_size]
+
+        # Compute loss.
+        _logits = logits.contiguous()
+        _labels = inputs.contiguous()
+        loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
+
+        # Return.
+        return loss, successes, routing_score
     
     
 ##############################
@@ -238,11 +157,14 @@ parser.add_argument( '--n_steps', type=int, default=10, help='''The number of st
 parser.add_argument( '--chunk_size', type=int, default=10, help='''The number of concurrent steps we run.''')
 parser.add_argument( '--learning_rate', type=float, help='Training initial learning rate.', default=0.01)
 parser.add_argument( '--momentum', type=float, help='optimizer momentum.', default=0.8)
+parser.add_argument( '--use_wandb', action='store_true', default=False, help='''To use wandb to track results''')
 
 bittensor.wallet.add_args(parser)
 bittensor.logging.add_args(parser)
 bittensor.subtensor.add_args(parser)
 bittensor.dataset.add_args(parser)
+bittensor.dendrite.add_args(parser)
+bittensor.wandb.add_args(parser)
 Nucleus.add_args(parser)
 config = bittensor.config(parser = parser)
 print (config)
@@ -256,6 +178,8 @@ dataset = bittensor.dataset( config = config )
 subtensor = bittensor.subtensor( config = config )
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
 wallet = bittensor.wallet()
+dendrite = bittensor.dendrite ( config = config, wallet = wallet)
+
 
 
 ##########################
@@ -282,21 +206,26 @@ start_time = time.time()
 io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
+scores_history = []
+avg_loss_history = []
 
 def step(idx):
     inputs = next(dataset)
-    loss, successes = model( inputs )
+    loss, successes, scores = model( inputs, dendrite )
     loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
+    scores_history.append(scores.detach())
     return loss
+
+
+if config.use_wandb: 
+    bittensor.wandb(config= config)
 
 avg_loss_history = []
 with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
     step_chunks = list( chunks( list(range(config.n_steps)), config.chunk_size ) )
     for ci, chunk in enumerate( step_chunks ):
-        # Clear grads.
-        optimizer.zero_grad() 
         
         # Fire batches.
         chunk_futures = []
@@ -306,16 +235,25 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
             
         for future in concurrent.futures.as_completed(chunk_futures):
             chunk_results.append( future.result() )  
-                
+            
         # Apply step.
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
-        losses = [l.item() for l in chunk_results]
-        avg_loss_history.append( sum( losses ) / len( losses ) )
+        optimizer.zero_grad() 
         
+        losses = [l.item() for l in chunk_results]
+        avg_loss_history.append( sum( losses )/ len( losses ) )
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
 
-        
+        # average scores
+        average_scores = sum( scores_history ) / len(scores_history)
+        topk_vals, topk_uids = average_scores.topk( config.nucleus.n_queried )
+        print ('\ntopk scores:', topk_vals.tolist() )
+        print ('\ntopk uids:', topk_uids.tolist(), '\n\n')
+
+        if config.use_wandb:
+            wandb.log({'loss':  sum( losses )/ len( losses )}, step=ci)
+
 # Measure state after.
 io_2 = psutil.net_io_counters()
 total_bytes_sent, total_bytes_recved = io_2.bytes_sent - start_bytes_sent, io_2.bytes_recv - start_bytes_recv

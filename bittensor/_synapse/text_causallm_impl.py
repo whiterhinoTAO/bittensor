@@ -28,6 +28,7 @@ class TextCausalLM (Synapse):
     def __init__( 
         self, 
         topk: int = 512,
+        unpack_forward_responses: bool = True,
         forward_request_serializer_type: 'bittensor.proto.Serializer.Type' = bittensor.proto.Serializer.MSGPACK,
         forward_response_serializer_type: 'bittensor.proto.Serializer.Type' = bittensor.proto.Serializer.MSGPACK,
         backward_request_serializer_type: 'bittensor.proto.Serializer.Type' = bittensor.proto.Serializer.MSGPACK,
@@ -131,20 +132,23 @@ class TextCausalLM (Synapse):
 
     def decode_forward_response_tensor( self, forward_response_tensor: torch.Tensor ) -> torch.Tensor:
         """ Returns full logits by decoding topk-encoding input. """
-        batch_size, sequence_len, _ = forward_response_tensor.shape
-        encoded_probs = forward_response_tensor  # encoded probabilities: [batch_size, sequence_len, topk + topk]
-        topk_values = encoded_probs[..., :self.topk]  # topk probs: [batch_size, sequence_len, topk]
-        topk_indices = encoded_probs[..., self.topk:].long()  # topk probs indices: [batch_size, sequence_len, topk]
+        if self.unpack_forward_responses:
+            batch_size, sequence_len, _ = forward_response_tensor.shape
+            encoded_probs = forward_response_tensor  # encoded probabilities: [batch_size, sequence_len, topk + topk]
+            topk_values = encoded_probs[..., :self.topk]  # topk probs: [batch_size, sequence_len, topk]
+            topk_indices = encoded_probs[..., self.topk:].long()  # topk probs indices: [batch_size, sequence_len, topk]
 
-        topk_pmass = topk_values.sum(dim=-1)  # topk probability mass: [batch_size, sequence_len]
-        remainder_pmass = torch.clamp(1 - topk_pmass, 1e-40, 1)  # remainder probability mass: [batch_size, sequence_len]
-        remainder_floor = remainder_pmass / (bittensor.__vocab_size__ - self.topk)  # divide remainder: [batch_size, sequence_len]
+            topk_pmass = topk_values.sum(dim=-1)  # topk probability mass: [batch_size, sequence_len]
+            remainder_pmass = torch.clamp(1 - topk_pmass, 1e-40, 1)  # remainder probability mass: [batch_size, sequence_len]
+            remainder_floor = remainder_pmass / (bittensor.__vocab_size__ - self.topk)  # divide remainder: [batch_size, sequence_len]
 
-        logits = torch.ones((batch_size, sequence_len, bittensor.__vocab_size__)).to(topk_values.device)
-        logits *= torch.log(remainder_floor)[:, :, None]  # set probability floor: [batch_size, sequence_len, vocab_size]
-        logits.scatter_(-1, topk_indices, torch.log(topk_values + 1e-40))  # insert topk probs: [batch_size, sequence_len, vocab_size]
+            logits = torch.ones((batch_size, sequence_len, bittensor.__vocab_size__)).to(topk_values.device)
+            logits *= torch.log(remainder_floor)[:, :, None]  # set probability floor: [batch_size, sequence_len, vocab_size]
+            logits.scatter_(-1, topk_indices, torch.log(topk_values + 1e-40))  # insert topk probs: [batch_size, sequence_len, vocab_size]
 
-        return logits  # [batch_size, sequence_len, vocab_size]
+            return logits  # [batch_size, sequence_len, vocab_size]
+        else:
+            return forward_response_tensor
 
     def encode_backward_response_gradient( self, backward_request_gradient: torch.Tensor ) -> torch.Tensor: return backward_request_gradient
     def decode_backward_response_gradient ( self, backward_request_gradient: torch.Tensor ) -> torch.Tensor: return backward_request_gradient
@@ -169,7 +173,10 @@ class TextCausalLM (Synapse):
 
     def nill_forward_response_tensor( self, forward_request_tensor: torch.Tensor ) -> torch.Tensor:
         try:
-            return torch.zeros( ( forward_request_tensor.size(0), forward_request_tensor.size(1), bittensor.__vocab_size__ ), dtype=torch.float32)
+            if self.unpack_forward_responses:
+                return torch.zeros( ( forward_request_tensor.size(0), forward_request_tensor.size(1), bittensor.__vocab_size__ ), dtype=torch.float32)
+            else:
+                return torch.zeros( ( forward_request_tensor.size(0), forward_request_tensor.size(1),  self.topk + self.topk ), dtype=torch.float32)
         except:
             return torch.tensor([])
 
