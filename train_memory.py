@@ -17,6 +17,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from bittensor._neuron.text.neuron_utilities import ThreadQueue, PositionalEncoding, calc_loss_fct
 from rich.traceback import install
 from memory_profiler import profile
+import pdb
 
 install(show_locals=False)
 
@@ -104,7 +105,6 @@ class Nucleus(nn.Module):
         cls.add_args( parser )
         return bittensor.config( parser )
 
-    @profile   
     def query( self, uids, inputs ):
         futures = []
         results = [None for _ in uids ]
@@ -223,14 +223,19 @@ class Nucleus(nn.Module):
         pos_embedding = self.local_pos_encoder(embedding)
         routing_context = self.encoder(pos_embedding, mask=src_mask)
         routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
+        routing_score = routing_score / sum(routing_score)
         
         # Query
-        uid_sample = random.sample( range(4096), self.config.nucleus.n_queried )
+        # uid_sample = random.sample( range(4096), self.config.nucleus.n_queried )
+        uid_sample = [681, 2892, 1058, 2494, 3862, 856, 1046, 528, 173, 1782, 3255, 3337, 3280, 376, 3073, 3808, 659, 4031]
         responses, successes = self.query( uid_sample, inputs )
         
         # Evaluate.
+        losses = [ self.cal_loss(inputs, r) for r in responses]
         weighted_responses = sum([ r * w for r, w in list(zip( responses, routing_score[uid_sample] ) )])
         loss = self.cal_loss(inputs, weighted_responses )
+        pdb.set_trace()
+        print(loss, routing_score[uid_sample], losses)
     
         return loss, successes
     
