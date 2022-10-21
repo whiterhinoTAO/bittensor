@@ -104,104 +104,6 @@ class Nucleus(nn.Module):
         cls.add_args( parser )
         return bittensor.config( parser )
         
-    def query( self, uids, inputs ):
-        futures = []
-        results = [self.synapse.nill_forward_response_tensor( inputs.detach() ) for _ in uids ]
-        successes = [ False for _ in uids ]    
-        receptors = [ bittensor.receptor( wallet = self.wallet, endpoint = self.graph.endpoint_objs[uid] ) for uid in uids]
-        for index, uid in enumerate(uids):   
-            grpc_request = bittensor.proto.TensorMessage (
-                version = bittensor.__version_as_int__,
-                hotkey = self.wallet.hotkey.ss58_address,
-                tensors = [ self.synapse.serialize_forward_request_tensor ( inputs.detach() )],
-                synapses = [ self.synapse.serialize_to_wire_proto() ],
-                requires_grad = False,
-            )
-            futures.append( receptors[index].stub.Forward.future(
-                request = grpc_request, 
-                timeout = self.config.nucleus.timeout,
-                metadata = (
-                    ('rpc-auth-header','Bittensor'),
-                    ('bittensor-signature', receptors[index].sign() ),
-                    ('bittensor-version',str(bittensor.__version_as_int__)),
-                    ('request_type', str(bittensor.proto.RequestType.FORWARD)),
-                )
-              )
-            )
-            bittensor.logging.rpc_log ( 
-                axon = False, 
-                forward = True, 
-                is_response = False, 
-                code = bittensor.proto.ReturnCode.Success, 
-                call_time = 0, 
-                pubkey = receptors[index].endpoint.hotkey, 
-                uid = receptors[index].endpoint.uid, 
-                inputs = list(inputs.shape), 
-                outputs = None, 
-                message = 'Success',
-                synapse = self.synapse.synapse_type
-            )
-            
-        time.sleep( self.config.nucleus.timeout )
-        for index, f in enumerate( futures ):
-            try:
-                if f.done():
-                    fresult = f.result()
-                    if fresult.return_code == 1:
-                        response_tensor = self.synapse.deserialize_forward_response_proto ( inputs.detach(), fresult.tensors[0] )
-                        results[index] = response_tensor
-                        successes[index] = True
-                        bittensor.logging.rpc_log ( 
-                            axon = False, 
-                            forward = True, 
-                            is_response = True, 
-                            code = bittensor.proto.ReturnCode.Success, 
-                            call_time = self.config.nucleus.timeout, 
-                            pubkey = receptors[index].endpoint.hotkey, 
-                            uid = receptors[index].endpoint.uid, 
-                            inputs = list(inputs.shape), 
-                            outputs = list(response_tensor.shape), 
-                            message = 'Success',
-                            synapse = self.synapse.synapse_type
-                        )
-                    del fresult
-                else:
-                    f.cancel()
-                    # Timeout Logging.
-                    bittensor.logging.rpc_log ( 
-                        axon = False, 
-                        forward = True, 
-                        is_response = True, 
-                        code = bittensor.proto.ReturnCode.Timeout, 
-                        call_time = self.config.nucleus.timeout, 
-                        pubkey = receptors[index].endpoint.hotkey, 
-                        uid = receptors[index].endpoint.uid, 
-                        inputs = list(inputs.shape), 
-                        outputs = None, 
-                        message = 'Timeout',
-                        synapse = self.synapse.synapse_type
-                    )
-            except Exception as e:
-                
-                # Unknown error logging.
-                bittensor.logging.rpc_log ( 
-                    axon = False, 
-                    forward = True, 
-                    is_response = True, 
-                    code = bittensor.proto.ReturnCode.UnknownException, 
-                    call_time = self.config.nucleus.timeout, 
-                    pubkey = receptors[index].endpoint.hotkey, 
-                    uid = receptors[index].endpoint.uid, 
-                    inputs = list(inputs.shape), 
-                    outputs = None, 
-                    message = str(e.details),
-                    synapse = self.synapse.synapse_type
-                )   
-                pass     
-        for r in receptors: del r
-        for f in futures: del f
-        return [ r.to(self.config.nucleus.device) for r in results], successes
-
     def forward(self, inputs, dendrite):
         inputs = inputs.to(self.config.nucleus.device)
 
@@ -214,13 +116,12 @@ class Nucleus(nn.Module):
         
         # Query
         topk_routing_scores, topk_routing_indices = routing_score.topk( self.config.nucleus.n_queried )
-        random_endpoints = [graph.endpoints[uid] for uid in topk_routing_indices]
         with torch.no_grad():
             responses, return_ops, times = dendrite.text(
-                    endpoints=random_endpoints,
-                    inputs=inputs,
-                    synapses=[self.synapse],
-                    timeout=self.config.nucleus.timeout
+                    endpoints = [graph.endpoints[uid] for uid in topk_routing_indices],
+                    inputs = inputs,
+                    synapses = [self.synapse],
+                    timeout = self.config.nucleus.timeout
                 )
         # Join responses
         normalized_topk_routing_scores = topk_routing_scores/topk_routing_scores.sum()
