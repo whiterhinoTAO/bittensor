@@ -57,6 +57,7 @@ class TextCausalLM (Synapse):
             backward_response_serializer_type
         )
         self.topk = topk
+        self.unpack_forward_responses = unpack_forward_responses
         self.synapse_type = TextCausalLM.synapse_type
 
     def __repr__(self) -> str: return self.__str__()
