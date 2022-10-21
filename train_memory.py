@@ -305,7 +305,6 @@ avg_loss_history = []
 def step(idx):
     inputs = next(dataset)
     loss, successes, scores = model( inputs, dendrite )
-    loss = loss / config.chunk_size
     loss.backward()
     success_results.append(successes)
     scores_history.append(scores.detach())
@@ -335,6 +334,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         optimizer.zero_grad() 
         
         losses = [l.item() for l in chunk_results]
+
         avg_loss_history.append( sum( losses )/ len( losses ) )
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
 
