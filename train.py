@@ -44,7 +44,7 @@ class Nucleus(nn.Module):
         self.wallet = wallet
         self.graph = graph
         self.sigmoid = torch.nn.Sigmoid()
-        self.synapse = bittensor.TextCausalLM()
+        self.synapse = bittensor.TextCausalLM( unpack_forward_responses = False )
         self.loss_fct = torch.nn.CrossEntropyLoss()
         self.tokenizer = bittensor.tokenizer()
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
