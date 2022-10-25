@@ -236,9 +236,7 @@ class Nucleus(nn.Module):
         successes = [ op.item() == 1 for op in return_ops]
 
         # Compute loss.
-        _logits = weighted_responses.contiguous()
-        _labels = inputs.contiguous()
-        loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
+        loss = self.cal_loss(inputs, weighted_responses)
 
         # Return.
         return loss, successes, routing_score
