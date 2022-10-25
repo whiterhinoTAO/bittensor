@@ -135,8 +135,8 @@ class ReceptorPool ( torch.nn.Module ):
             return args['receptor'].forward( args['synapses'], args['inputs'], args['timeout'] )
 
         # Submit calls to receptors.
-        with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
-            responses = executor.map( call_forward, call_args, timeout=10*timeout)
+
+        responses = self.thread_pool.map( call_forward, call_args, timeout=10*timeout)
         
         # Release semephore.
         for receptor in receptors:
@@ -226,8 +226,7 @@ class ReceptorPool ( torch.nn.Module ):
             )
 
         # Submit calls to receptors.
-        with concurrent.futures.ThreadPoolExecutor( max_workers = len(endpoints) ) as executor:
-            responses = executor.map ( call_backward, call_args, timeout=10*timeout )
+        responses = self.thread_pool.map ( call_backward, call_args, timeout=10*timeout )
 
         # Release semephore.
         for receptor in receptors:
