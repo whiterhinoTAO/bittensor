@@ -47,6 +47,7 @@ class Nucleus(nn.Module):
         self.loss_fct = torch.nn.CrossEntropyLoss()
         self.tokenizer = bittensor.tokenizer()
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
+        self.loss_fct = torch.nn.CrossEntropyLoss()
 
         self.token_embedding = torch.nn.Embedding( 
             bittensor.__vocab_size__,  
@@ -201,10 +202,9 @@ class Nucleus(nn.Module):
         return [ r.to(self.config.nucleus.device) for r in results], successes
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
-        
-        _logits = query_response.contiguous()
-        _labels = inputs.contiguous()
-        loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
+        _labels = inputs[:, 1:].contiguous()
+        _logits = query_response[:, :-1, :].contiguous()
+        loss = self.loss_fct(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
         return loss
 
     def forward(self, inputs):
