@@ -50,6 +50,7 @@ class Nucleus(nn.Module):
         self.loss_fct = torch.nn.CrossEntropyLoss()
         self.tokenizer = bittensor.tokenizer()
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
+        self.loss_fct = torch.nn.CrossEntropyLoss()
 
         self.token_embedding = torch.nn.Embedding( 
             bittensor.__vocab_size__,  
@@ -208,10 +209,14 @@ class Nucleus(nn.Module):
         return [ r.to(self.config.nucleus.device) for r in results], successes
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
-        
-        _logits = query_response.contiguous()
-        _labels = inputs.contiguous()
-        loss = torch.nn.CrossEntropyLoss()(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
+ 
+        _labels = inputs[:, 1:].contiguous()
+        _logits = query_response[:, :-1, :].contiguous()
+        inp = _logits.view(-1, _logits.size(-1))
+        target = _labels.view(-1)
+        pdb.set_trace()
+        loss = self.loss_fct(inp, target)
+        pdb.set_trace()
         return loss
 
     def forward(self, inputs):
@@ -226,16 +231,17 @@ class Nucleus(nn.Module):
         routing_score = routing_score / sum(routing_score)
         
         # Query
-        # uid_sample = random.sample( range(4096), self.config.nucleus.n_queried )
-        uid_sample = [681, 2892, 1058, 2494, 3862, 856, 1046, 528, 173, 1782, 3255, 3337, 3280, 376, 3073, 3808, 659, 4031]
+        uid_sample = random.sample( range(len(graph.hotkeys)), self.config.nucleus.n_queried )
+        # uid_sample = [681, 2892, 1058, 2494, 3862, 856, 1046, 528, 173, 1782, 3255, 3337, 3280, 376, 3073, 3808, 659, 4031]
         responses, successes = self.query( uid_sample, inputs )
         
         # Evaluate.
         losses = [ self.cal_loss(inputs, r) for r in responses]
         weighted_responses = sum([ r * w for r, w in list(zip( responses, routing_score[uid_sample] ) )])
         loss = self.cal_loss(inputs, weighted_responses )
-        pdb.set_trace()
         print(loss, routing_score[uid_sample], losses)
+        pdb.set_trace()
+        
     
         return loss, successes
     
