@@ -96,7 +96,7 @@ class Nucleus(nn.Module):
         parser.add_argument('--nucleus.nlayers', type=int, help='the number of nn.TransformerEncoderLayer in nn.TransformerEncoder', default=2 )
         parser.add_argument('--nucleus.dropout', type=float, help='the dropout value', default=0.2)
         parser.add_argument('--nucleus.timeout',type=int, default=4, help='''Timeout for each set of queries (we always wait this long)''')
-        parser.add_argument('--nucleus.n_queried', type=int, default=50, help='''The number of endpoints we query each step.''')
+        parser.add_argument('--nucleus.n_queried', type=int, default=100, help='''The number of endpoints we query each step.''')
         parser.add_argument('--nucleus.device', type=str, help='miner default training device cpu/cuda', default=("cuda" if torch.cuda.is_available() else "cpu"))
 
     @classmethod
@@ -232,14 +232,15 @@ class Nucleus(nn.Module):
         # Join responses
         normalized_topk_routing_scores = topk_routing_scores/topk_routing_scores.sum()
         weighted_responses = sum([ r[0] * w for r, w in list(zip( responses, normalized_topk_routing_scores )) ])
-
+        averaged_responses = sum([ r[0] for r in responses ]) / len(responses)
         successes = [ op.item() == 1 for op in return_ops]
 
         # Compute loss.
         loss = self.cal_loss(inputs, weighted_responses)
-
+        loss_baseline = self.cal_loss(inputs, averaged_responses)
+        
         # Return.
-        return loss, successes, routing_score
+        return loss, loss_baseline, successes, routing_score
     
     
 ##############################
@@ -309,15 +310,15 @@ avg_loss_history = []
 
 def step(idx):
     inputs = next(dataset)
-    loss, successes, scores = model( inputs, dendrite )
+    loss, loss_baseline, success, scores = model( inputs, dendrite )
     loss.backward()
-    success_results.append(successes)
+    success_results.append(success)
     scores_history.append(scores.detach())
-    return loss
+    return loss, loss_baseline, success
 
 
 if config.use_wandb: 
-    bittensor.wandb(config= config)
+    bittensor.wandb(config = config)
 
 avg_loss_history = []
 with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
@@ -336,9 +337,12 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         # Apply step.
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
-        optimizer.zero_grad() 
+        optimizer.zero_grad()
         
-        losses = [l.item() for l in chunk_results]
+        losses = [l[0].item() for l in chunk_results]
+        losses_baseline = [l[1].item() for l in chunk_results]
+        successes = [ sum(l[2]) / len(l[2]) for l in chunk_results]
+        
 
         avg_loss_history.append( sum( losses )/ len( losses ) )
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
@@ -349,8 +353,17 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         print ('\ntopk scores:', topk_vals.tolist() )
         print ('\ntopk uids:', topk_uids.tolist(), '\n\n')
 
+
         if config.use_wandb:
-            wandb.log({'loss':  sum( losses )/ len( losses )}, step=ci)
+            scores_log = { 'score/' + str(k) :v.item() for k, v in enumerate(average_scores)}
+            stats = {
+                'loss/loss':  sum( losses )/ len( losses ),
+                'loss/baseline':  sum( losses_baseline )/ len( losses_baseline ),
+                'loss/diff':  ( sum( losses_baseline ) - sum(losses) )/ len( losses ),
+                'success': sum(successes) / len(successes)
+            }
+            print(stats)
+            wandb.log( {**stats, **scores_log}, step=ci)
 
 # Measure state after.
 io_2 = psutil.net_io_counters()
