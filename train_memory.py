@@ -20,6 +20,7 @@ from memory_profiler import profile
 import pdb
 
 install(show_locals=False)
+import wandb 
 
 ###################
 ##### Helpers #####
@@ -51,6 +52,7 @@ class Nucleus(nn.Module):
         self.tokenizer = bittensor.tokenizer()
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
         self.loss_fct = torch.nn.CrossEntropyLoss()
+        self.receptors = [bittensor.receptor( wallet=self.wallet, endpoint = self.graph.endpoint_objs[i] ) for i in range(self.graph.n)]
 
         self.token_embedding = torch.nn.Embedding( 
             bittensor.__vocab_size__,  
@@ -97,7 +99,7 @@ class Nucleus(nn.Module):
         parser.add_argument('--nucleus.nlayers', type=int, help='the number of nn.TransformerEncoderLayer in nn.TransformerEncoder', default=2 )
         parser.add_argument('--nucleus.dropout', type=float, help='the dropout value', default=0.2)
         parser.add_argument('--nucleus.timeout',type=int, default=4, help='''Timeout for each set of queries (we always wait this long)''')
-        parser.add_argument('--nucleus.n_queried', type=int, default=50, help='''The number of endpoints we query each step.''')
+        parser.add_argument('--nucleus.n_queried', type=int, default=100, help='''The number of endpoints we query each step.''')
         parser.add_argument('--nucleus.device', type=str, help='miner default training device cpu/cuda', default=("cuda" if torch.cuda.is_available() else "cpu"))
 
     @classmethod
@@ -209,17 +211,12 @@ class Nucleus(nn.Module):
         return [ r.to(self.config.nucleus.device) for r in results], successes
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
- 
         _labels = inputs[:, 1:].contiguous()
         _logits = query_response[:, :-1, :].contiguous()
-        inp = _logits.view(-1, _logits.size(-1))
-        target = _labels.view(-1)
-        pdb.set_trace()
-        loss = self.loss_fct(inp, target)
-        pdb.set_trace()
+        loss = self.loss_fct(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
         return loss
 
-    def forward(self, inputs):
+    def forward(self, inputs, dendrite):
         inputs = inputs.to(self.config.nucleus.device)
 
         # Route
@@ -231,19 +228,27 @@ class Nucleus(nn.Module):
         routing_score = routing_score / sum(routing_score)
         
         # Query
-        uid_sample = random.sample( range(len(graph.hotkeys)), self.config.nucleus.n_queried )
-        # uid_sample = [681, 2892, 1058, 2494, 3862, 856, 1046, 528, 173, 1782, 3255, 3337, 3280, 376, 3073, 3808, 659, 4031]
-        responses, successes = self.query( uid_sample, inputs )
+        topk_routing_scores, topk_routing_indices = routing_score.topk( self.config.nucleus.n_queried )
+        random_endpoints = [graph.endpoints[uid] for uid in topk_routing_indices]
+        with torch.no_grad():
+            responses, return_ops, times = dendrite.text(
+                    endpoints=random_endpoints,
+                    inputs=inputs,
+                    synapses=[self.synapse],
+                    timeout=self.config.nucleus.timeout
+                )
+        # Join responses
+        normalized_topk_routing_scores = topk_routing_scores/topk_routing_scores.sum()
+        weighted_responses = sum([ r[0] * w for r, w in list(zip( responses, normalized_topk_routing_scores )) ])
+        averaged_responses = sum([ r[0] for r in responses ]) / len(responses)
+        successes = [ op.item() == 1 for op in return_ops]
+
+        # Compute loss.
+        loss = self.cal_loss(inputs, weighted_responses)
+        loss_baseline = self.cal_loss(inputs, averaged_responses)
         
-        # Evaluate.
-        losses = [ self.cal_loss(inputs, r) for r in responses]
-        weighted_responses = sum([ r * w for r, w in list(zip( responses, routing_score[uid_sample] ) )])
-        loss = self.cal_loss(inputs, weighted_responses )
-        print(loss, routing_score[uid_sample], losses)
-        pdb.set_trace()
-        
-    
-        return loss, successes
+        # Return.
+        return loss, loss_baseline, successes, routing_score
     
     
 ##############################
@@ -259,11 +264,14 @@ parser.add_argument( '--n_steps', type=int, default=10, help='''The number of st
 parser.add_argument( '--chunk_size', type=int, default=10, help='''The number of concurrent steps we run.''')
 parser.add_argument( '--learning_rate', type=float, help='Training initial learning rate.', default=0.01)
 parser.add_argument( '--momentum', type=float, help='optimizer momentum.', default=0.8)
+parser.add_argument( '--use_wandb', action='store_true', default=False, help='''To use wandb to track results''')
 
 bittensor.wallet.add_args(parser)
 bittensor.logging.add_args(parser)
 bittensor.subtensor.add_args(parser)
 bittensor.dataset.add_args(parser)
+bittensor.dendrite.add_args(parser)
+bittensor.wandb.add_args(parser)
 Nucleus.add_args(parser)
 config = bittensor.config(parser = parser)
 print (config)
@@ -277,6 +285,8 @@ dataset = bittensor.dataset( config = config )
 subtensor = bittensor.subtensor( config = config )
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
 wallet = bittensor.wallet()
+dendrite = bittensor.dendrite ( config = config, wallet = wallet)
+
 
 
 ##########################
@@ -303,22 +313,65 @@ start_time = time.time()
 io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 success_results = []
+scores_history = []
+avg_loss_history = []
+
+def step(idx):
+    inputs = next(dataset)
+    loss, loss_baseline, success, scores = model( inputs, dendrite )
+    loss.backward()
+    success_results.append(success)
+    scores_history.append(scores.detach())
+    return loss, loss_baseline, success
+
+
+if config.use_wandb: 
+    bittensor.wandb(config = config)
 
 avg_loss_history = []
-import psutil
+with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
+    step_chunks = list( chunks( list(range(config.n_steps)), config.chunk_size ) )
+    for ci, chunk in enumerate( step_chunks ):
+        
+        # Fire batches.
+        chunk_futures = []
+        chunk_results = []
+        for i in chunk:
+            chunk_futures.append(executor.submit(step, i))
+            
+        for future in concurrent.futures.as_completed(chunk_futures):
+            chunk_results.append( future.result() )  
+            
+        # Apply step.
+        clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+        optimizer.zero_grad()
+        
+        losses = [l[0].item() for l in chunk_results]
+        losses_baseline = [l[1].item() for l in chunk_results]
+        successes = [ sum(l[2]) / len(l[2]) for l in chunk_results]
+        
 
-for step in range( config.n_steps):
-    inputs = next(dataset)
-    loss, successes = model( inputs )
-    loss.backward()
-    clip_grad_norm_(model.parameters(), 1.0)
-    optimizer.step()
-    optimizer.zero_grad() 
-    success_results.append(successes)
-    print ('step:', step, '/', config.n_steps, '\tloss:', loss.item() )
-    del loss
-    del inputs
-    gc.collect()
+        avg_loss_history.append( sum( losses )/ len( losses ) )
+        print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
+
+        # average scores
+        average_scores = sum( scores_history ) / len(scores_history)
+        topk_vals, topk_uids = average_scores.topk( config.nucleus.n_queried )
+        print ('\ntopk scores:', topk_vals.tolist() )
+        print ('\ntopk uids:', topk_uids.tolist(), '\n\n')
+
+
+        if config.use_wandb:
+            scores_log = { 'score/' + str(k) :v.item() for k, v in enumerate(average_scores)}
+            stats = {
+                'loss/loss':  sum( losses )/ len( losses ),
+                'loss/baseline':  sum( losses_baseline )/ len( losses_baseline ),
+                'loss/diff':  ( sum( losses_baseline ) - sum(losses) )/ len( losses ),
+                'success': sum(successes) / len(successes)
+            }
+            print(stats)
+            wandb.log( {**stats, **scores_log}, step=ci)
 
 # Measure state after.
 io_2 = psutil.net_io_counters()
