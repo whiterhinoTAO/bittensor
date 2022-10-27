@@ -22,13 +22,15 @@ import os
 import random
 import time
 from typing import Union
-
+import streamlit as st
 import requests
 import torch
 from loguru import logger
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from torch.utils.data.dataloader import DataLoader
+import asyncio
+import aiohttp
 
 import bittensor
 
@@ -47,6 +49,7 @@ class Dataset():
         self.mountain_hash = 'QmSdDg6V9dgpdAFtActs75Qfc36qJtm9y8a7yrQ1rHm7ZX'
         # Used when current corpus has been exhausted
         self.refresh_corpus = False
+        
         
 
     @staticmethod
@@ -134,6 +137,7 @@ class GenesisTextDataset( Dataset ):
         no_tokenizer, 
         num_batches
     ):
+
         super().__init__()
         self.block_size = block_size
         self.batch_size = batch_size
@@ -158,15 +162,19 @@ class GenesisTextDataset( Dataset ):
         # Used to refresh corpus if we've exhausted the whole dataset
         self.refresh_corpus = True
 
+
+        st.write('building hash table')
         self.build_hash_table()
+        st.write('finished building hash table')
 
         os.makedirs(os.path.expanduser(data_dir), exist_ok=True)
             
-        self.data_queue = ThreadQueue(
-            producer_target = self.reserve_multiple_data,
-            producer_arg = (self.num_batches, ),
-            buffer_size = 1
-        )
+        # self.data_queue = ThreadQueue(
+        #     producer_target = self.reserve_multiple_data,
+        #     producer_arg = (self.num_batches, ),
+        #     buffer_size = 1
+        # )
+        self.reserve_multiple_data(self.num_batches)
 
     def __del__(self):
         self.close()
@@ -259,6 +267,7 @@ class GenesisTextDataset( Dataset ):
         """
         text = None
         response = self.get_ipfs_directory(self.text_dir, file_meta)
+        st.write(response, self.text_dir, file_meta)
         if (response != None) and (response.status_code == 200):
             text = response.text
             self.IPFS_fails = 0
@@ -479,11 +488,15 @@ class GenesisTextDataset( Dataset ):
                     if random_datafile_dir == None:
                         pass
 
+                    st.write(directory)
+
                     # --- Get text from the datafile directory
                     text = self.get_text(random_datafile_dir)
+
                     
                     if text != None:
                         text_list = text.split() 
+                        st.write(len(text_list))
                         data_corpus.extend(text_list)
                         total_dataset_size += int(random_datafile_dir['Size'])
                         total_dataset_len += len(text_list)
@@ -662,6 +675,7 @@ class GenesisTextDataset( Dataset ):
             
             if response:
                 dataset_hashes = response.json()['Links']
+                st.write(len(dataset_hashes))
                 if self.save_dataset:
                     self.save_hash(mountain_meta, json.dumps(dataset_hashes) )
             
@@ -673,3 +687,19 @@ class GenesisTextDataset( Dataset ):
             name = i['Name'][:-4]
             dataset_meta = {'Name': name, 'Hash': i['Hash'], 'Size': self.get_folder_size(name) }
             self.dataset_hashes[name] = dataset_meta
+
+
+    @staticmethod
+    async def get_client_session(*args,**kwargs):
+        # timeout = aiohttp.ClientTimeout(sock_connect=1, sock_read=5)
+        # kwargs = {"timeout": timeout, **kwargs}
+        return aiohttp.ClientSession(**kwargs)
+
+    async def set_session(self, refresh=False):
+        if (not self._session) or (refresh==True):
+            self._session = await self.get_client(loop=self.loop, **self.client_kwargs)
+            if not self.asynchronous:
+                weakref.finalize(self, self.close_session, self.loop, self._session)
+        return self._session
+    
+
