@@ -33,7 +33,7 @@ class JSONGeneral (Synapse):
         backward_request_serializer_type: 'bittensor.proto.Serializer.Type' = bittensor.proto.Serializer.MSGPACK,
         backward_response_serializer_type: 'bittensor.proto.Serializer.Type' = bittensor.proto.Serializer.MSGPACK,
     ):  
-        """ TextCausalLM Synapse initializer.
+        """ JSONGeneral Synapse initializer.
         Args:
             forward_request_serializer_type (:obj:`bittensor.proto.Serializer.Type` of shape :obj:`(1)`, `optional`, :default: `bittensor.proto.Serializer.MSGPACK`):
                 Serializer used to pack torch tensors on forward request.
@@ -56,7 +56,7 @@ class JSONGeneral (Synapse):
         self.synapse_type = JSONGeneral.synapse_type
 
     def __repr__(self) -> str: return self.__str__()
-    def __str__(self) -> str: return "TextCausalLM"
+    def __str__(self) -> str: return "JSONGeneral"
 
     @staticmethod
     def deserialize_from_instance_proto ( instance_proto: bittensor.proto.Synapse ) -> 'JSONGeneral':
@@ -84,7 +84,7 @@ class JSONGeneral (Synapse):
     def serialize_to_wire_proto ( self, code: 'bittensor.proto.ReturnCode' = 0, message: str = '' ) -> bittensor.proto.Synapse:
         return bittensor.proto.Synapse (
                 synapse_data = self.serialize_to_instance_proto().SerializeToString(),
-                synapse_type = TextCausalLM.synapse_type,
+                synapse_type = JSONGeneral.synapse_type,
                 return_code = code,
                 message = message
             )
@@ -98,7 +98,7 @@ class JSONGeneral (Synapse):
 
     def check_backward_request_gradient ( self, forward_request_tensor, backward_request_gradient ):
         assert isinstance(forward_request_tensor, dict)
-        assert isinstance(forward_response_tensor, dict)   
+        assert isinstance(backward_request_gradient, dict)   
 
     def encode_forward_request_tensor ( self, forward_request_tensor: dict) -> dict: return forward_request_tensor
     def decode_forward_request_tensor ( self, forward_request_tensor: dict ) -> dict: return forward_request_tensor
@@ -108,5 +108,5 @@ class JSONGeneral (Synapse):
     def decode_backward_response_gradient ( self, backward_request_gradient: dict ) -> dict: return backward_request_gradient
     def encode_backward_request_gradient( self, backward_response_gradient: dict ) -> dict: return backward_response_gradient
     def decode_backward_request_gradient( self, backward_response_gradient: dict ) -> dict: return backward_response_gradient
-    def nill_forward_response_tensor( self, forward_request_tensor: dict ) -> dict: return forward_request_tensor
-    def nill_backward_response_tensor( self, forward_request_tensor: dict ) -> dict: return forward_request_tensor
+    def nill_forward_response_tensor( self, forward_request_tensor: dict ) -> dict: return {}
+    def nill_backward_response_tensor( self, forward_request_tensor: dict ) -> dict: return {}
