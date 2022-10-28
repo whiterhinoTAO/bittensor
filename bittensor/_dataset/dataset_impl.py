@@ -84,6 +84,7 @@ class Dataset():
         session.mount('https://', adapter)
         return session
 
+
     def get_ipfs_directory(self, address: str, file_meta: dict, action: str = 'post', timeout : int = 180):
         r"""Connects to IPFS gateway and retrieves directory.
         Args:
@@ -161,14 +162,8 @@ class GenesisTextDataset( Dataset ):
 
         # Used to refresh corpus if we've exhausted the whole dataset
         self.refresh_corpus = True
-
-
-        st.write('building hash table')
         self.build_hash_table()
-        st.write('finished building hash table')
-
-        os.makedirs(os.path.expanduser(data_dir), exist_ok=True)
-            
+        os.makedirs(os.path.expanduser(data_dir), exist_ok=True)  
         # self.data_queue = ThreadQueue(
         #     producer_target = self.reserve_multiple_data,
         #     producer_arg = (self.num_batches, ),
@@ -483,6 +478,7 @@ class GenesisTextDataset( Dataset ):
 
                 # --- Dont stop until the corpus size and the minimum data_length was reached.
                 for directory in directories:
+                    st.write(directory)
                     # --- Get a directory that leads to a datafile.
                     random_datafile_dir = self.get_root_text_hash(directory)
                     if random_datafile_dir == None:
