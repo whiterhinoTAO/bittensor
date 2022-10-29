@@ -24,7 +24,6 @@ class AsyncQueueServer:
         queue = asyncio.Queue(**kwargs)
         return self.add_queue(key=key, queue=queue)
 
-
     def queue_exists(self, key:str):
         return bool(key in self.queue)
 
@@ -46,14 +45,12 @@ class AsyncQueueServer:
     
     ls = list_queues
 
-
     def get_batch(self, key, batch_size=10, sync=False, **kwargs):
         q = self.get_queue(key)
         batch_size = min(batch_size, q.qsize())
         jobs = [self.queue(key, sync=False) for i in range(batch_size)]
         job = asyncio.gather(*jobs)
         return jobs
-
 
     def put(self, key, value, sync=False, *args, **kwargs):
         q = self.get_queue(key,*args, **kwargs)
@@ -72,11 +69,8 @@ class AsyncQueueServer:
             return self.async_run(job)
         return job
 
-
-
     def async_run(self, job):
         return self.loop.run_until_complete(job)
-        
 
     def get(self, key, sync=False, **kwargs):
         q = self.get_queue(key)
@@ -84,7 +78,6 @@ class AsyncQueueServer:
         if sync:
             return self.async_run(job)
         return job
-
 
     def get_batch(self, key, batch_size=10, sync=False, **kwargs):
         q = self.get_queue(key)
@@ -94,7 +87,6 @@ class AsyncQueueServer:
         if sync:
             return self.async_run(job)
         return job
-
 
     def delete_all(self,  *args, **kwargs):
         for key in self.queue.keys():
