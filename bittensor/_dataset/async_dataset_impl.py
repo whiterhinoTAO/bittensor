@@ -32,13 +32,30 @@ class Dataset:
         self.refresh_corpus = False
         self.set_datasets(datasets=datasets)
 
+
     def set_event_loop(self, loop=None):
         if loop == None:
             loop = asyncio.get_event_loop()
         self.loop = loop
+        return self.loop
+
+    self.loop 
+    @property
+    def loop(self):
+        return getattr(self, '_loop',asyncio.get_event_loop())
+
+    self.loop = loop 
+    @loop.setter
+    def loop(self, loop):
+        if loop == None:
+            loop = asyncio.get_event_loop()
+        self._loop = loop
+        return loop
 
     def async_run(self, job):
         return self.loop.run_until_complete(job)
+
+
 
     async def async_get_dataset_hashes(self):
         mountain_meta = {'Name': 'mountain', 'Folder': 'meta_data', 'Hash': self.mountain_hash}
