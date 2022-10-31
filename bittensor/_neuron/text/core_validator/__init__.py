@@ -264,14 +264,13 @@ class neuron:
                 f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])')
 
     def __del__(self):
-        self.__exit__()
+        self.dataset.close()
+        self.dendrite.__del__()
 
     def __exit__ ( self, exc_type, exc_value, exc_traceback ):
         r""" Close down neuron.
         """
         print(exc_type, exc_value, exc_traceback)
-        self.dataset.close()
-        self.dendrite.__del__()
 
     def __enter__(self):
         r""" Sanity checks and begin validator.
@@ -437,6 +436,8 @@ class neuron:
                (self.subtensor.block < start_block + 2 * blocks_per_epoch and
                 len(epoch_queried_uids) < self.metagraph.n)):
             start_time = time.time()
+
+            import pdb; pdb.set_trace()
 
             # === Forward ===
             # Forwards inputs through the network and returns the loss
