@@ -562,18 +562,18 @@ class neuron:
             self.weights_table(sample_uids, sample_weights)  # print weights table
 
         # set weights console message (every epoch)
-        # print(f"[white not bold]{datetime.datetime.now():%Y-%m-%d %H:%M:%S}[/white not bold]{' ' * 4} | "
-        #       f"{f'[bright_white]Set weights[/bright_white]'.center(16 + len('[bright_white][/bright_white]'))} | "
-        #       f'[bright_green not bold]{len(sample_weights)}[/bright_green not bold] [dim]weights set[/dim] | '
-        #       f'[bright_green not bold]{len(epoch_responsive_uids)}[/bright_green not bold]/'
-        #       f'[white]{len(epoch_queried_uids)}[/white] '
-        #       f'[dim white not bold][green]responsive[/green]/queried[/dim white not bold] '
-        #       f'[[yellow]{time.time() - epoch_start_time:.0f}[/yellow]s] | '
-        #       f'[dim]weights[/dim] sum:{sample_weights.sum().item():.2g} '
-        #       f'[white] max:[bold]{sample_weights.max().item():.4g}[/bold] / '
-        #       f'min:[bold]{sample_weights.min().item():.4g}[/bold] [/white] '
-        #       f'\[{sample_weights.max().item()}:1] '
-        #       f'({max_weight_limit} allowed)')
+        print(f"[white not bold]{datetime.datetime.now():%Y-%m-%d %H:%M:%S}[/white not bold]{' ' * 4} | "
+              f"{f'[bright_white]Set weights[/bright_white]'.center(16 + len('[bright_white][/bright_white]'))} | "
+              f'[bright_green not bold]{len(sample_weights)}[/bright_green not bold] [dim]weights set[/dim] | '
+              f'[bright_green not bold]{len(epoch_responsive_uids)}[/bright_green not bold]/'
+              f'[white]{len(epoch_queried_uids)}[/white] '
+              f'[dim white not bold][green]responsive[/green]/queried[/dim white not bold] '
+              f'[[yellow]{time.time() - epoch_start_time:.0f}[/yellow]s] | '
+              f'[dim]weights[/dim] sum:{sample_weights.sum().item():.2g} '
+              f'[white] max:[bold]{sample_weights.max().item():.4g}[/bold] / '
+              f'min:[bold]{sample_weights.min().item():.4g}[/bold] [/white] '
+              f'\[{sample_weights.max().item()}:1] '
+              f'({max_weight_limit} allowed)')
 
         self.subtensor.set_weights(
             uids=sample_uids.detach().to('cpu'),
@@ -759,16 +759,16 @@ class neuron:
                 _neuron_stats = {uid: stats for uid, stats in _neuron_stats.items() if uid in limited_uids}
 
         print()
-        # stats_table(_neuron_stats, 'weight', self.config.get('width', None),
-        #             f'[white] Neuron weights [/white] | ' + str(self),  # title
-        #             f'Validated {min_allowed_weights}/'
-        #             f'[bold]{len(self.neuron_stats)}[/bold]/{self.metagraph.n} (min/[bold]valid[/bold]/total) | '
-        #             f'sum:{sample_weights.sum().item():.2g} '
-        #             f'[white] max:[bold]{sample_weights.max().item():.4g}[/bold] / '
-        #             f'min:[bold]{sample_weights.min().item():.4g}[/bold] [/white] '
-        #             f'\[{sample_weights.max().item()}:1] '
-        #             f'({max_weight_limit} allowed)',  # caption
-        #             mark_uids=avail_include_uids)
+        stats_table(_neuron_stats, 'weight', self.config.get('width', None),
+                    f'[white] Neuron weights [/white] | ' + str(self),  # title
+                    f'Validated {min_allowed_weights}/'
+                    f'[bold]{len(self.neuron_stats)}[/bold]/{self.metagraph.n} (min/[bold]valid[/bold]/total) | '
+                    f'sum:{sample_weights.sum().item():.2g} '
+                    f'[white] max:[bold]{sample_weights.max().item():.4g}[/bold] / '
+                    f'min:[bold]{sample_weights.min().item():.4g}[/bold] [/white] '
+                    f'\[{sample_weights.max().item()}:1] '
+                    f'({max_weight_limit} allowed)',  # caption
+                    mark_uids=avail_include_uids)
 
 
 class nucleus( torch.nn.Module ):
@@ -1054,7 +1054,6 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
                 Statistics per endpoint for this batch.
     """
     
-    print("\n\n\n HERERERERE \n\n\n")
     inputs_seq = inputs[..., :-validation_len]  # input sequence without last token [batch_size, sequence_len]
     inputs_val = inputs[..., -validation_len]  # input validation with next token [batch_size]
 

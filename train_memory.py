@@ -18,6 +18,7 @@ from bittensor._neuron.text.neuron_utilities import ThreadQueue, PositionalEncod
 from rich.traceback import install
 from memory_profiler import profile
 import pdb
+from bittensor._neuron.text.core_server.nucleus_impl import server
 
 install(show_locals=False)
 import wandb 
@@ -53,6 +54,7 @@ class Nucleus(nn.Module):
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
         self.loss_fct = torch.nn.CrossEntropyLoss()
         self.receptors = [bittensor.receptor( wallet=self.wallet, endpoint = self.graph.endpoint_objs[i] ) for i in range(self.graph.n)]
+        self.model_baseline = server(config = config, model_name = 'EleutherAI/gpt-neo-125M')
 
         self.token_embedding = torch.nn.Embedding( 
             bittensor.__vocab_size__,  
@@ -110,7 +112,7 @@ class Nucleus(nn.Module):
 
     def query( self, uids, inputs ):
         futures = []
-        results = [None for _ in uids ]
+        results = [self.synapse.nill_forward_response_tensor( inputs.detach() ) for _ in uids ]
         successes = [ False for _ in uids ]    
         receptors = [ bittensor.receptor( wallet = self.wallet, endpoint = self.graph.endpoint_objs[uid] ) for uid in uids]
         for index, uid in enumerate(uids):   
@@ -204,10 +206,6 @@ class Nucleus(nn.Module):
                 pass     
         for r in receptors: del r
         for f in futures: del f
-        inp = inputs.detach()
-        null_response = self.synapse.nill_forward_response_tensor( inp )
-        results = [ r if r != None else null_response for r in results ]
-        del null_response
         return [ r.to(self.config.nucleus.device) for r in results], successes
 
     def cal_loss(self, inputs, query_response, validation_len = 1):
@@ -216,7 +214,7 @@ class Nucleus(nn.Module):
         loss = self.loss_fct(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
         return loss
 
-    def forward(self, inputs, dendrite):
+    def forward(self, uids, inputs, dendrite):
         inputs = inputs.to(self.config.nucleus.device)
 
         # Route
@@ -225,11 +223,11 @@ class Nucleus(nn.Module):
         pos_embedding = self.local_pos_encoder(embedding)
         routing_context = self.encoder(pos_embedding, mask=src_mask)
         routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
-        routing_score = routing_score / sum(routing_score)
         
         # Query
-        topk_routing_scores, topk_routing_indices = routing_score.topk( self.config.nucleus.n_queried )
-        random_endpoints = [graph.endpoints[uid] for uid in topk_routing_indices]
+        random_endpoints = [graph.endpoints[uid] for uid in uids]
+        topk_routing_scores = routing_score[uids]
+
         with torch.no_grad():
             responses, return_ops, times = dendrite.text(
                     endpoints=random_endpoints,
@@ -237,18 +235,43 @@ class Nucleus(nn.Module):
                     synapses=[self.synapse],
                     timeout=self.config.nucleus.timeout
                 )
+            
+            response_baseline = self.model_baseline.encode_forward_causallm(inputs)[1].logits
+        
         # Join responses
         normalized_topk_routing_scores = topk_routing_scores/topk_routing_scores.sum()
-        weighted_responses = sum([ r[0] * w for r, w in list(zip( responses, normalized_topk_routing_scores )) ])
-        averaged_responses = sum([ r[0] for r in responses ]) / len(responses)
+        response_weighted = sum([ r[0] * w for r, w in list(zip( responses, normalized_topk_routing_scores )) ])
+        response_averaged = sum([ r[0] for r in responses ]) / len(responses)
         successes = [ op.item() == 1 for op in return_ops]
 
         # Compute loss.
-        loss = self.cal_loss(inputs, weighted_responses)
-        loss_baseline = self.cal_loss(inputs, averaged_responses)
+        loss = self.cal_loss(inputs, response_weighted)
+        loss_gate_baseline = self.cal_loss(inputs, response_averaged)
+        loss_model_baseline = self.cal_loss(inputs, response_baseline)
+        losses = torch.tensor([self.cal_loss(inputs, r[0]) for r in responses])
+        loss_min = min(losses)
         
+        losses_sorted = losses.sort()
+        best_loss = losses_sorted[0]
+        best_loss_uid = losses_sorted[1]
+        
+        losses = {
+            'routing': loss,
+            'gate_baseline': loss_gate_baseline,
+            'model_baseline': loss_model_baseline,
+            'min_baseline': loss_min,
+        }
+
+        for i in range(1, 6):
+            response_best_mixed = sum([ responses[uid][0] / i for uid in best_loss_uid[:i]])
+            loss_best_combinded = self.cal_loss(inputs, response_best_mixed)
+            losses[f'combinded_{i}rep'] = loss_best_combinded
+
+        print(losses)
+        
+
         # Return.
-        return loss, loss_baseline, successes, routing_score
+        return losses, successes, routing_score
     
     
 ##############################
@@ -272,6 +295,7 @@ bittensor.subtensor.add_args(parser)
 bittensor.dataset.add_args(parser)
 bittensor.dendrite.add_args(parser)
 bittensor.wandb.add_args(parser)
+server.add_args(parser)
 Nucleus.add_args(parser)
 config = bittensor.config(parser = parser)
 print (config)
@@ -316,19 +340,20 @@ success_results = []
 scores_history = []
 avg_loss_history = []
 
-def step(idx):
+def step(idx, uids):
     inputs = next(dataset)
-    loss, loss_baseline, success, scores = model( inputs, dendrite )
-    loss.backward()
+    losses, success, scores = model( uids, inputs, dendrite )
+    losses['routing'].backward()
     success_results.append(success)
     scores_history.append(scores.detach())
-    return loss, loss_baseline, success
+    return losses, success
 
 
 if config.use_wandb: 
     bittensor.wandb(config = config)
 
 avg_loss_history = []
+perm_uids = torch.randperm(graph.n)
 with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
     step_chunks = list( chunks( list(range(config.n_steps)), config.chunk_size ) )
     for ci, chunk in enumerate( step_chunks ):
@@ -337,22 +362,39 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         chunk_futures = []
         chunk_results = []
         for i in chunk:
-            chunk_futures.append(executor.submit(step, i))
-            
+            if len(perm_uids) < config.nucleus.n_queried:
+                perm_uids = torch.randperm(graph.n)
+
+            chunk_futures.append(executor.submit(step, i, perm_uids[:config.nucleus.n_queried]))
+            perm_uids = perm_uids[config.nucleus.n_queried : ]
+
         for future in concurrent.futures.as_completed(chunk_futures):
-            chunk_results.append( future.result() )  
+            chunk_results.append( future.result() )
             
         # Apply step.
         clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         optimizer.zero_grad()
         
-        losses = [l[0].item() for l in chunk_results]
-        losses_baseline = [l[1].item() for l in chunk_results]
-        successes = [ sum(l[2]) / len(l[2]) for l in chunk_results]
+        losses = {}
+        for l in chunk_results:
+            for k, v in l[0].items():
+                if k in losses.keys():
+                    losses['loss/' + k].append(v.item())
+                else:
+                    losses['loss/' + k] = [v.item()]
         
-
-        avg_loss_history.append( sum( losses )/ len( losses ) )
+        for k,v in losses.items():
+            losses[k] = sum(v)/len(v)
+        # losses = [l[0]['routing'].item() for l in chunk_results]
+        # losses_gate_baseline = [l[0]['gate_baseline'].item() for l in chunk_results]
+        # losses_model_baseline = [l[0]['model_baseline'].item() for l in chunk_results]
+        # losses_min_baseline = [l[0]['min_baseline'].item() for l in chunk_results]
+        # losses_best_combinded = [l[0]['best_combinded'].item() for l in chunk_results]
+        
+        successes = [ sum(l[1]) / len(l[1]) for l in chunk_results]
+        
+        avg_loss_history.append( losses['loss/routing'] )
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
 
         # average scores
@@ -365,13 +407,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         if config.use_wandb:
             scores_log = { 'score/' + str(k) :v.item() for k, v in enumerate(average_scores)}
             stats = {
-                'loss/loss':  sum( losses )/ len( losses ),
-                'loss/baseline':  sum( losses_baseline )/ len( losses_baseline ),
-                'loss/diff':  ( sum( losses_baseline ) - sum(losses) )/ len( losses ),
+                # 'loss/routing':  sum( losses )/ len( losses ),
+                # 'loss/gate_baseline':  sum( losses_gate_baseline )/ len( losses_gate_baseline ),
+                # 'loss/gptneo_125_baseline':  sum( losses_model_baseline )/ len( losses_model_baseline ),
+                # 'loss/min_baseline':  sum( losses_min_baseline )/ len( losses_min_baseline ),
+                # 'loss/best_combinded':  sum( losses_best_combinded )/ len( losses_best_combinded ),
+                # 'loss/diff':  ( sum( losses_gate_baseline ) - sum(losses) )/ len( losses ),
                 'success': sum(successes) / len(successes)
             }
-            print(stats)
-            wandb.log( {**stats, **scores_log}, step=ci)
+            print(losses, stats)
+            wandb.log( {**losses, **stats, **scores_log}, step=ci)
 
 # Measure state after.
 io_2 = psutil.net_io_counters()

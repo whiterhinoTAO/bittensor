@@ -136,21 +136,27 @@ class ReceptorPool ( torch.nn.Module ):
 
         # Submit calls to receptors.
 
-        responses = self.thread_pool.map( call_forward, call_args, timeout=10*timeout)
-        
-        # Release semephore.
-        for receptor in receptors:
-            receptor.semaphore.release()
-            
-        # Unpack responses
-        forward_outputs = []
-        forward_codes = []
-        forward_times = []
-        for response in responses:
-            forward_outputs.append( response[0] )
-            forward_codes.append( response[1] )
-            forward_times.append( response[2] )
+        try:
+            responses = self.thread_pool.map( call_forward, call_args)
+            # Release semephore.
+            for receptor in receptors:
+                receptor.semaphore.release()
+                
+            # Unpack responses
+            forward_outputs = []
+            forward_codes = []
+            forward_times = []
+            for response in responses:
+                forward_outputs.append( response[0] )
+                forward_codes.append( response[1] )
+                forward_times.append( response[2] )
 
+        except concurrent.futures._base.TimeoutError:
+            responses = []
+            forward_outputs = []
+            forward_codes = [0] * len(endpoints)
+            forward_times = [100] * len(endpoints)
+            print('receptor pool timeout')
         # ---- Kill receptors ----
         self._destroy_receptors_over_max_allowed()
         # ---- Return ----
