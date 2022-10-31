@@ -19,8 +19,11 @@ from rich.console import Console
 from rich.traceback import install
 from prometheus_client import Info
 
+import nest_asyncio
+nest_asyncio.apply()
+
 # Bittensor code and protocol version.
-__version__ = '3.3.4'
+__version__ = '3.4.1'
 version_split = __version__.split(".")
 __version_as_int__ = (100 * int(version_split[0])) + (10 * int(version_split[1])) + (1 * int(version_split[2]))
 
@@ -70,7 +73,7 @@ __datasets__ = ['ArXiv', 'BookCorpus2', 'Books3', 'DMMathematics', 'EnronEmails'
 __nakamoto_entrypoint__ = "AtreusLB-2c6154f73e6429a9.elb.us-east-2.amazonaws.com:9944"
 
 
-__nobunaga_entrypoint__ = "staging.nobunaga.opentensor.ai:9944"
+__nobunaga_entrypoint__ = "ws://staging.nobunaga.opentensor.ai:9944"
 
 # Needs to use wss://
 __bellagene_entrypoint__ = "wss://parachain.opentensor.ai:443"

@@ -251,6 +251,88 @@ def test_registration_diff_pack_unpack_over_32_bits():
     bittensor.utils.registration_diff_pack(fake_diff, mock_diff)
     assert bittensor.utils.registration_diff_unpack(mock_diff) == fake_diff
 
+class TestUpdateCurrentBlockDuringRegistration(unittest.TestCase):
+    def test_check_for_newest_block_and_update_same_block(self):
+        # if the block is the same, the function should return the same block number
+        subtensor = MagicMock()
+        current_block_num: int = 1
+        subtensor.get_current_block = MagicMock( return_value=current_block_num )
+
+        self.assertEqual(bittensor.utils.check_for_newest_block_and_update(
+            subtensor,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        ), current_block_num)
+
+    def test_check_for_newest_block_and_update_new_block(self):
+        # if the block is new, the function should return the new block_number
+        mock_block_hash = '0xba7ea4eb0b16dee271dbef5911838c3f359fcf598c74da65a54b919b68b67279'
+
+        current_block_num: int = 1
+        current_diff: int = 0
+
+        mock_substrate = MagicMock(
+            get_block_hash=MagicMock(
+                return_value=mock_block_hash
+            ),
+
+        )
+        subtensor = MagicMock(
+            substrate=mock_substrate,
+            difficulty=current_diff + 1, # new diff
+        )
+        subtensor.get_current_block = MagicMock( return_value=current_block_num + 1 ) # new block
+
+        mock_update_curr_block = MagicMock()
+
+        mock_solvers = [
+            MagicMock(
+                newBlockEvent=MagicMock(
+                    set=MagicMock()
+                )
+        ), 
+        MagicMock(
+            newBlockEvent=MagicMock(
+                set=MagicMock()
+            )
+        )]
+
+        mock_curr_stats = MagicMock(
+            block_number=current_block_num,
+            block_hash=b'',
+            difficulty=0,
+        )
+
+        self.assertEqual(bittensor.utils.check_for_newest_block_and_update(
+            subtensor,
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            mock_update_curr_block,
+            MagicMock(),
+            mock_solvers,
+            mock_curr_stats,
+        ), current_block_num + 1)      
+
+        # check that the update_curr_block function was called
+        mock_update_curr_block.assert_called_once()
+
+        # check that the solvers got the event 
+        for solver in mock_solvers:
+            solver.newBlockEvent.set.assert_called_once()
+
+        # check the stats were updated
+        self.assertEqual(mock_curr_stats.block_number, current_block_num + 1)
+        self.assertEqual(mock_curr_stats.block_hash, mock_block_hash)
+        self.assertEqual(mock_curr_stats.difficulty, current_diff + 1)
+
 class TestGetBlockWithRetry(unittest.TestCase):
     def test_get_block_with_retry_network_error_exit(self):
         mock_subtensor = MagicMock(
@@ -346,58 +428,6 @@ class TestPOWNotStale(unittest.TestCase):
         }
 
         assert not bittensor.utils.POWNotStale(mock_subtensor, mock_solution)
-    
-def test_pow_called_for_cuda():
-    class MockException(Exception):
-        pass
-    mock_compose_call = MagicMock(side_effect=MockException)
-
-    mock_subtensor = bittensor.subtensor(_mock=True)
-    mock_subtensor.neuron_for_pubkey=MagicMock(is_null=True)
-    mock_subtensor.substrate = MagicMock(
-        __enter__= MagicMock(return_value=MagicMock(
-            compose_call=mock_compose_call
-        )),
-        __exit__ = MagicMock(return_value=None),
-    )
-
-    mock_wallet = SimpleNamespace(
-        hotkey=SimpleNamespace(
-            ss58_address=''
-        ),
-        coldkeypub=SimpleNamespace(
-            ss58_address=''
-        )
-    )
-
-    mock_result = {
-        "block_number": 1,
-        'nonce': random.randint(0, pow(2, 32)),
-        'work': b'\x00' * 64,
-    }
-    
-    with patch('bittensor.utils.POWNotStale', return_value=True) as mock_pow_not_stale:
-        with patch('torch.cuda.is_available', return_value=True) as mock_cuda_available:
-            with patch('bittensor.utils.create_pow', return_value=mock_result) as mock_create_pow:
-                with patch('bittensor.utils.hex_bytes_to_u8_list', return_value=b''):
-                
-                    # Should exit early
-                    with pytest.raises(MockException):
-                        mock_subtensor.register(mock_wallet, cuda=True, prompt=False)
-
-                    mock_pow_not_stale.assert_called_once()
-                    mock_create_pow.assert_called_once()
-                    mock_cuda_available.assert_called_once()
-
-                    call0 = mock_pow_not_stale.call_args
-                    assert call0[0][0] == mock_subtensor
-                    assert call0[0][1] == mock_result
-
-                    mock_compose_call.assert_called_once()
-                    call1 = mock_compose_call.call_args
-                    assert call1[1]['call_function'] == 'register'
-                    call_params = call1[1]['call_params']
-                    assert call_params['nonce'] == mock_result['nonce']
 
 class TestCUDASolverRun(unittest.TestCase):      
     def test_multi_cuda_run_updates_nonce_start(self):
@@ -421,7 +451,7 @@ class TestCUDASolverRun(unittest.TestCase):
         )  
 
         
-        with patch('bittensor.utils.solve_for_nonce_block_cuda',
+        with patch('bittensor.utils.registration.solve_for_nonce_block_cuda',
             side_effect=[None, MockException] # first call returns mocked no solution, second call raises exception
         ) as mock_solve_for_nonce_block_cuda: 
         

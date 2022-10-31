@@ -46,27 +46,30 @@ class Subtensor:
     """
     def __init__( 
         self, 
-        substrate: 'SubstrateInterface',
         network: str,
         chain_endpoint: str,
+        fallback_endpoints: List[str],
     ):
         r""" Initializes a subtensor chain interface.
             Args:
-                substrate (:obj:`SubstrateInterface`, `required`): 
-                    substrate websocket client.
-                network (default='local', type=str)
+                network (:obj:`str`, `required`):
                     The subtensor network flag. The likely choices are:
                             -- local (local running network)
                             -- nobunaga (staging network)
                             -- nakamoto (main network)
                     If this option is set it overloads subtensor.chain_endpoint with 
                     an entry point node from that network.
-                chain_endpoint (default=None, type=str)
+                chain_endpoint (:obj:`str`, `required`):
                     The subtensor endpoint flag. If set, overrides the network argument.
+                fallback_endpoints  (:obj:`list[str]`, `required`):
+                    A list of fallback endpoints for subtensor connections.
         """
         self.network = network
         self.chain_endpoint = chain_endpoint
-        self.substrate = substrate
+        self.fallback_endpoints = fallback_endpoints
+        # Get first connection
+        self.substrate = None
+        self.substrate = self.get_substrate()
 
     def __str__(self) -> str:
         if self.network == self.chain_endpoint:
@@ -78,7 +81,37 @@ class Subtensor:
 
     def __repr__(self) -> str:
         return self.__str__()
-  
+        
+    def get_substrate(self) -> SubstrateInterface:
+        r""" Substrate connection property which falls back to fallback endpoints on a failed connect.
+            Returns:
+                active_substrate ( :obj:`SubstrateInterface`, `required`):
+                    Formatted endpoint i.e. ws://AtreusLB-2c6154f73e6429a9.elb.us-east-2.amazonaws.com:9944
+            Raises:
+                RuntimeError:
+                    If the default substrate connection fails along with all remaining endpoints.
+        """
+        try:
+            if self.substrate == None:
+                self.substrate = bittensor.subtensor.substrate_connection_for_url( self.chain_endpoint )
+            self.substrate.connect_websocket()
+            return self.substrate
+        except:
+            bittensor.logging.warning(prefix = 'Substrate', sufix = 'Failed to connect on the default substrate connection: {}'.format( self.chain_endpoint ) )
+            for endpoint_url in self.fallback_endpoints:
+                try:
+                    self.substrate = bittensor.subtensor.substrate_connection_for_url( endpoint_url )
+                    self.substrate.connect_websocket()
+                    self._active_substrate_endpoint = endpoint_url
+                    self._active_substrate_network = endpoint_url
+                    # Successful connection.
+                    return self.substrate
+                except:
+                    bittensor.logging.warning(prefix = 'Substrate', sufix = 'Failed to connect on the fallback substrate endpoint: {}'.format( endpoint_url ))
+                    pass
+            # Failed on all fallbacks.
+            raise RuntimeError('Failed to connect to all active or fallback substrate connections.')
+
     def endpoint_for_network( 
             self,
             blacklist: List[str] = [] 
@@ -94,46 +127,6 @@ class Subtensor:
             else:
                 return self.chain_endpoint
 
-    def connect( self, timeout: int = 10, failure = True ) -> bool:
-        attempted_endpoints = []
-        while True:
-            def connection_error_message():
-                print('''
-Check that your internet connection is working and the chain endpoints are available: <blue>{}</blue>
-The subtensor.network should likely be one of the following choices:
-    -- local - (your locally running node)
-    -- nobunaga - (staging)
-    -- nakamoto - (main)
-Or you may set the endpoint manually using the --subtensor.chain_endpoint flag 
-To run a local node (See: docs/running_a_validator.md) \n
-                              '''.format( attempted_endpoints) )
-
-            # ---- Get next endpoint ----
-            ws_chain_endpoint = self.endpoint_for_network( blacklist = attempted_endpoints )
-            if ws_chain_endpoint == None:
-                logger.error("No more endpoints available for subtensor.network: <blue>{}</blue>, attempted: <blue>{}</blue>".format(self.network, attempted_endpoints))
-                connection_error_message()
-                if failure:
-                    logger.critical('Unable to connect to network:<blue>{}</blue>.\nMake sure your internet connection is stable and the network is properly set.'.format(self.network))
-                else:
-                    return False
-            attempted_endpoints.append(ws_chain_endpoint)
-
-            # --- Attempt connection ----
-            try:
-                with self.substrate:
-                    logger.success("Network:".ljust(20) + "<blue>{}</blue>", self.network)
-                    logger.success("Endpoint:".ljust(20) + "<blue>{}</blue>", ws_chain_endpoint)
-                    return True
-            
-            except Exception:
-                logger.error( "Error while connecting to network:<blue>{}</blue> at endpoint: <blue>{}</blue>".format(self.network, ws_chain_endpoint))
-                connection_error_message()
-                if failure:
-                    raise RuntimeError('Unable to connect to network:<blue>{}</blue>.\nMake sure your internet connection is stable and the network is properly set.'.format(self.network))
-                else:
-                    return False
-
     @property
     def rho (self) -> int:
         r""" Incentive mechanism rho parameter.
@@ -143,7 +136,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'Rho' ).value
         return make_substrate_call_with_retry()
 
@@ -156,7 +149,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'Kappa' ).value
         return make_substrate_call_with_retry()
 
@@ -169,7 +162,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'Difficulty' ).value
         return make_substrate_call_with_retry()
 
@@ -182,7 +175,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return bittensor.Balance.from_rao( substrate.query(  module='SubtensorModule', storage_function = 'TotalIssuance').value )
         return make_substrate_call_with_retry()
 
@@ -195,7 +188,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'ImmunityPeriod' ).value
         return make_substrate_call_with_retry()
 
@@ -208,7 +201,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'ValidatorBatchSize' ).value
         return make_substrate_call_with_retry()
 
@@ -222,7 +215,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'ValidatorSequenceLength' ).value
         return make_substrate_call_with_retry()
 
@@ -235,7 +228,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'ValidatorEpochsPerReset' ).value
         return make_substrate_call_with_retry()
 
@@ -248,7 +241,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'ValidatorEpochLen' ).value
         return make_substrate_call_with_retry()
 
@@ -261,7 +254,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return bittensor.Balance.from_rao( substrate.query(  module='SubtensorModule', storage_function = 'TotalStake' ).value )
         return make_substrate_call_with_retry()
 
@@ -274,7 +267,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'MinAllowedWeights' ).value
         return make_substrate_call_with_retry()
 
@@ -287,7 +280,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 U32_MAX = 4294967295
                 return substrate.query( module='SubtensorModule', storage_function = 'MaxWeightLimit' ).value/U32_MAX
         return make_substrate_call_with_retry()
@@ -301,7 +294,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 MAX = 100
                 return substrate.query( module='SubtensorModule', storage_function = 'ScalingLawPower' ).value/MAX
         return make_substrate_call_with_retry()
@@ -315,7 +308,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 MAX = 100
                 return substrate.query( module='SubtensorModule', storage_function = 'SynergyScalingLawPower' ).value/MAX
         return make_substrate_call_with_retry()
@@ -329,7 +322,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 MAX = 100
                 return substrate.query( module='SubtensorModule', storage_function = 'ValidatorExcludeQuantile' ).value/MAX
         return make_substrate_call_with_retry()
@@ -343,7 +336,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'MaxAllowedMaxMinRatio' ).value
         return make_substrate_call_with_retry()
 
@@ -356,7 +349,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'N' ).value
         return make_substrate_call_with_retry()
 
@@ -369,7 +362,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'MaxAllowedUids' ).value
         return make_substrate_call_with_retry()
 
@@ -391,7 +384,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'BlocksSinceLastStep' ).value
         return make_substrate_call_with_retry()
 
@@ -404,7 +397,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query( module='SubtensorModule', storage_function = 'BlocksPerStep' ).value
         return make_substrate_call_with_retry()
 
@@ -416,7 +409,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query(  
                     module='SubtensorModule', 
                     storage_function = 'N',
@@ -576,7 +569,7 @@ To run a local node (See: docs/running_a_validator.md) \n
                 with bittensor.__console__.status(":satellite: Submitting POW..."):
                     # check if pow result is still valid
                     while bittensor.utils.POWNotStale(self, pow_result):
-                        with self.substrate as substrate:
+                        with self.get_substrate() as substrate:
                             # create extrinsic call
                             call = substrate.compose_call( 
                                 call_module='SubtensorModule',  
@@ -694,7 +687,7 @@ To run a local node (See: docs/running_a_validator.md) \n
                 return False
         
         with bittensor.__console__.status(":satellite: Serving axon on: [white]{}[/white] ...".format(self.network)):
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 call = substrate.compose_call(
                     call_module='SubtensorModule',
                     call_function='serve_axon',
@@ -769,7 +762,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         # Estimate transfer fee.
         staking_fee = None # To be filled.
         with bittensor.__console__.status(":satellite: Estimating Staking Fees..."):
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 call = substrate.compose_call(
                     call_module='SubtensorModule', 
                     call_function='add_stake',
@@ -797,7 +790,7 @@ To run a local node (See: docs/running_a_validator.md) \n
                 return False
 
         with bittensor.__console__.status(":satellite: Staking to: [bold white]{}[/bold white] ...".format(self.network)):
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 call = substrate.compose_call(
                     call_module='SubtensorModule', 
                     call_function='add_stake',
@@ -862,6 +855,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         
         if len(wallets) == 0:
             return True
+            
 
         if amounts is not None and len(amounts) != len(wallets):
             raise ValueError("amounts must be a list of the same length as wallets")
@@ -911,7 +905,7 @@ To run a local node (See: docs/running_a_validator.md) \n
             # Staking more than 1000 rao to the wallets.
             ## Reduce the amount to stake to each wallet to keep the balance above 1000 rao.
             percent_reduction = 1 - (1000 / total_staking_rao)
-            amounts = [amount * percent_reduction for amount in amounts]
+            amounts = [Balance.from_tao(amount.tao * percent_reduction) for amount in amounts]
         
         successful_stakes = 0
         for wallet, amount, neuron in zip(wallets, amounts, neurons):
@@ -925,7 +919,7 @@ To run a local node (See: docs/running_a_validator.md) \n
 
             # Assign decrypted coldkey from wallet_0
             #  so we don't have to decrypt again
-            wallet._coldkey = wallet_0._coldkey
+            wallet._coldkey = wallet_0.coldkey
             staking_all = False
             # Convert to bittensor.Balance
             if amount == None:
@@ -940,7 +934,7 @@ To run a local node (See: docs/running_a_validator.md) \n
             # Estimate staking fee.
             stake_fee = None # To be filled.
             with bittensor.__console__.status(":satellite: Estimating Staking Fees..."):
-                with self.substrate as substrate:
+                with self.get_substrate() as substrate:
                     call = substrate.compose_call(
                     call_module='SubtensorModule', 
                     call_function='add_stake',
@@ -972,7 +966,7 @@ To run a local node (See: docs/running_a_validator.md) \n
                     continue
 
             with bittensor.__console__.status(":satellite: Staking to chain: [white]{}[/white] ...".format(self.network)):
-                with self.substrate as substrate:
+                with self.get_substrate() as substrate:
                     call = substrate.compose_call(
                     call_module='SubtensorModule', 
                     call_function='add_stake',
@@ -1073,7 +1067,7 @@ To run a local node (See: docs/running_a_validator.md) \n
 
         # Estimate transfer fee.
         with bittensor.__console__.status(":satellite: Estimating Transfer Fees..."):
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 call = substrate.compose_call(
                     call_module='Balances',
                     call_function='transfer',
@@ -1101,7 +1095,7 @@ To run a local node (See: docs/running_a_validator.md) \n
                 return False
 
         with bittensor.__console__.status(":satellite: Transferring..."):
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 call = substrate.compose_call(
                     call_module='Balances',
                     call_function='transfer',
@@ -1192,7 +1186,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         # Estimate unstaking fee.
         unstake_fee = None # To be filled.
         with bittensor.__console__.status(":satellite: Estimating Staking Fees..."):
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 call = substrate.compose_call(
                     call_module='SubtensorModule', 
                     call_function='remove_stake',
@@ -1215,7 +1209,7 @@ To run a local node (See: docs/running_a_validator.md) \n
                 return False
 
         with bittensor.__console__.status(":satellite: Unstaking from chain: [white]{}[/white] ...".format(self.network)):
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 call = substrate.compose_call(
                     call_module='SubtensorModule', 
                     call_function='remove_stake',
@@ -1348,7 +1342,7 @@ To run a local node (See: docs/running_a_validator.md) \n
             # Estimate unstaking fee.
             unstake_fee = None # To be filled.
             with bittensor.__console__.status(":satellite: Estimating Staking Fees..."):
-                with self.substrate as substrate:
+                with self.get_substrate() as substrate:
                     call = substrate.compose_call(
                         call_module='SubtensorModule', 
                         call_function='remove_stake',
@@ -1371,7 +1365,7 @@ To run a local node (See: docs/running_a_validator.md) \n
                     continue
 
             with bittensor.__console__.status(":satellite: Unstaking from chain: [white]{}[/white] ...".format(self.network)):
-                with self.substrate as substrate:
+                with self.get_substrate() as substrate:
                     call = substrate.compose_call(
                         call_module='SubtensorModule', 
                         call_function='remove_stake',
@@ -1454,7 +1448,7 @@ To run a local node (See: docs/running_a_validator.md) \n
 
         with bittensor.__console__.status(":satellite: Setting weights on [white]{}[/white] ...".format(self.network)):
             try:
-                with self.substrate as substrate:
+                with self.get_substrate() as substrate:
                     call = substrate.compose_call(
                         call_module='SubtensorModule',
                         call_function='set_weights',
@@ -1500,7 +1494,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         try:
             @retry(delay=2, tries=3, backoff=2, max_delay=4)
             def make_substrate_call_with_retry():
-                with self.substrate as substrate:
+                with self.get_substrate() as substrate:
                     return substrate.query(
                         module='System',
                         storage_function='Account',
@@ -1521,14 +1515,14 @@ To run a local node (See: docs/running_a_validator.md) \n
         """        
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.get_block_number(None)
         return make_substrate_call_with_retry()
 
     def get_balances(self, block: int = None) -> Dict[str, Balance]:
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query_map(
                     module='System',
                     storage_function='Account',
@@ -1617,7 +1611,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 result = dict( substrate.query( 
                     module='SubtensorModule',  
                     storage_function='Neurons', 
@@ -1640,7 +1634,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query (
                     module='SubtensorModule',
                     storage_function='Hotkeys',
@@ -1685,7 +1679,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return substrate.query (
                     module='SubtensorModule',
                     storage_function='Hotkeys',
@@ -1713,7 +1707,7 @@ To run a local node (See: docs/running_a_validator.md) \n
         """
         @retry(delay=2, tries=3, backoff=2, max_delay=4)
         def make_substrate_call_with_retry():
-            with self.substrate as substrate:
+            with self.get_substrate() as substrate:
                 return int(substrate.query(  module='SubtensorModule', storage_function = 'N', block_hash = None if block == None else substrate.get_block_hash( block ) ).value)
         return make_substrate_call_with_retry()
 
