@@ -152,7 +152,6 @@ class PriorityThreadPoolExecutor(_base.Executor):
         with self._shutdown_lock:
             if self._broken:
                 raise BrokenThreadPool(self._broken)
-
             if self._shutdown:
                 raise RuntimeError('cannot schedule new futures after shutdown')
             if _shutdown:

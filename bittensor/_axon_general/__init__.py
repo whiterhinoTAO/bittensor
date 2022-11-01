@@ -32,7 +32,7 @@ import grpc
 from substrateinterface import Keypair
 
 import bittensor
-from . import axon_impl
+from . import axon_general_impl as axon_impl
 
 class axon:
     """ The factory class for bittensor.Axon object
@@ -51,18 +51,6 @@ class axon:
             cls,
             config: Optional['bittensor.config'] = None,
             wallet: Optional['bittensor.Wallet'] = None,
-            forward_text: Optional['Callable'] = None,
-            backward_text:Optional['Callable'] = None,
-            synapse_last_hidden: Optional['Callable'] = None,
-            synapse_causal_lm: Optional['Callable'] = None,
-            synapse_causal_lm_next: Optional['Callable'] = None,
-            synapse_seq_2_seq: Optional['Callable'] = None,
-            synapse_lasthidden_timeout: Optional[int] = None,
-            synapse_causallm_timeout: Optional[int] = None,
-            synapse_causallmnext_timeout: Optional[int] = None,
-            synapse_seq2seq_timeout: Optional[int] = None,
-
-            synapse_checks: Optional['Callable'] = None,
             thread_pool: Optional['futures.ThreadPoolExecutor'] = None,
             priority_threadpool: Optional['bittensor.prioritythreadpool'] = None,
             server: Optional['grpc._Server'] = None,
@@ -74,8 +62,7 @@ class axon:
             maximum_concurrent_rpcs: Optional[int] = None,
             blacklist: Optional['Callable'] = None,
             priority: Optional['Callable'] = None,
-            forward_timeout: Optional[int] = None,
-            backward_timeout: Optional[int] = None,
+            timeout: Optional[int] = None,
             compression:Optional[str] = None,
         ) -> 'bittensor.Axon':
         r""" Creates a new bittensor.Axon object from passed arguments.
@@ -133,13 +120,8 @@ class axon:
         config.axon.external_port = external_port if external_port != None else config.axon.external_port
         config.axon.max_workers = max_workers if max_workers != None else config.axon.max_workers
         config.axon.maximum_concurrent_rpcs = maximum_concurrent_rpcs if maximum_concurrent_rpcs != None else config.axon.maximum_concurrent_rpcs
-        config.axon.forward_timeout = forward_timeout if forward_timeout != None else config.axon.forward_timeout
-        config.axon.backward_timeout = backward_timeout if backward_timeout != None else config.axon.backward_timeout
         config.axon.compression = compression if compression != None else config.axon.compression
-        config.axon.lasthidden_timeout = synapse_lasthidden_timeout if synapse_lasthidden_timeout != None else config.axon.lasthidden_timeout
-        config.axon.causallm_timeout = synapse_causallm_timeout if synapse_causallm_timeout != None else config.axon.causallm_timeout
-        config.axon.causallmnext_timeout = synapse_causallmnext_timeout if synapse_causallmnext_timeout is not None else config.axon.causallmnext_timeout
-        config.axon.seq2seq_timeout = synapse_seq2seq_timeout if synapse_seq2seq_timeout != None else config.axon.seq2seq_timeout
+
         axon.check_config( config )
 
         # Determine the grpc compression algorithm
@@ -162,21 +144,6 @@ class axon:
                                              ('grpc.keepalive_timeout_ms', 500000)]
                                 )
 
-        synapses = {}
-        synapses[bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE] = synapse_last_hidden
-        synapses[bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM] = synapse_causal_lm
-        synapses[bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM_NEXT] = synapse_causal_lm_next
-        synapses[bittensor.proto.Synapse.SynapseType.TEXT_SEQ_2_SEQ] = synapse_seq_2_seq
-
-        synapse_timeouts = {
-            bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE: config.axon.lasthidden_timeout,
-            bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM: config.axon.causallm_timeout,
-            bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM_NEXT: config.axon.causallmnext_timeout,
-            bittensor.proto.Synapse.SynapseType.TEXT_SEQ_2_SEQ: config.axon.seq2seq_timeout
-        }
-        
-        synapse_check_function = synapse_checks if synapse_checks != None else axon.default_synapse_check
-
         if priority != None and priority_threadpool == None:
             priority_threadpool = bittensor.prioritythreadpool(config=config)
 
@@ -187,15 +154,9 @@ class axon:
             port = config.axon.port,
             external_ip=config.axon.external_ip, # don't use internal ip if it is None, we will try to find it later
             external_port=config.axon.external_port or config.axon.port, # default to internal port if external port is not set
-            forward = forward_text,
-            backward = backward_text,
-            synapses = synapses,
-            synapse_checks = synapse_check_function,
-            synapse_timeouts = synapse_timeouts,
+            timeout = timeout,
             priority = priority,
             priority_threadpool = priority_threadpool,
-            forward_timeout = config.axon.forward_timeout,
-            backward_timeout = config.axon.backward_timeout,
             prometheus_level = config.axon.prometheus.level
         )
         bittensor.grpc.add_BittensorServicer_to_server( axon_instance, server )
@@ -285,6 +246,7 @@ class axon:
         defaults.axon.priority = bittensor.Config()
         defaults.axon.priority.max_workers = os.getenv('BT_AXON_PRIORITY_MAX_WORKERS') if os.getenv('BT_AXON_PRIORITY_MAX_WORKERS') != None else 10
         defaults.axon.priority.maxsize = os.getenv('BT_AXON_PRIORITY_MAXSIZE') if os.getenv('BT_AXON_PRIORITY_MAXSIZE') != None else -1
+
         defaults.axon.compression = 'NoCompression'
 
         # Prometheus
@@ -299,43 +261,6 @@ class axon:
         assert config.axon.external_port is None or (config.axon.external_port > 1024 and config.axon.external_port < 65535), 'external port must be in range [1024, 65535]'
         assert config.axon.prometheus.level in [l.name for l in list(bittensor.prometheus.level)], "axon.prometheus.level must be in: {}".format([l.name for l in list(bittensor.prometheus.level)])
         bittensor.wallet.check_config( config )
-
-    @classmethod   
-    def default_synapse_check(cls, synapse, hotkey ):
-        """ default synapse check function
-        """
-        if len(hotkey) == bittensor.__ss58_address_length__:
-            return True
-        
-        return False
-
-    @staticmethod
-    def check_backward_callback( backward_callback:Callable, pubkey:str = '_' ):
-        """ Check and test axon backward callback function
-        """
-        if not inspect.ismethod(backward_callback) and not inspect.isfunction(backward_callback):
-            raise ValueError('The axon backward callback must be a function with signature Callable[inputs_x:torch.FloatTensor, grads_dy:torch.FloatTensor ) -> torch.FloatTensor:, got {}'.format(backward_callback))        
-        if len( inspect.signature(backward_callback).parameters) != 3:
-            raise ValueError('The axon backward callback must have signature Callable[ inputs_x:torch.FloatTensor, grads_dy:torch.FloatTensor, synapses ) -> torch.FloatTensor:, got {}'.format(inspect.signature(backward_callback)))
-        if 'inputs_x' not in inspect.signature(backward_callback).parameters:
-            raise ValueError('The axon backward callback must have signature Callable[inputs_x:torch.FloatTensor, grads_dy:torch.FloatTensor ) -> torch.FloatTensor:, got {}'.format(inspect.signature(backward_callback)))
-        if 'grads_dy' not in inspect.signature(backward_callback).parameters:
-            raise ValueError('The axon backward callback must have signature Callable[inputs_x:torch.FloatTensor, grads_dy:torch.FloatTensor ) -> torch.FloatTensor:, got {}'.format(inspect.signature(backward_callback)))
- 
-
-    @staticmethod
-    def check_forward_callback( forward_callback:Callable, synapses:list = []):
-        """ Check and test axon forward callback function
-        """
-        if not inspect.ismethod(forward_callback) and not inspect.isfunction(forward_callback):
-            raise ValueError('The axon forward callback must be a function with signature Callable[inputs_x: torch.Tensor] -> torch.FloatTensor:, got {}'.format(forward_callback))   
-        if len( inspect.signature(forward_callback).parameters) != 3:
-            raise ValueError('The axon forward callback must have signature Callable[ inputs_x: torch.Tensor, synapses, hotkey] -> torch.FloatTensor:, got {}'.format(inspect.signature(forward_callback)))
-        if 'inputs_x' not in inspect.signature(forward_callback).parameters:
-            raise ValueError('The axon forward callback must have signature Callable[ inputs_x: torch.Tensor] -> torch.FloatTensor:, got {}'.format(inspect.signature(forward_callback)))
-        
-        sample_input = torch.randint(0,1,(3, 3))
-        forward_callback([sample_input], synapses, hotkey='')
 
 class AuthInterceptor(grpc.ServerInterceptor):
     """ Creates a new server interceptor that authenticates incoming messages from passed arguments.
