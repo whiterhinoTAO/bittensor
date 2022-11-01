@@ -26,14 +26,19 @@ def dict_put(input_dict, keys, value, raise_error=True):
         return tmp_dict
 
 
-def local_copy(input,context={}):
+def dict_fn_local_copy(input,context={}):
+    keys = input.split('.')
+    dict_get(input_dict=context, keys=keys)
+
+
+def dict_fn_get_config(input,context={}):
     keys = input.split('.')
     dict_get(input_dict=context, keys=keys)
 
 
 
 
-def ray_get(input:str, context={}):
+def dict_fn_ray_get(input:str, context={}):
     
     if len(input.split('::')) == 1:
         input = input

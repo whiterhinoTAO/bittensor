@@ -1,90 +1,216 @@
-""" Implementation for the dataset and GenesisTextDataset class, which handles dataloading from ipfs
-"""
-# The MIT License (MIT)
-# Copyright © 2021 Yuma Rao
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
-# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
-# the Software.
-
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
-
-import json
-import os
-import random
-import time
-from typing import Union
-import streamlit as st
-import requests
+##################
+##### Import #####
+##################
 import torch
-from loguru import logger
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
-from torch.utils.data.dataloader import DataLoader
+import concurrent.futures
+import time
+import psutil
+import random
+import argparse
+from tqdm import tqdm
+import bittensor
+import streamlit as st
+import numpy as np
 import asyncio
 import aiohttp
+import json
+import os
 
-import bittensor
+from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper
 
-from .thread_queue import ThreadQueue
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+##########################
+##### Get args ###########
+##########################
+parser = argparse.ArgumentParser( 
+    description=f"Bittensor Speed Test ",
+    usage="python3 speed.py <command args>",
+    add_help=True
+)
+# bittensor.wallet.add_args(parser)
+# bittensor.logging.add_args(parser)
+# bittensor.subtensor.add_args(parser)
+# config = bittensor.config(parser = parser)
+# config.wallet.name = 'const'
+# config.wallet.hotkey = 'Tiberius'
+##########################
+##### Setup objects ######
+##########################
+# Sync graph and load power wallet.
 
-logger = logger.opt(colors=True)
+
+"""
+
+Background Actor for Message Brokers Between Quees
+
+"""
+
 
 class Dataset():
     """ Implementation for the dataset class, which handles dataloading from ipfs
     """
-    def __init__(self):
-        
+    def __init__(self, loop=None, tokenizer=None):
+        # set the loop
+        self.set_event_loop(loop=loop)
+        self.set_tokenizer(tokenizer=tokenizer)
         # Used to retrieve directory contentx
+        self.ipfs_url = 'http://global.ipfs.opentensor.ai/api/v0'
         self.dataset_dir = 'http://global.ipfs.opentensor.ai/api/v0/cat' 
         self.text_dir = 'http://global.ipfs.opentensor.ai/api/v0/object/get'
         self.mountain_hash = 'QmSdDg6V9dgpdAFtActs75Qfc36qJtm9y8a7yrQ1rHm7ZX'
         # Used when current corpus has been exhausted
         self.refresh_corpus = False
+        st.write(self.dataset2hash)
         
+        # self.build_datasets()
+
+    
+
+    def build_dataset(self, dataset):
+        
+        folder_hashes = self.async_run(self.get_folder_hashes(self.dataset_hashes[0]))[:10]
+        
+        text_hashes = []
+        for f in folder_hashes:
+            folder_text_hashes = self.async_run(self.get_text_hashes(f))
+            text_hashes += folder_text_hashes
+        self.async_run(self.get_text(text_hashes))
+    
+        st.write(self.total)
+    
+    async def get_dataset_hashes(self):
+        mountain_meta = {'Name': 'mountain', 'Folder': 'meta_data', 'Hash': self.mountain_hash}
+        response = await self.api_post( url=f'{self.ipfs_url}/object/get',  params={'arg': mountain_meta['Hash']}, return_json= True)
+        # st.write(response)
+        response = response.get('Links', None)
+        return response
+
+    async def get_folder_hashes(self, file_meta, num_folders = 10, chunk_size=512):
+        links = await self.get_links(file_meta)
+
+        unfinished = [self.loop.create_task(self.api_post(self.ipfs_url+'/object/get', params={'arg':link['Hash']}, return_json=True)) for link in links][:num_folders]
+        folder_hashes = []
+        while len(unfinished)>0:
+            finished, unfinished = await asyncio.wait(unfinished, return_when=asyncio.FIRST_COMPLETED)
+            # st.write(len(finished), len(unfinished))
+            for res in await asyncio.gather(*finished):
+                folder_hashes.extend(res.get('Links'))
+
+        return folder_hashes
+
+    def call_back(self, context):
+        self.total += len(context.result())
+
+    async def get_text_hashes(self, file_meta, chunk_size=1024, num_hashes=50):
+
+        try:
+            data = await self.api_post(f'{self.ipfs_url}/cat', params={'arg':file_meta['Hash']}, return_json=False, num_chunks=10)
+        except KeyError:
+            return []
+        decoded_hashes = []
+        hashes = ['['+h + '}]'for h in data.decode().split('},')]
+        for i in range(len(hashes)-1):
+            try:
+                decoded_hashes += [json.loads(hashes[i+1][1:-1])]
+            except json.JSONDecodeError:
+                pass
+
+            if len(decoded_hashes) >= num_hashes:
+                return decoded_hashes
+            # hashes[i] =bytes('{'+ hashes[i+1] + '}')
+
+
+    total = 0 
+    async def get_text(self, file_meta, chunk_size=1024, num_chunks=2):
         
 
-    @staticmethod
-    def requests_retry_session(
-            retries=1,
-            backoff_factor=0.5,
-            status_forcelist=(104, 500, 502, 504),
-            session=None,
-        ):
-        """ Creates a retriable session for request calls. This enables
-        automatic retries and back-off retries should any request calls fail.
+        if isinstance(file_meta, dict):
+            file_meta_list = [file_meta]
+        elif isinstance(file_meta, list):
+            file_meta_list = file_meta
+        
 
-        Args:
-            retries (int, optional): Maximum number of retries. Defaults to 3.
-            backoff_factor (float, optional): Factor by which to back off if a retry fails. Defaults to 0.3.
-            status_forcelist (tuple, optional): A set of integer HTTP status codes that we should force a retry on. Defaults to (500, 502, 504).
-            session ([type], optional): Session for which to set up the retries. Defaults to None.
+        tasks = []
+        def task_cb(context):
+            self.total += len(context.result())
 
-        Returns:
-            requests.Session(): A Requests Session object set up for retries and backoff.
-        """
-        session = session or requests.Session()
-        retry = Retry(
-            total=retries,
-            read=retries,
-            connect=retries,
-            backoff_factor=backoff_factor,
-            status_forcelist=status_forcelist,
-        )
-        adapter = HTTPAdapter(max_retries=retry)
-        session.mount('http://', adapter)
-        session.mount('https://', adapter)
-        return session
+        for file_meta in file_meta_list:
+            task = self.loop.create_task(self.api_post(self.ipfs_url+'/cat', params={'arg':file_meta['Hash']},chunk_size=chunk_size, num_chunks=num_chunks ))
+            task.add_done_callback(self.call_back)
+            tasks.append(task)
+        return await asyncio.gather(*tasks)
 
-    def get_ipfs_directory(self, address: str, file_meta: dict, action: str = 'post', timeout : int = 180):
+
+    async def get_links(self, file_meta, resursive=False, **kwargs):
+        response = await self.api_post( url=f'{self.ipfs_url}/object/get',  params={'arg': file_meta['Hash']}, return_json= True)
+        response_links = response.get('Links', [])
+        return response_links
+
+    async def get_file_metas(self, file_meta):
+        response = await self.ipfs_get_object(file_meta)
+        return response
+
+    async def get_files(self, file_meta, limit=1000, **kwargs):
+
+        file_meta_list = kwargs.get('file_meta_list', [])
+        recursion = kwargs.get('recursion', 1)
+        if len(file_meta_list)>=limit:
+            return file_meta_list
+        response_dict =  await self.ipfs_get_object(file_meta)
+        response_links =  response_dict.get('Links')
+        response_data = response_dict.get('Data', []) 
+        folder_get_file_jobs = []
+        if len(response_links)>0:
+            job_list = []
+            for response_link in response_links:
+                
+                job =  self.get_files(file_meta=response_link, file_meta_list=file_meta_list, recursion= recursion+1)
+                job_list.append(job)
+            await asyncio.gather(*job_list)
+        elif len(response_links) == 0:
+
+            file_meta_list  += response_data
+    
+        return file_meta_list
+        # folder_get_file_jobs = []
+        # for link_file_meta in response_links:
+        #     job = await self.get_files(file_meta=link_file_meta, file_meta_list=file_meta_list)
+        #     folder_get_file_jobs.append(job)
+
+        # if folder_get_file_jobs:
+        #     return await asyncio.gather(*folder_get_file_jobs)
+
+        
+    
+    async def ipfs_cat(self, file_meta, timeout=10, action='post'):
+        address = self.ipfs_url + '/cat'
+        if action == 'get':
+            response = await asyncio.wait_for(self.api_get( url=address,  params={'arg': file_meta['Hash']}), timeout=timeout)
+        elif action == 'post':
+            response = await asyncio.wait_for(self.api_post( url=address, params={'arg': file_meta['Hash']}), timeout=timeout)
+        # except Exception as E:
+        #     logger.error(f"Failed to get from IPFS {file_meta['Name']} {E}")
+        #     return None
+        return await response.json()
+
+    async def ipfs_object_get(self, file_meta, timeout=2):
+        response = await asyncio.wait_for(self.api_post( url=self.ipfs_url+'/object/get',  params={'arg': file_meta['Hash']}), timeout=timeout)
+        return await response.json()
+
+
+    async def ipfs_get_object(self, file_meta, timeout=1, action='post'):
+        address = self.ipfs_url + '/object/get'
+        if action == 'get':
+            response = await asyncio.wait_for(self.api_get( url=address,  params={'arg': file_meta['Hash']}), timeout=timeout)
+        elif action == 'post':
+            response = await asyncio.wait_for(self.api_post( url=address, params={'arg': file_meta['Hash']}), timeout=timeout)
+        # except Exception as E:
+        #     logger.error(f"Failed to get from IPFS {file_meta['Name']} {E}")
+        #     return None
+        return await response.json()
+
+    async def get_ipfs_directory(self, address: str, file_meta: dict, action: str = 'post', timeout : int = 5):
         r"""Connects to IPFS gateway and retrieves directory.
         Args:
             address: (:type:`str`, required):
@@ -98,608 +224,161 @@ class Dataset():
         Returns:
             dict: A dictionary of the files inside of the genesis_datasets and their hashes.
         """
-        session = requests.Session()
-        session.params.update((('arg', file_meta['Hash']), ))
-        
-        try:
-            if action == 'get':
-                response = self.requests_retry_session(session=session).get(address, timeout=timeout)
-            elif action == 'post':
-                response = self.requests_retry_session(session=session).post(address, timeout=timeout)
-            logger.success("Loaded from IPFS:".ljust(20) + "<blue>{}</blue>".format(file_meta['Name']))
-
-        except Exception as E:
-            logger.error(f"Failed to get from IPFS {file_meta['Name']} {E}")
-            return None
-
-        return response
-
-    def __len__(self):
-        """ Returns length of the dataset that the dataset is processing
-        """
-
-    def __getitem__(self, idx):
-        """ Returns the next batch from the dataset.
-        """
-
-class GenesisTextDataset( Dataset ):
-    """ One kind of dataset that caters for the data from ipfs 
-    """
-    def __init__(
-        self,
-        block_size,
-        batch_size,
-        num_workers,
-        dataset_name,
-        data_dir,
-        save_dataset,
-        max_datasets,
-        no_tokenizer, 
-        num_batches
-    ):
-
-        super().__init__()
-        self.block_size = block_size
-        self.batch_size = batch_size
-        self.num_workers = num_workers
-        self.tokenizer = bittensor.tokenizer( version = bittensor.__version__ )
-        self.dataset_name = dataset_name
-        self.data_dir = data_dir
-        self.save_dataset = save_dataset
-        self.datafile_size_bound = 262158
-        self.max_datasets = max_datasets
-        self.__infinite_dataset_iterator = None
-        self.no_tokenizer = no_tokenizer
-        self.IPFS_fails = 0
-        self.backup_dataset_cap_size = 5e7 # set 50MB limit per folder
-        self.IPFS_fails_max = 10
-        self.num_batches = num_batches
-
-        # Retrieve a random slice of the genesis dataset
-        self.data = []
-        self.data_reserved = []
-
-        # Used to refresh corpus if we've exhausted the whole dataset
-        self.refresh_corpus = True
-
-
-        st.write('building hash table')
-        self.build_hash_table()
-        st.write('finished building hash table')
-
-        os.makedirs(os.path.expanduser(data_dir), exist_ok=True)
-            
-        # self.data_queue = ThreadQueue(
-        #     producer_target = self.reserve_multiple_data,
-        #     producer_arg = (self.num_batches, ),
-        #     buffer_size = 1
-        # )
-        self.reserve_multiple_data(self.num_batches)
-
-    def __del__(self):
-        self.close()
-
-    def close(self):
-        self.data_queue.close()
-
-    def get_folder_size(self, folder):
-        r""" Get the size (in byte) of a folder inside the data_dir.
-        Args:
-            folder (str):
-                The name of the folder
-        
-        Returns:
-            total_size (int):
-                The memory size of the folder (in byte). 
-        """
-        total_size = 0
-        full_path = os.path.expanduser(os.path.join(self.data_dir, folder))
-        for dirpath, dirnames, filenames in os.walk(full_path):
-            for f in filenames:
-                fp = os.path.join(dirpath, f)
-                # skip if it is symbolic link
-                if not os.path.islink(fp):
-                    total_size += os.path.getsize(fp)
-
-        return total_size
-
-    def load_hash(self, file_meta):
-        r""" Load a hash from disk.
-        Args:
-            file_meta (dict of str: int):
-                Specify the details of the dataset in the format of {'Name': , 'Hash':}.
-
-        Returns:
-            text (str): 
-                The text in the file.                
-        """
-
-        full_path = os.path.expanduser(os.path.join(self.data_dir, file_meta['Folder'], file_meta['Hash']))
-        if os.path.exists(full_path):
-            try:
-                with open(full_path, mode='r') as f:
-                    text = f.read()
-
-                logger.success("Loaded from disk:".ljust(20) + "<blue>{}</blue>".format(file_meta['Name']))
-            except Exception:
-                logger.success("Could not load from disk:".ljust(20) + "<blue>{}</blue>".format(file_meta['Name']))
-                pass
-
-            return text
-        
-        return None
-
-    def save_hash(self, file_meta, text):
-        r""" Save a hash to disk.
-        Args:
-            file_meta (dict of str: int):
-                Specify the details of the dataset in the format of {'Name': , 'Hash':}.
-            text (str): 
-                The string to save to the file.
-        
-        Returns:
-            text (str):
-                The text in the file.                
-        """
-        folder_path = os.path.expanduser(os.path.join(self.data_dir, file_meta['Folder']))
-        full_path = os.path.expanduser(os.path.join(self.data_dir, file_meta['Folder'], file_meta['Hash']))
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
-        try:
-            with open(full_path, mode = 'w+') as f:
-                f.write(text)
-                logger.success("Saved:".ljust(20) + "<blue>{}</blue>".format(file_meta['Name']))
-            return True
-        
-        except Exception as E:
-            logger.warning("Save failed:".ljust(20) + "<blue>{}</blue>".format(file_meta['Name']))
-            return False
-
-    def get_text(self, file_meta):
-        r""" Either load a file from disk or download it from IPFS
-        Args:
-            file_meta (dict of str: int):
-                Specify the details of the file in the format of {'Name': , 'Hash':}.
-
-        Return:
-            text (str):
-                The text that we get from the file (from disk or IPFS).     
-        """
-        text = None
-        response = self.get_ipfs_directory(self.text_dir, file_meta)
-        st.write(response, self.text_dir, file_meta)
-        if (response != None) and (response.status_code == 200):
-            text = response.text
-            self.IPFS_fails = 0
-            
-            if self.save_dataset and self.dataset_hashes[file_meta['Folder']]['Size'] < self.backup_dataset_cap_size:
-                self.save_hash( file_meta, text )
-                self.dataset_hashes[file_meta['Folder']]['Size'] += file_meta['Size']
-            
-        else:
-            logger.warning("Failed to get text".ljust(20) + "<blue>{}</blue>".format(file_meta['Name']))
-            self.IPFS_fails += 1
-            
-        return text 
-
-    def get_dataset(self , file_meta):
-        r""" Either load a dataset, which is a list of hashes, from disk or download it from IPFS
-        Args:
-            file_meta (dict of str: int):
-                Specify the details of the dataset in the format of {'Name': , 'Hash':}.
-
-        Return:
-            hashes (list):
-                The hashes from the dataset downloaded from disk or IPFS.     
-        """
-        # --- Load text from path
-        logger.success( f"Getting dataset: {file_meta['Name']}" )
-        
-        hashes = self.load_hash(file_meta)
-
-        if hashes != None:
-            hashes = json.loads(hashes)
-
-        # --- If couldnt load from path, download text.
-        else:
-            response = self.get_ipfs_directory(self.dataset_dir, file_meta)
-            if (response != None) and (response.status_code == 200):
-                self.IPFS_fails = 0
-                hashes = response.json()
-
-                # --- Save text if the save_dataset flag is on.
-                if self.save_dataset :
-                    self.save_hash(file_meta, json.dumps(response.json()) )
-                    
-            else:
-                self.IPFS_fails += 1
-                logger.warning("Failed to get dataset".ljust(20) + "<blue>{}</blue>".format(file_meta['Name']))
-                return None
-
-        if hashes == None:
-            return None
-        else:
-            for h in hashes:
-                h['Folder'] = file_meta['Name']
-            return hashes 
-
-    def get_hashes_from_dataset(self):
-        r""" Getting directories .
-        Where a directory could be leading to a data file or a directory file.
-
-        Returns:
-            directories (:type:`list`, `required`)
-                A list of directory.
-                    directory: Map{ Name: str, Hash: str, Size: int }: 
-                        A random directory that lead to a datafile.
-        """
-        def get_hashes(dataset_meta):
-            if self.IPFS_fails > self.IPFS_fails_max:
-                sub_directories = json.loads(self.load_hash(dataset_meta))
-                for sub_directory in sub_directories:
-                    sub_directory['Folder'] = dataset_meta['Name']
-            else:
-                sub_directories = self.get_dataset(dataset_meta)
-
-            if sub_directories != None:
-                return sub_directories
-
-            return []
-        
-        directories = []
-        self.IPFS_fails = 0
-        
-        if self.dataset_name == 'default':
-            i = 0
-            dataset_hashes = list(self.dataset_hashes.values())
-            random.shuffle(dataset_hashes)
-            
-            for dataset_hash in dataset_hashes: 
-                dataset_meta = {'Folder': 'mountain', 'Name': dataset_hash['Name'], 'Hash': dataset_hash['Hash']}
-                directories += get_hashes(dataset_meta)
-                i += 1
-                if i >= self.max_datasets:
-                    break
-                    
-        else:
-            for key in self.dataset_name:
-                if key in self.dataset_hashes.keys():
-                    dataset_meta = {'Folder': 'mountain','Name': key, 'Hash': self.dataset_hashes[key]['Hash'] }  
-                    directories += get_hashes(dataset_meta)
-
-                else:
-                    logger.error('Incorrect dataset name:'.ljust(20) + " <red>{}</red>.".format(key)+' Must be one of the following {}'.format(bittensor.__datasets__))
-
-        if len(directories) == 0:
-            logger.error('Could not get any directory from IPFS or local.')
-            directories = None
-          
-        return directories
-
-    def get_root_text_hash(self, file_meta):
-        r"""
-        With recursion, from the given directory, get a directory that leads to a datafile.
-
-        Args:
-            directory: Map{ Name: str, Hash: str, Size: int }: 
-                The original directory to look up a datafile for.
-
-        Returns:
-            directory: Map{ Name: str, Hash: str, Size: int }: 
-                A random directory that lead to a datafile.
-        """
-        # --- If the size of directory is small, it is leads to data file, return the data file.
-        if file_meta['Size'] <= self.datafile_size_bound:
-            return file_meta
-
-        # --- Else, the directory leads to more directories, return a random data file within the directories.
-        else:
-            response = self.get_ipfs_directory(self.text_dir, file_meta)
-            # --- Return none if the request failed.
-            if (response == None) or (response.status_code != 200):
-                logger.warning("Failed to retrieve directory, ignoring directory:".ljust(20) + "<blue>{}</blue>".format(file_meta))
-                return None
-            
-            # --- Pick a random sub_directory, run recursion until we have found a data file
-            else:
-                sub_directories = response.json()
-                if sub_directories and 'Links' in sub_directories.keys() and len(sub_directories['Links']) >= 1:
-                    random_sub_directory = random.choice(sub_directories['Links'])
-
-                    # --- Fill the name of the random_sub_directory if it is empty. 
-                    if random_sub_directory['Name'] == '':
-                        random_sub_directory['Name'] = file_meta['Name']
-                        random_sub_directory['Folder'] = file_meta['Folder']
-
-                    
-                    return self.get_root_text_hash(random_sub_directory)
-                else:
-                    logger.warning("Directory seems empty, ignoring directory:".ljust(20) + "<blue>{}</blue>". format(file_meta))
-        return None
-
-    def get_text_from_local(self, min_data_len):
-
-        folders = os.listdir( os.path.expanduser (self.data_dir))
-        if self.dataset_name == 'default':
-            folders_avail = folders
-            random.shuffle(folders_avail)
-            folders_avail = folders_avail[:self.max_datasets]
-        else:
-            folders_avail = []
-            for dataset_name in self.dataset_name:
-                if dataset_name in folders:
-                    folders_avail.append(dataset_name)
-            random.shuffle(folders_avail)
-
-        files = [] 
-        for folder in folders_avail:
-            file_names = os.listdir(os.path.expanduser(os.path.join(self.data_dir, folder)))
-            sub_files = [{'Name': file_name,'Folder': folder, 'Hash': file_name} for file_name in file_names]
-            files += sub_files
-
-        random.shuffle(files)
-        data_corpus = []
-        total_dataset_len = 0
-
-        for text_file in files:
-            # --- Get text from the datafile directory
-            text = self.load_hash(text_file)
-
-            if text != None:
-                text_list = text.split() 
-                data_corpus.extend(text_list)
-                total_dataset_len += len(text_list)
-            
-            if (total_dataset_len > min_data_len) :
-                break
-
-        return data_corpus
-
-    def construct_text_corpus(self, min_data_len = 0):
-        """ Main function for generating the text data.
-        1. Get directories from a random dataset_hash (dataset_hash is the result from calling pin/ls).
-        2. Pick a random directory and get the directory that would lead to a datafile.    
-        3. Get text from the directory.
-        4. Repeat 2,3 until we have reached the min data length
-
-        Returns:
-            text: str: 
-                Contents of the text data.
-        """
-        self.IPFS_fails = 0
-        data_corpus = []
-        try:
-            # --- Get directories from a random dataset_hash
-            directories = list(self.get_hashes_from_dataset())
-
-            # --- Generate a random order of the directories
-            random.shuffle(directories)
-
-            # --- Pick random directories and get their text contents.
-            if directories:
-                total_dataset_size = 0
-                total_dataset_len = 0
-                i = 0
-
-                # --- Dont stop until the corpus size and the minimum data_length was reached.
-                for directory in directories:
-                    # --- Get a directory that leads to a datafile.
-                    random_datafile_dir = self.get_root_text_hash(directory)
-                    if random_datafile_dir == None:
-                        pass
-
-                    st.write(directory)
-
-                    # --- Get text from the datafile directory
-                    text = self.get_text(random_datafile_dir)
-
-                    
-                    if text != None:
-                        text_list = text.split() 
-                        st.write(len(text_list))
-                        data_corpus.extend(text_list)
-                        total_dataset_size += int(random_datafile_dir['Size'])
-                        total_dataset_len += len(text_list)
-
-                    i += 1
-                    
-                    if (total_dataset_len > min_data_len) or self.IPFS_fails > self.IPFS_fails_max:
-                        break
-
-            else:
-                logger.error("It appears the directory is empty... Restart your miner to try again.")
-
-        except Exception as e:
-            logger.error("Ran into exception when trying to retrieve dataset from IPFS: {}".format(e))
-
-
-        if len(data_corpus) == 0:
-            logger.error("Fail to construct any text from IPFS, getting from local instead.")
-            data_corpus = self.get_text_from_local(min_data_len)
-
-        return data_corpus
-
-    def reserve_multiple_data(self, epoch_length = 100, multiples = 2):
-        r""" Make sure the reserved data meet the multiple, 
-        If not, then keep constructing text corpus.
-        Arg:
-            epoch_length (int, optional): 
-                A dataloader for a subset of the dataset of epoch_length is returned.
-            
-            multiples (int, optional):
-                The number of dataloader that the data_reserved should be able to create.
-
-        Return: 
-            success (bool):
-                If we have got the data ready.
-        """
-        logger.success(f"Reserving data with multiples: {multiples}")
-        data_size = epoch_length * self.batch_size * self.block_size
-        
-        while len(self.data_reserved) < data_size * multiples :
-            self.data_reserved += self.construct_text_corpus(min_data_len = data_size)
-
-        logger.success(f"Dataset download completed, {multiples} copy of data reserved")
-        return True
-
-    def set_data_size(self, batch_size, block_size):
-        r""" Update the size of data (batch_size, block_size) that we need.
-
-        Args: 
-            batch_size(int, required):
-                The batch_size of data that should be produced by dataloader.
-
-            block_size(int, required):
-                The block_size of data that should be produced by dataloader. 
-        """
-        def check_valid(size):
-            r""" Check if the size is a valid positive intiget, if not, return False.
-            """
-            if size <= 0 or (not isinstance(size, int)):
-                return False
-            else:
-                return True
-
-        old_batch_size = self.batch_size
-        old_block_size = self.block_size
-        
-        if check_valid(batch_size):
-            self.batch_size = batch_size
-        
-        if check_valid(block_size):
-            self.block_size = block_size
-
-        # empty the queue
-        while not self.data_queue.queue.empty():
-            self.data_queue.queue.get()
-
-        # empty the dataset_iterator with the old sizing
-        self.__infinite_dataset_iterator = iter([])
-
-        logger.success(f"Updated data size: batch_size: {old_batch_size} --> {self.batch_size}, block_size: {old_block_size} --> {self.block_size}")
-
-    def dataloader(self, epoch_length = 100):
-        r""" Creates a torch dataloader out of a subclass of this class.
-
-        Args:
-            epoch_length (int, optional): 
-                A dataloader for a subset of the dataset of epoch_length is returned.
-
-        Returns:
-            torch.utils.data.dataloader.DataLoader: Pytorch dataloader.
-        """
-        logger.success(f"Getting a new Dataloader")
-        data_size = epoch_length * self.batch_size * self.block_size
-        if len(self.data_reserved) < data_size:
-            self.reserve_multiple_data(self.num_batches, 1)
-
-        self.data = self.data_reserved[:data_size]
-
-        del self.data_reserved[:data_size]
-
-        # Datalaoder calls self._getitem_ functions until the self.data uses up, and group the result by batch size
-        return DataLoader(self,
-                    shuffle=True,
-                    batch_size=self.batch_size,
-                    num_workers=self.num_workers,
-                    drop_last=True)
-    
-    def set_dataset_iterator(self):
-        r""" Get a new dataset that is ready from the queue. The result would be updated to self.__infinite_dataset_iterator__ . 
-        """
-        success = False 
-        while not success:
-            if not self.data_queue.queue.empty() :
-                ready = self.data_queue.queue.get() # the queue stores a bool ready signal
-                dataset = self.dataloader(self.num_batches)
-                if dataset:
-                    self.__infinite_dataset_iterator = iter([input for input in dataset])
-                    success = True
-            else:
-                time.sleep(2)
-
-        return
-
-    def __next__(self):
-        """Returns the next element from the dataset. 
-        """
-        if self.__infinite_dataset_iterator == None:
-            self.set_dataset_iterator()
-
-        try:
-            return next(self.__infinite_dataset_iterator)
-        
-        except StopIteration:
-            self.set_dataset_iterator()
-            return next(self.__infinite_dataset_iterator)
-
-    def __len__(self):
-        """Returns number of samples (blocks) of dataset
-
-        Returns:
-            length: int
-        """
-        if (self.data == None) or (self.block_size == None) or (self.block_size == 0):
-            return 0
-        return round( len(self.data) / self.block_size )
-
-    def __getitem__(self, idx: int) -> Union[str, torch.tensor]:
-        """ Returns a block of sentences from text dataset.
-
-            Args:
-                idx: index of data input
-
-            Returns:
-                torch.tensor(dix)
-        """
-        start_idx = (idx * self.block_size) % len(self.data)
-        end_idx = start_idx + self.block_size
-        text = " ".join(self.data[start_idx:end_idx])
-
-        if self.no_tokenizer is True:
-            return text
-        else:
-            tokens = self.tokenizer(text, padding=True, truncation=True)["input_ids"]
-            return torch.tensor(tokens, dtype=torch.long)[:self.block_size]
-
-    def build_hash_table(self):
-        self.IPFS_fails = 0
-        self.dataset_hashes = {}
-        response = None
-
-        mountain_meta = {'Name': 'mountain', 'Folder': 'meta_data', 'Hash': self.mountain_hash}
-        
-        while response == None:
-            self.IPFS_fails += 1
-            response = self.get_ipfs_directory(self.text_dir, mountain_meta)
-            
-            if response:
-                dataset_hashes = response.json()['Links']
-                st.write(len(dataset_hashes))
-                if self.save_dataset:
-                    self.save_hash(mountain_meta, json.dumps(dataset_hashes) )
-            
-            if self.IPFS_fails > self.IPFS_fails_max and response == None:
-                dataset_hashes = json.loads(self.load_hash(mountain_meta))
-                break
-
-        for i in dataset_hashes:
-            name = i['Name'][:-4]
-            dataset_meta = {'Name': name, 'Hash': i['Hash'], 'Size': self.get_folder_size(name) }
-            self.dataset_hashes[name] = dataset_meta
-
-
-    @staticmethod
-    async def get_client_session(*args,**kwargs):
+        # session = requests.Session()
+        # session.params.update((('arg', file_meta['Hash']), ))
+        # try:
+        if action == 'get':
+            response = await asyncio.wait_for(self.api_get( url=address,  params={'arg': file_meta['Hash']}), timeout=timeout)
+        elif action == 'post':
+            response = await asyncio.wait_for(self.api_post( url=address, params={'arg': file_meta['Hash']}), timeout=timeout)
+        # except Exception as E:
+        #     logger.error(f"Failed to get from IPFS {file_meta['Name']} {E}")
+        #     return None
+
+
+        return await response.json()
+
+    async def get_client_session(self, *args,**kwargs):
         # timeout = aiohttp.ClientTimeout(sock_connect=1, sock_read=5)
         # kwargs = {"timeout": timeout, **kwargs}
-        return aiohttp.ClientSession(**kwargs)
+        return aiohttp.ClientSession(loop=self.loop, **kwargs)
 
-    async def set_session(self, refresh=False):
-        if (not self._session) or (refresh==True):
-            self._session = await self.get_client(loop=self.loop, **self.client_kwargs)
-            if not self.asynchronous:
-                weakref.finalize(self, self.close_session, self.loop, self._session)
-        return self._session
+
+
+
+
+    async def api_post(self, url, return_json = False, content_type=None, chunk_size=1024, num_chunks=None, **kwargs):
+        
+        headers = kwargs.pop('headers', {}) 
+        params = kwargs.pop('params', kwargs)
+        return_result = None
+        timeout = aiohttp.ClientTimeout(sock_connect=1, sock_read=5)
+
+        async with aiohttp.ClientSession( timeout=timeout) as session:
+            async with session.post(url,params=params,headers=headers) as res:
+                if return_json: 
+                    return_result = await res.json(content_type=content_type)
+                else:
+                    return_result = res
+
+                if num_chunks:
+                    return_result = b''
+                    async for data in res.content.iter_chunked(chunk_size):
+                        # st.write(data)
+                        return_result += data
+                        num_chunks-= 1
+                        if num_chunks == 0:
+                            break
+        return return_result
+
+    # async def api_get(self, url, session=None, **kwargs):
+    #     if session == None:
+    #         session = await self.get_client_session()
+    #     headers = kwargs.pop('headers', {}) 
+    #     params = kwargs.pop('params', kwargs)
+    #     res = await session.get(url, params=params,headers=headers)
+    #     await session.close()
+    #     return res
+
+
+    async def api_get(self, url, return_json = True, content_type=None, chunk_size=1024, num_chunks=1,**kwargs):
+        
+        headers = kwargs.pop('headers', {}) 
+        params = kwargs.pop('params', kwargs)
+        return_result = None
+        async with aiohttp.ClientSession(loop=self.loop) as session:
+            async with session.get(url,params=params,headers=headers) as res:
+                if return_json: 
+                    return_result = await res.json(content_type=content_type)
+                else:
+                    return_result = res
+
+                if chunk_size:
+                    return_result = b''
+                    async for data in res.content.iter_chunked(chunk_size):
+                        # st.write(data)
+                        return_result += data
+                        num_chunks-= 1
+                        if num_chunks == 0:
+                            break
+        return return_result
+
+
+    ##############
+    #   ASYNCIO
+    ##############
+    @staticmethod
+    def reset_event_loop(set_loop=True):
+        loop = asyncio.new_event_loop()
+        if set_loop:
+            asyncio.set_event_loop(loop)
+        return loop
+
+    def set_event_loop(self, loop=None):
+        if loop == None:
+            loop = asyncio.get_event_loop()
+        self.loop = loop
+        return self.loop
+         
+    def async_run(self, job, loop=None): 
+        if loop == None:
+            loop = self.loop
+        return self.loop.run_until_complete(job)
+
+
+    @property
+    def dataset2size(self):
+        return {k:v['Size'] for k,v in self.dataset2hash.items()}
+    @property
+    def datasets(self):
+        return list(self.dataset2hash.keys())
+    @property
+    def dataset2hash(self):
+        return {v['Name'].replace('.txt', '') :v for v in self.dataset_hashes}
     
+    
+    @property
+    def dataset_hashes(self):
+        if not hasattr(self, '_dataset_hashes'):
+            self._dataset_hashes = self.async_run(self.get_dataset_hashes())
+        return self._dataset_hashes
+    def set_tokenizer(self, tokenizer=None):
+        if tokenizer == None:
+            tokenizer = bittensor.tokenizer()
+        
+        self.tokenizer = tokenizer
+        
 
+
+
+
+Dataset()   
+
+
+# import aiohttp
+# import asyncio
+# import time
+
+# start_time = time.time()
+
+
+# async def get_pokemon(session, url):
+#     async with session.get(url) as resp:
+#         pokemon = await resp.json()
+#         return pokemon['name']
+
+
+# async def main():
+
+#     async with bittensor.dataset().get_client_session() as session:
+
+#         tasks = []
+#         for number in range(1, 151):
+#             url = f'https://pokeapi.co/api/v2/pokemon/{number}'
+#             tasks.append(asyncio.ensure_future(get_pokemon(session, url)))
+
+#         original_pokemon = await asyncio.gather(*tasks)
+#         for pokemon in original_pokemon:
+
+# # # asyncio.run(main())
+# # st.write("--- %s seconds ---" % (time.time() - start_time))

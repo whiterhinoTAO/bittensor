@@ -1,22 +1,11 @@
 
 import asyncio
+from .base import AsyncBase
 
-class AsyncTaskManager:
+class AsyncTaskManager(AsyncBase):
     def __init__(loop=None):
+        self.set_event_loop(loop)
         self.task_map = {}
-
-    def set_event_loop(loop=None):
-        if 
-
-    def set_event_loop(self, loop=None):
-        if loop == None:
-            loop = asyncio.get_event_loop()
-        self.loop = loop
-        return self.loop
-         
-    def async_run(self, job, loop=None): 
-        if loop == None:
-            loop = self.loop
-        return self.loop.run_until_complete(job)
-
-
+    
+    def submit(self, fn, args=[],  kwargs={}):
+        self.loop.create_task(fn())
