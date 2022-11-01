@@ -2,21 +2,17 @@
 import os,sys
 from copy import deepcopy
 import asyncio
+from .base import AsyncBase
 """
 
 Background Actor for Message Brokers Between Quees
 
 """
-class AsyncQueueServer:
+class AsyncQueueServer(AsyncBase) :
 
     def __init__(self, loop=None, **kwargs):
         self.set_event_loop(loop=loop)
         self.queue = {}
-
-    def set_event_loop(self, loop=None):
-        if loop == None:
-            loop = asyncio.get_event_loop()
-        self.loop = loop
 
     def create_queue(self, key:str, refresh=False, **kwargs):
         if self.queue_exists(key) and refresh:

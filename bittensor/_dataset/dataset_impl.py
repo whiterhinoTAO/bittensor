@@ -50,7 +50,7 @@ Background Actor for Message Brokers Between Quees
 class Dataset():
     """ Implementation for the dataset class, which handles dataloading from ipfs
     """
-    def __init__(self, loop=None, tokenizer=None):
+    def __init__(self, loop=None, tokenizer=None, **kwargs):
         # set the loop
         self.set_event_loop(loop=loop)
         self.set_tokenizer(tokenizer=tokenizer)
@@ -349,10 +349,8 @@ class Dataset():
         self.tokenizer = tokenizer
         
 
-
-
-
-Dataset()   
+if __name__ == '__main__':
+    Dataset()   
 
 
 # import aiohttp

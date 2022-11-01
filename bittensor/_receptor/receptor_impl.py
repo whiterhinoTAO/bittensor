@@ -103,13 +103,10 @@ class Receptor(nn.Module):
                 bittensor.proto.ReturnCode.BadEndpoint: 0,
             }
         )
-
     def __str__ ( self ):
         return "Receptor({})".format(self.endpoint) 
-
     def __repr__ ( self ):
         return self.__str__()
-
     def __del__ ( self ):
         try:
             result = self.channel._channel.check_connectivity_state(True)
@@ -117,11 +114,9 @@ class Receptor(nn.Module):
                 loop = asyncio.get_event_loop()
                 loop.run_until_complete ( self.channel.close() )
         except:
-            pass
-    
+            pass    
     def __exit__ ( self ):
         self.__del__()
-
     def sign ( self ):
         r""" Uses the wallet pubkey to sign a message containing the pubkey and the time
         """
