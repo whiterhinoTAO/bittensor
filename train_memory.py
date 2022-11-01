@@ -229,12 +229,16 @@ class Nucleus(nn.Module):
         topk_routing_scores = routing_score[uids]
 
         with torch.no_grad():
+            start_time = time.time()
             responses, return_ops, times = dendrite.text(
                     endpoints=random_endpoints,
                     inputs=inputs,
                     synapses=[self.synapse],
                     timeout=self.config.nucleus.timeout
                 )
+
+            print('finished dendrite text')
+            qps = sum([ops == 1 for ops in return_ops]) / (time.time() - start_time)
             
             response_baseline = self.model_baseline.encode_forward_causallm(inputs)[1].logits
         
@@ -248,30 +252,30 @@ class Nucleus(nn.Module):
         loss = self.cal_loss(inputs, response_weighted)
         loss_gate_baseline = self.cal_loss(inputs, response_averaged)
         loss_model_baseline = self.cal_loss(inputs, response_baseline)
-        losses = torch.tensor([self.cal_loss(inputs, r[0]) for r in responses])
-        loss_min = min(losses)
+        # losses = torch.tensor([self.cal_loss(inputs, r[0]) for r in responses])
+        # loss_min = min(losses)
         
-        losses_sorted = losses.sort()
-        best_loss = losses_sorted[0]
-        best_loss_uid = losses_sorted[1]
+        # losses_sorted = losses.sort()
+        # best_loss = losses_sorted[0]
+        # best_loss_uid = losses_sorted[1]
         
-        losses = {
-            'routing': loss,
-            'gate_baseline': loss_gate_baseline,
-            'model_baseline': loss_model_baseline,
-            'min_baseline': loss_min,
+        stats = {
+            'loss/routing': loss,
+            'loss/gate_baseline': loss_gate_baseline,
+            'loss/model_baseline': loss_model_baseline,
+            # 'loss/min_baseline': loss_min,
+            'stat/qps': qps,
         }
 
-        for i in range(1, 6):
-            response_best_mixed = sum([ responses[uid][0] / i for uid in best_loss_uid[:i]])
-            loss_best_combinded = self.cal_loss(inputs, response_best_mixed)
-            losses[f'combinded_{i}rep'] = loss_best_combinded
+        # for i in range(1, 6):
+        #     response_best_mixed = sum([ responses[uid][0] / i for uid in best_loss_uid[:i]])
+        #     loss_best_combinded = self.cal_loss(inputs, response_best_mixed)
+        #     stats[f'loss/combinded_{i}rep'] = loss_best_combinded
 
-        print(losses)
+        print(stats)
         
-
         # Return.
-        return losses, successes, routing_score
+        return stats, successes, routing_score
     
     
 ##############################
@@ -342,11 +346,11 @@ avg_loss_history = []
 
 def step(idx, uids):
     inputs = next(dataset)
-    losses, success, scores = model( uids, inputs, dendrite )
-    losses['routing'].backward()
+    stats, success, scores = model( uids, inputs, dendrite )
+    stats['loss/routing'].backward()
     success_results.append(success)
     scores_history.append(scores.detach())
-    return losses, success
+    return stats, success
 
 
 if config.use_wandb: 
@@ -376,16 +380,16 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         optimizer.step()
         optimizer.zero_grad()
         
-        losses = {}
-        for l in chunk_results:
-            for k, v in l[0].items():
-                if k in losses.keys():
-                    losses['loss/' + k].append(v.item())
+        stats = {}
+        for r in chunk_results:
+            for k, v in r[0].items():
+                if k in stats.keys():
+                    stats[k].append(v.item())
                 else:
-                    losses['loss/' + k] = [v.item()]
+                    stats[k] = [v.item()]
         
-        for k,v in losses.items():
-            losses[k] = sum(v)/len(v)
+        for k,v in stats.items():
+            stats[k] = sum(v)/len(v)
         # losses = [l[0]['routing'].item() for l in chunk_results]
         # losses_gate_baseline = [l[0]['gate_baseline'].item() for l in chunk_results]
         # losses_model_baseline = [l[0]['model_baseline'].item() for l in chunk_results]
@@ -394,7 +398,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         
         successes = [ sum(l[1]) / len(l[1]) for l in chunk_results]
         
-        avg_loss_history.append( losses['loss/routing'] )
+        avg_loss_history.append( stats['loss/routing'] )
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
 
         # average scores
@@ -406,17 +410,9 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
 
         if config.use_wandb:
             scores_log = { 'score/' + str(k) :v.item() for k, v in enumerate(average_scores)}
-            stats = {
-                # 'loss/routing':  sum( losses )/ len( losses ),
-                # 'loss/gate_baseline':  sum( losses_gate_baseline )/ len( losses_gate_baseline ),
-                # 'loss/gptneo_125_baseline':  sum( losses_model_baseline )/ len( losses_model_baseline ),
-                # 'loss/min_baseline':  sum( losses_min_baseline )/ len( losses_min_baseline ),
-                # 'loss/best_combinded':  sum( losses_best_combinded )/ len( losses_best_combinded ),
-                # 'loss/diff':  ( sum( losses_gate_baseline ) - sum(losses) )/ len( losses ),
-                'success': sum(successes) / len(successes)
-            }
-            print(losses, stats)
-            wandb.log( {**losses, **stats, **scores_log}, step=ci)
+            stats['stat/success'] = sum(successes) / len(successes)
+            print(stats)
+            wandb.log( {**stats, **scores_log}, step=ci)
 
 # Measure state after.
 io_2 = psutil.net_io_counters()
