@@ -38,8 +38,8 @@ class ReceptorPool ( torch.nn.Module ):
     def __init__(
         self, 
         wallet: 'bittensor.Wallet',
-        max_active_receptors: int,
-        compression: str,
+        max_active_receptors: int=100,
+        compression: str=None,
     ):
         super().__init__()
         self.wallet = wallet
