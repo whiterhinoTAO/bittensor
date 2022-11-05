@@ -132,6 +132,7 @@ from bittensor._dataset import dataset as dataset
 from bittensor._receptor import receptor_pool as receptor_pool
 from bittensor._wandb import wandb as wandb
 from bittensor._threadpool import prioritythreadpool as prioritythreadpool
+from bittensor._threading import ThreadManager as thread_manager
 
 # ---- Classes -----
 from bittensor._cli.cli_impl import CLI as CLI

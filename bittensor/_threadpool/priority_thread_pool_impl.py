@@ -179,7 +179,6 @@ class PriorityThreadPoolExecutor(_base.Executor):
         # if idle threads are available, don't spin new threads
         if self._idle_semaphore.acquire(timeout=0):
             return
-
         # When the executor gets lost, the weakref callback will wake up
         # the worker threads.
         def weakref_cb(_, q=self._work_queue):
