@@ -13,25 +13,29 @@ start_time = time.time()
 io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
 
-bittensor.logging(debug = True)
+bittensor.logging(debug = False)
 def get_size(bytes):
     for unit in ['', 'K', 'M', 'G', 'T', 'P']:
         if bytes < 1024:
             return f"{bytes:.2f}{unit}B"
         bytes /= 1024
 
-n_steps = 1
-n_queried = 100
-timeout = 9
+n_steps = 10
+n_queried = 1000
+timeout = 6
+dataset = bittensor.dataset(dataset_name = ['Books3'])
 
-inputs = torch.ones([10, 20], dtype = torch.int64) 
+# inputs = torch.ones([10, 20], dtype = torch.int64) 
 
 results = []
 for step in range(n_steps):
-    uids = random.sample( range(4096), n_queried )
+    inputs = next(dataset)
+    uids = torch.tensor(list(range(n_queried)))
+    # uids = random.sample( range(4096), n_queried )
     endpoints = graph.endpoints[uids]
-    a, b, c = dend.text( endpoints=endpoints, synapses=[bittensor.synapse.TextCausalLM()], inputs=inputs, timeout = timeout)
+    a, b, c = dend.text( endpoints=endpoints, synapses=[bittensor.synapse.TextCausalLMNext()], inputs=inputs, timeout = timeout)
     results.append( [bi.item() == 1 for bi in b])
+    print(sum([bi.item() == 1 for bi in b]), len(b))
 
 io_2 = psutil.net_io_counters()
 total_bytes_sent, total_bytes_recved = io_2.bytes_sent - start_bytes_sent, io_2.bytes_recv - start_bytes_recv
