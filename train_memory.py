@@ -19,6 +19,7 @@ from rich.traceback import install
 from memory_profiler import profile
 import pdb
 from bittensor._neuron.text.core_server.nucleus_impl import server
+from bittensor.utils.tokenizer_utils import phrase_cross_entropy
 
 install(show_locals=False)
 import wandb 
@@ -48,7 +49,7 @@ class Nucleus(nn.Module):
         self.wallet = wallet
         self.graph = graph
         self.sigmoid = torch.nn.Sigmoid()
-        self.synapse = bittensor.TextCausalLM()
+        self.synapse = bittensor.TextCausalLMNext()
         self.loss_fct = torch.nn.CrossEntropyLoss()
         self.tokenizer = bittensor.tokenizer()
         self.pad_token = self.tokenizer(self.tokenizer.pad_token)['input_ids'][0]
@@ -103,6 +104,7 @@ class Nucleus(nn.Module):
         parser.add_argument('--nucleus.timeout',type=int, default=4, help='''Timeout for each set of queries (we always wait this long)''')
         parser.add_argument('--nucleus.n_queried', type=int, default=100, help='''The number of endpoints we query each step.''')
         parser.add_argument('--nucleus.device', type=str, help='miner default training device cpu/cuda', default=("cuda" if torch.cuda.is_available() else "cpu"))
+        parser.add_argument('--nucleus.validation_len', type=int, help='the number of tokens to validate', default=8 )
 
     @classmethod
     def config ( cls ):
@@ -208,15 +210,15 @@ class Nucleus(nn.Module):
         for f in futures: del f
         return [ r.to(self.config.nucleus.device) for r in results], successes
 
-    def cal_loss(self, inputs, query_response, validation_len = 1):
-        _labels = inputs[:, 1:].contiguous()
-        _logits = query_response[:, :-1, :].contiguous()
-        loss = self.loss_fct(_logits.view(-1, _logits.size(-1)), _labels.view(-1))
-        return loss
+    def cal_loss(self, inputs, query_response, validation_len = 8):
+        inputs_nxt = inputs[..., -validation_len:]
+        _losses_val, _losses = phrase_cross_entropy(inputs_nxt, query_response, reduce=True)
+        return _losses
 
     def forward(self, uids, inputs, dendrite):
         inputs = inputs.to(self.config.nucleus.device)
-
+        inputs_seq = inputs[..., :-self.config.nucleus.validation_len] 
+        start_time = time.time()
         # Route
         embedding = self.token_embedding(inputs) * math.sqrt(bittensor.__network_dim__)
         src_mask = torch.triu(torch.ones(embedding.size(1), embedding.size(1)) * float('-inf'), diagonal=1).to(self.config.nucleus.device)
@@ -232,29 +234,45 @@ class Nucleus(nn.Module):
             start_time = time.time()
             responses, return_ops, times = dendrite.text(
                     endpoints=random_endpoints,
-                    inputs=inputs,
+                    inputs=inputs_seq,
                     synapses=[self.synapse],
                     timeout=self.config.nucleus.timeout
                 )
 
-            print('finished dendrite text')
+            dend_forward_time = time.time()
             qps = sum([ops == 1 for ops in return_ops]) / (time.time() - start_time)
-            
-            response_baseline = self.model_baseline.encode_forward_causallm(inputs)[1].logits
+            response_baseline = self.model_baseline.encode_forward_causallmnext(inputs)[1].logits
         
         # Join responses
-        normalized_topk_routing_scores = topk_routing_scores/topk_routing_scores.sum()
-        response_weighted = sum([ r[0] * w for r, w in list(zip( responses, normalized_topk_routing_scores )) ])
-        response_averaged = sum([ r[0] for r in responses ]) / len(responses)
         successes = [ op.item() == 1 for op in return_ops]
-
-        # Compute loss.
-        loss = self.cal_loss(inputs, response_weighted)
-        loss_gate_baseline = self.cal_loss(inputs, response_averaged)
-        loss_model_baseline = self.cal_loss(inputs, response_baseline)
-        # losses = torch.tensor([self.cal_loss(inputs, r[0]) for r in responses])
-        # loss_min = min(losses)
+        if sum(successes) == 0:
+            stats = {
+                'loss/routing': torch.nan,
+                'loss/gate_baseline': torch.nan,
+                'loss/model_baseline': torch.nan,
+                'loss/min_baseline': torch.nan,
+                'stat/receptor_time_avg': torch.nan,
+                'stat/dend_time': dend_forward_time - start_time,
+                'stat/batch_time': time.time() - start_time,
+                'stat/qps': qps,
+            }
+            return stats, successes, routing_score
+            
+        response_success = [r for r, op in list(zip(responses, return_ops)) if op == 1]
+        time_success = [t for t, op in list(zip(times, return_ops)) if op == 1]
+        normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
+        response_weighted = sum([ r[0][:, :, :2] * w for r, w in list(zip( response_success, normalized_topk_routing_scores )) ])
+        response_averaged = sum([ r[0][:, :, :2] for r in response_success ]) / sum(successes)
         
+        # Compute loss.
+        loss = self.cal_loss(inputs, response_weighted, self.config.nucleus.validation_len)
+        loss_gate_baseline = self.cal_loss(inputs, response_averaged, self.config.nucleus.validation_len)
+        loss_model_baseline = self.cal_loss(inputs, response_baseline, self.config.nucleus.validation_len)
+        losses = torch.tensor([self.cal_loss(inputs, r[0][:, :, :2], self.config.nucleus.validation_len) for r in response_success])
+        loss_min = min(losses)
+        
+        print(losses)
+
         # losses_sorted = losses.sort()
         # best_loss = losses_sorted[0]
         # best_loss_uid = losses_sorted[1]
@@ -263,7 +281,10 @@ class Nucleus(nn.Module):
             'loss/routing': loss,
             'loss/gate_baseline': loss_gate_baseline,
             'loss/model_baseline': loss_model_baseline,
-            # 'loss/min_baseline': loss_min,
+            'loss/min_baseline': loss_min,
+            'stat/receptor_time_avg': sum(time_success) / sum(successes),
+            'stat/dend_time': dend_forward_time - start_time,
+            'stat/batch_time': time.time() - start_time,
             'stat/qps': qps,
         }
 
@@ -312,7 +333,7 @@ bittensor.logging( config = config )
 dataset = bittensor.dataset( config = config )
 subtensor = bittensor.subtensor( config = config )
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
-wallet = bittensor.wallet()
+wallet = bittensor.wallet( config = config )
 dendrite = bittensor.dendrite ( config = config, wallet = wallet)
 
 
@@ -347,7 +368,8 @@ avg_loss_history = []
 def step(idx, uids):
     inputs = next(dataset)
     stats, success, scores = model( uids, inputs, dendrite )
-    stats['loss/routing'].backward()
+    if stats['loss/routing'] == stats['loss/routing']: #true if not nan 
+        stats['loss/routing'].backward()
     success_results.append(success)
     scores_history.append(scores.detach())
     return stats, success
@@ -381,15 +403,20 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         optimizer.zero_grad()
         
         stats = {}
+        # Aggregating stats
         for r in chunk_results:
             for k, v in r[0].items():
-                if k in stats.keys():
-                    stats[k].append(v.item())
-                else:
-                    stats[k] = [v.item()]
+                if k not in stats.keys():
+                    stats[k] = []
+                if v == v:
+                    stats[k].append(v)
         
-        for k,v in stats.items():
-            stats[k] = sum(v)/len(v)
+        for k, v in stats.items():
+            if len(v) > 0:
+                stats[k] = sum(v)/len(v)
+                if hasattr(stats[k], 'item'):
+                    stats[k] = stats[k].item()
+        
         # losses = [l[0]['routing'].item() for l in chunk_results]
         # losses_gate_baseline = [l[0]['gate_baseline'].item() for l in chunk_results]
         # losses_model_baseline = [l[0]['model_baseline'].item() for l in chunk_results]
@@ -397,16 +424,12 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         # losses_best_combinded = [l[0]['best_combinded'].item() for l in chunk_results]
         
         successes = [ sum(l[1]) / len(l[1]) for l in chunk_results]
-        
         avg_loss_history.append( stats['loss/routing'] )
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
 
         # average scores
         average_scores = sum( scores_history ) / len(scores_history)
         topk_vals, topk_uids = average_scores.topk( config.nucleus.n_queried )
-        print ('\ntopk scores:', topk_vals.tolist() )
-        print ('\ntopk uids:', topk_uids.tolist(), '\n\n')
-
 
         if config.use_wandb:
             scores_log = { 'score/' + str(k) :v.item() for k, v in enumerate(average_scores)}
