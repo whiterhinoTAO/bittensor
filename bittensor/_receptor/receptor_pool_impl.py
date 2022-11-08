@@ -29,6 +29,7 @@ import bittensor
 from bittensor._endpoint import endpoint
 import bittensor.utils.networking as net
 from concurrent.futures import ThreadPoolExecutor
+import time
 
 logger = logger.opt(colors=True)
 
@@ -223,6 +224,8 @@ class ReceptorPool ( torch.nn.Module ):
                 forward_times (:obj:`List[ List [float] ]` of shape :obj:`(num_endpoints * ( num_synapses ))`, `required`):
                     dendrite backward call times
         """
+        timestamp = [(time.time(), 0)]
+
         # Init receptors.
         receptors = [ self._get_or_create_receptor_for_endpoint( endpoint ) for endpoint in endpoints ]
 
@@ -239,6 +242,7 @@ class ReceptorPool ( torch.nn.Module ):
 
         responses = await asyncio.gather( *calls )
 
+        timestamp += [(time.time(), 'gathered', time.time() - timestamp[-1][0])]
         # Unpack responses
         forward_outputs = []
         forward_codes = []
@@ -248,9 +252,12 @@ class ReceptorPool ( torch.nn.Module ):
             forward_codes.append( response[1] )
             forward_times.append( response[2] )
 
+        timestamp += [(time.time(), 'unpacked', time.time() - timestamp[-1][0])] 
         # ---- Kill receptors ----
         self._destroy_receptors_over_max_allowed()
         # ---- Return ----
+
+        print('receptor pool timestamp', timestamp)
         return forward_outputs, forward_codes, forward_times
 
     async def async_backward(
