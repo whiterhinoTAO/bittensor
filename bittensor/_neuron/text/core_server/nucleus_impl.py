@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from types import SimpleNamespace
 from typing import Tuple, Optional
 
+import pdb
+
 from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM
 from torch.nn.utils.rnn import pad_sequence
 from bittensor.utils.tokenizer_utils import prep_tokenizer, get_translation_map, translate_logits_to_probs_std, \
@@ -85,6 +87,9 @@ class server(torch.nn.Module):
         self.to_translation_map = get_translation_map(self.tokenizer, self.std_tokenizer)
         self.from_translation_map = get_translation_map(self.std_tokenizer, self.tokenizer)
         self.split_map_cache = {}
+        
+        if self.config.neuron.flash_attention:
+            self.set_flash_attention()
 
         if self.config.neuron.local_train or self.config.neuron.remote_train:
             self.pre_model.train()
@@ -187,7 +192,13 @@ class server(torch.nn.Module):
                 logger.warning(f'Cannot identify the last layer of the model with name {last_layer_name}, setting to finetune on all of the parameters.')
 
         return reached_last_layer, last_layer_name
+    
+    def set_flash_attention(self):
+        r''' Set the attention of the model to flash attention
+        '''
+        lm_head = self.pre_model.lm_head
 
+        pdb.set_trace()
     def remapping_token(self, token_batch, std_tokenizer=None, return_offsets_mapping=False):
         r""" Tokenizer remapping; decodes the message and then remaps the message using a new tokenizer
             Args:
