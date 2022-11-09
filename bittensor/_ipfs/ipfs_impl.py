@@ -67,43 +67,31 @@ class Ipfs():
         elif action == 'post':
             response = Ipfs.requests_retry_session(session=session).post(address, timeout=timeout)
         return response
-
 import io
+import os
 import time
 import weakref
 import copy
 import asyncio
 import aiohttp
-from fsspec.asyn import _run_coros_in_chunks
-from fsspec.utils import is_exception
-from fsspec.callbacks import _DEFAULT_CALLBACK
 from glob import has_magic
 import json
 from copy import deepcopy
-from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper
-from ipfshttpclient.multipart import stream_directory, stream_files #needed to prepare files/directory to be sent through http
-import os
-from fsspec.exceptions import FSTimeoutError
-from fsspec.implementations.local import LocalFileSystem
-from fsspec.spec import AbstractBufferedFile
-from fsspec.utils import is_exception, other_paths
 import streamlit as st
 import logging
+from glob import glob
 from typing import *
-from fsspec.asyn import AsyncFileSystem, sync, sync_wrapper
-import requests
-from requests.exceptions import HTTPError
-IPFSHTTP_LOCAL_HOST = 'ipfs'
-from commune.client.local import LocalModule
-from ipfshttpclient.multipart import stream_files, stream_directory
-logger = logging.getLogger("ipfsspec")
+from ipfshttpclient.multipart import stream_directory, stream_files 
 
+
+logger = logging.getLogger("ipfsspec")
 
 def sync_wrapper(fn):
     def wrapper_fn(*args, **kwargs):
         return asyncio.run(fn(*args, **kwargs))
     return  wrapper_fn
 
+IPFSHTTP_LOCAL_HOST = 'ipfs'
 class IPFSClient:
 
     data_dir = '/tmp/ipfs_client'
@@ -115,13 +103,16 @@ class IPFSClient:
                 client_kwargs={}):
 
         self.ipfs_url = ipfs_urls
-        self.local = LocalModule()
         self.path2hash = self.load_path2hash()
         self.loop = asyncio.set_event_loop(asyncio.new_event_loop())
+        self.sync_the_async()
 
+
+    def sync_the_async(self):
         for f in dir(self):
             if 'async_' in f:
                 setattr(self, f.replace('async_',  ''), sync_wrapper(getattr(self, f)))
+
     async def async_api_post(self, 
                       endpoint:str, 
                       params:dict = {} ,
@@ -251,7 +242,7 @@ class IPFSClient:
         file_paths=[]
         assert os.path.exists(path), f'{path} does not exist'
         if os.path.isdir(path):
-            file_paths = self.local.glob(path+'/**')
+            file_paths = glob(path+'/**')
         elif os.path.isfile(path):
             file_paths = [path]
   
@@ -477,6 +468,35 @@ class IPFSClient:
         return {file_meta['Hash']: path for path, file_meta in path2hash.items()}
 
 
+    @classmethod
+    def test_add_rm_file(cls):
+        module = cls()
+        test_path = 'commune/client/local/module.py'
+        module.add(test_path)
+        file_paths = module.ls(test_path)
+        assert len(file_paths) > 0
+        module.rm(test_path)
+        file_paths = module.ls(test_path)
+        assert len(file_paths) == 0
+
+    @classmethod
+    def test_add_rm_folder(cls):
+        module = cls()
+        test_path = 'commune/client/local'
+        module.add(test_path)
+        file_paths = module.ls(test_path)
+        assert len(file_paths) > 0
+        module.rm(test_path)
+        file_paths = module.ls(test_path)
+        assert len(file_paths) == 0
+
+    @classmethod
+    def test(cls):
+        for f in dir(cls):
+            if 'test_' in f:
+                getattr(cls, f)()
+                st.write(f'PASSED: {f}')
+
 
     ##############
     #   ASYNCIO
@@ -512,14 +532,24 @@ class IPFSClient:
             loop = asyncio.get_event_loop()
         self.loop = loop
         return self.loop
+  
+    @classmethod
+    def test_load_save_json(cls):
+        module = cls()
+        obj = {'bro': [1]}
+        module.save_json('fam',obj )
+        assert obj == module.load_json('fam')
+
+    async def async_put_json(self, path,input):
+        save_path = await self.async_save_json(path,input)
+        file_meta = await self.async_add(path=save_path)
+        await self.rm_json(path)
+        return file_meta
+    
+    def async_cat(self, cid):
+        self.async_api_post('cat', cid)
 
 if __name__ == '__main__':
+    IPFSClient.test()
     module = IPFSClient()
-    st.write(module.resolve_absolute_path('commune'))
-    module.add(path='commune/client/ipfs/')
-    module.add(path='commune/client/local/')
-
-    st.write(module.ls('commune/client/ipfs/module'))
-    module.rm(path='commune/client/local')
-    st.write(module.ls('commune/client/local'))    # st.write(asyncio.run(module.load_json('path2hash')))
-    # st.write(asyncio.run(module.rm('/app/commune/client/ipfs/module_old.py')))
+    st.write(list(os.walk('commune')))
