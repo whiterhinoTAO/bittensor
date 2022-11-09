@@ -4,6 +4,9 @@
 *$py.class
 *.pyc
 
+#triton
+triton
+
 # weigths and biases
 wandb/
 
