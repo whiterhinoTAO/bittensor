@@ -1,11 +1,15 @@
 import torch
-import torch.nn as nn
+from torch import nn, einsum
+from torch.nn import functional as F
 
 import math
+from functools import partial, wraps
 
 import bittensor as bt
 from bittensor._neuron.text.core_server.nucleus_impl import server
 # from bittensor.utils.flash_attention import attention_ref
+
+from typing import Optional, Dict, Tuple
 
 from einops import rearrange
 
@@ -16,26 +20,95 @@ def exists(val):
     return val is not None
 
 def default(val, d):
-    return val if exists(val) else d
+    if exists(val):
+        return val
+    return d() if callable(d) else d
 
-def attention_ref(q, k, v):
-    """
-    Arguments:
-        q: (batch_size, seqlen_q, nheads, head_dim)
-        k: (batch_size, seqlen_k, nheads, head_dim)
-        v: (batch_size, seqlen_k, nheads, head_dim)
-    Output:
-        output: (batch_size, seqlen_q, nheads, head_dim)
-        attention: (batch_size, nheads, seqlen_q, seqlen_k), softmax after dropout
-    """
-    dtype_og = q.dtype
-    d = q.shape[-1]
-    scores = torch.einsum("bthd,bshd->bhts", q / math.sqrt(d), k)
-    attention = torch.softmax(scores, dim=-1)
+def divisible_by(numer, denom):
+    return (numer % denom) == 0
 
-    output = torch.einsum("bhts,bshd->bthd", attention, v)
-    return output.to(dtype=dtype_og), attention.to(dtype=dtype_og)
+def l2norm_cpu(t):
+    eps = 1e-12 if t.dtype == torch.float32 else 1e-3
+    norm = t.norm(dim = 0)
+    # norm_clamped = torch.where(norm > eps, norm, eps)
+    # o = t / norm_clamped[..., None]
+    return norm
 
+def l2norm(t):
+    if t.data.is_cuda:
+        return F.normalize(t, dim = -1)
+
+    return l2norm_cpu(t)
+
+def grouped_l2norm(t, groups = 1):
+    shape = t.shape
+    dim = shape[-1]
+    t = t.reshape(*shape[:-1], groups, dim // groups)
+    t = l2norm(t)
+    return t.reshape(shape)
+
+def l2norm_tensors(*tensors, groups = 1):
+    assert len(tensors) > 0
+    dtype = tensors[0].dtype
+
+    fn = partial(grouped_l2norm, groups = groups)
+
+    tensors = tuple(map(fn, tensors))
+    tensors = tuple(map(lambda t: t.type(dtype), tensors))
+    return tensors
+
+def plain_cosine_sim_attention(
+    q,
+    k,
+    v,
+    mask = None,
+    attn_bias = None,
+    scale = 8,
+    groups = 1,
+    causal = False,
+    l2norm_qk = True,
+    attn_bias_batch_dim = False
+
+):
+    assert not (causal and exists(mask)), 'mask should not be supplied if causality is needed'
+
+    is_merged_batch_heads_query = q.ndim == 3
+    single_head_kv = k.ndim == 3
+
+    if is_merged_batch_heads_query:
+        assert k.ndim == 3 and v.ndim ==3, 'if batch and heads are merged for queries, keys and values must also similarly have only 3 dimensions'
+
+        attn_bias_batch_dim = True
+        q = q[:, None, ...]
+
+    if l2norm_qk:
+        q, k = l2norm_tensors(q, k, groups = groups)
+
+    kv_einsum_eq = 'b j d' if single_head_kv else 'b h j d'
+    sim = einsum(f'b h i d, {kv_einsum_eq} -> b h i j', q, k)
+    sim = sim * scale
+
+    if exists(attn_bias):
+        attn_bias = attn_bias.unsqueeze(1 if attn_bias_batch_dim else 0)
+        sim = sim + attn_bias
+
+    mask_value = -torch.finfo(sim.dtype).max
+
+    if causal:
+        i, j = sim.shape[-2:]
+        causal_mask = torch.ones((i, j), device = q.device, dtype = torch.bool).triu(j - i + 1)
+        sim = sim.masked_fill(causal_mask, mask_value)
+
+    if exists(mask):
+        sim = sim.masked_fill(~mask[:, None, None, :], mask_value)
+
+    attn = sim.softmax(dim = -1)
+    out = einsum(f'b h i j, {kv_einsum_eq} -> b h i d', attn, v)
+
+    if is_merged_batch_heads_query:
+        out = out.squeeze(1)
+
+    return out
 
 class Attention(nn.Module):
     def __init__(
@@ -43,96 +116,69 @@ class Attention(nn.Module):
         dim,
         dim_head = 64,
         heads = 8,
-        causal = False,
-        dropout = 0.,
-        use_triton = False
+        scale = 8,
+        l2norm_groups = 1,
+        pre_norm = False,
+        use_cuda_kernel = False,
+        non_cosine_sim_attn = False,
+        **kwargs
     ):
         super().__init__()
-        self.use_triton = use_triton
-        self.heads = heads
-        self.dim_head = dim_head
-        self.scale = dim_head ** -0.5
-        self.causal = causal
         inner_dim = dim_head * heads
-        self.dropout = dropout
 
-        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
+        self.norm = nn.LayerNorm(dim) if pre_norm else nn.Identity()
+
+        self.scale = scale
+        self.heads = heads
+
+        self.l2norm_groups = l2norm_groups
+
+        self.attn_fn = plain_cosine_sim_attention
+
+        self.to_q = nn.Linear(dim, inner_dim, bias = False)
+        self.to_k = nn.Linear(dim, inner_dim, bias = False)
+        self.to_v = nn.Linear(dim, inner_dim, bias = False)
         self.to_out = nn.Linear(inner_dim, dim, bias = False)
 
-    def forward(self, x, mask = None, use_triton = None):
-        use_triton = default(use_triton, self.use_triton)
-        h = self.heads
-        d_head = self.dim_head
-        BATCH = x.shape[0]
-        N_CTX = x.shape[1]
-        H = h
-        D_HEAD = d_head
-        # dtype = x.dtype
-        in_dtype = torch.float16
-        out_dtype = torch.float32
+    def forward(
+        self, 
+        x,
+        layer_past: Optional[Tuple[torch.Tensor]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = False,
+        output_attentions: Optional[bool] = False,
+        ):
+        h, scale, l2norm_groups = self.heads, self.scale, self.l2norm_groups
 
-        q, k, v = self.to_qkv(x).chunk(3, dim = -1)
-        # q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h = h), (q, k, v))
+        x = self.norm(x)
 
+        q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
 
-        # BATCH = x.shape[0]
-        # H is self.heads
-        # SEQ_LEN is x.shape[1]
-        # DIM_HEAD is x.shape[2]
+        o = self.attn_fn(q, k, v, causal = True, scale = scale, groups = l2norm_groups)
 
-        # reshape q, k, v to (BATCH, H, N_CTX, D_HEAD)
-        query = q.reshape(x.shape[0], h, x.shape[1], d_head)
-        k = k.reshape(x.shape[0], h, x.shape[1], d_head)
-        v = v.reshape(x.shape[0], h, x.shape[1], d_head)
-
-        # # cast to float16
-        query = query.to(in_dtype)
-        k = k.to(in_dtype)
-        v = v.to(in_dtype)
-
-        # # einsum transform q, k, v to (BATCH, H, N_CTX, N_CTX)
-
-        out = attention_ref(query, k, v, self.scale)
-        out = rearrange(out, 'b h n d -> b n (h d)')
-  
-        # # out = rearrange(out, '(b h) n d -> b n (h d)', h = h)
-
-        # # cast to float32
-        out = out.to(out_dtype)
-        # # pdb.set_trace()
-
-        out = self.to_out(out)
-
-        return out
-
-# class FlashNucleus(nn.Module):
-#     def __init__(self, config):
-#         super().__init__()
-#         self.config = config
-#         self.pre_model = server(config=config).pre_model
-#         self.hidden_states_model = self.pre_model.transformer
-
-#         for block in self.hidden_states_model.h:
-#             attn = block.attn
-#             print(attn)
-
-#     def forward(self, inputs, targets):
-#         hidden_states = self.hidden_states_model(inputs)
-#         attention = self.attention(hidden_states)
-#         outputs = self.post_model(attention)
-#         return outputs
-
+        o = rearrange(o, 'b h n d -> b n (h d)')
+        return (self.to_out(o), None)
 
 config = server.config()
 
 pre_model = server(config=config).pre_model
 hidden_states_model = pre_model.transformer
 
+dim = pre_model.config.n_embd
+dim_head = pre_model.config.n_inner if not None else dim 
+
 for block in hidden_states_model.h:
     attn = block.attn
     print("old:", attn)
-    block.attn = Attention(dim=pre_model.dim, dim_head=pre_model.dim_head, heads=pre_model.heads, causal=True, dropout=pre_model.dropout, use_triton=False)
+    block.attn = Attention(dim=dim, heads=pre_model.config.n_head, causal=True, dropout=pre_model.config.attn_pdrop, use_triton=False) # TODO: need to add dropout and maybe projection
     print("new:", block.attn)
 
+tokenizer = bt.tokenizer()
+input_ids = tokenizer.encode('hello my name is', return_tensors='pt')
+output = pre_model(input_ids)
 # model = FlashNucleus(config)
 pdb.set_trace()
