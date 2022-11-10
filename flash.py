@@ -201,10 +201,12 @@ def plain_cosine_sim_attention(
 
     return out
 
+
 class Attention(nn.Module):
     def __init__(
         self,
         dim,
+        old_attn=None,
         dim_head = 64, # TODO: find out what the dim is from HF config
         heads = 8,
         scale = 8,
@@ -227,12 +229,26 @@ class Attention(nn.Module):
 
         self.l2norm_groups = l2norm_groups
 
+        self.c_attn = old_attn.c_attn
+        self.c_proj = old_attn.c_proj
+        self.split_size = old_attn.split_size
+        self.num_heads = old_attn.num_heads
+        self.head_dim = old_attn.head_dim
         self.attn_fn = plain_cosine_sim_attention
+
 
         self.to_q = nn.Linear(dim, inner_dim, bias = False)
         self.to_k = nn.Linear(dim, inner_dim, bias = False)
         self.to_v = nn.Linear(dim, inner_dim, bias = False)
         self.to_out = nn.Linear(inner_dim, dim, bias = False)
+
+    def _split_heads(self, tensor, num_heads, attn_head_size):
+        """
+        Splits hidden_size dim into attn_head_size and num_heads
+        """
+        new_shape = tensor.size()[:-1] + (num_heads, attn_head_size)
+        tensor = tensor.view(*new_shape)
+        return tensor.permute(0, 2, 1, 3)  # (batch, head, seq_length, head_features)
 
     def forward(
         self, 
@@ -250,11 +266,19 @@ class Attention(nn.Module):
         x = self.norm(x)
 
         q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)
+
+        query, key, value = self.c_attn(x).split(self.split_size, dim=2)
+
+        query = self._split_heads(query, self.num_heads, self.head_dim)
+        key = self._split_heads(key, self.num_heads, self.head_dim)
+        value = self._split_heads(value, self.num_heads, self.head_dim)
+
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
 
-        o = self.attn_fn(q, k, v, causal = True, scale = scale, groups = l2norm_groups)
+        o = self.attn_fn(query, key, value, causal = True, scale = scale, groups = l2norm_groups)
 
         o = rearrange(o, 'b h n d -> b n (h d)')
+        o = self.c_proj(o)
 
         if self.singleton:
             return (self.to_out(o), None)
@@ -283,17 +307,22 @@ elif "gpt2" in config.neuron.model_name:
 else:
     raise ValueError("Model name not supported")
 
-for block in hidden_states_model.h:
-    layer = Sequential(
-        Attention(dim=dim, heads=heads, causal=True, dropout=attn_dropout, use_triton=False),
+for idx, block in enumerate(hidden_states_model.h):
+    print(f"{idx=}")
+    #layer = Sequential(
+        #Attention(dim=dim, heads=heads, causal=True, dropout=attn_dropout, use_triton=False),
         # nn.LayerNorm(dim),
         # FeedForward(dim=dim, pre_norm=False),
         # nn.LayerNorm(dim)
-    )
+    #)
     attn = block.attn
+
     print("old:", attn)
     # block.attn = layer
-    block.attn = Attention(dim=dim, heads=heads, causal=True, dropout=attn_dropout, use_triton=False) # TODO: need to add dropout and maybe projection
+    new_attn = Attention(dim=dim, old_attn=attn,
+                         heads=heads, causal=True,
+                         dropout=attn_dropout, use_triton=False, ) # TODO: need to add dropout and maybe projection
+    block.attn = new_attn
     print("new:", block.attn)
 
 tokenizer = bt.tokenizer()
@@ -302,5 +331,8 @@ reg_output = unchanged_model(input_ids)
 attn_output = model(input_ids)
 attn_decoded_inputs = tokenizer.decode(attn_output[1].argmax(-1)[0])
 reg_decoded_inputs = tokenizer.decode(reg_output[1].argmax(-1)[0])
+
+print("reg: ", reg_output)
+print("attn: ", attn_output)
 # model = FlashNucleus(config)
 pdb.set_trace()
