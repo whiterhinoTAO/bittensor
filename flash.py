@@ -57,6 +57,97 @@ def l2norm_tensors(*tensors, groups = 1):
     tensors = tuple(map(lambda t: t.type(dtype), tensors))
     return tensors
 
+# def FeedForward(
+#     dim, 
+#     mult = 4, 
+#     pre_norm = False,
+#     layer_past: Optional[Tuple[torch.Tensor]] = None,
+#     attention_mask: Optional[torch.FloatTensor] = None,
+#     head_mask: Optional[torch.FloatTensor] = None,
+#     encoder_hidden_states: Optional[torch.Tensor] = None,
+#     encoder_attention_mask: Optional[torch.FloatTensor] = None,
+#     use_cache: Optional[bool] = False,
+#     output_attentions: Optional[bool] = False,
+#     ):
+#     dim_hidden = int(dim * mult)
+#     return nn.Sequential(
+#         nn.LayerNorm(dim) if pre_norm else nn.Identity(),
+#         nn.Linear(dim, dim_hidden, bias = False),
+#         nn.GELU(),
+#         nn.Linear(dim_hidden, dim, bias = False)
+#     )
+    
+
+class Sequential(nn.Module):
+    def __init__(self, *args):
+        super().__init__()
+        self.layers = nn.ModuleList(args)
+
+    def forward(
+        self, 
+        x,
+        layer_past: Optional[Tuple[torch.Tensor]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = False,
+        output_attentions: Optional[bool] = False,
+        ):
+        for layer in self.layers:
+            x = layer(x)
+        return (x, None)
+
+class FeedForward(nn.Module):
+    def __init__(self, dim, mult = 4, pre_norm = False):
+        super().__init__()
+        dim_hidden = int(dim * mult)
+        self.net = nn.Sequential(
+            LayerNorm(dim) if pre_norm else nn.Identity(),
+            nn.Linear(dim, dim_hidden, bias = False),
+            nn.GELU(),
+            nn.Linear(dim_hidden, dim, bias = False)
+        )
+    
+    def forward(
+        self, 
+        x,
+        layer_past: Optional[Tuple[torch.Tensor]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = False,
+        output_attentions: Optional[bool] = False,
+        ):
+        return self.net(x)
+    
+
+class LayerNorm(nn.Module):
+    def __init__(self, dim, eps = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.g = nn.Parameter(torch.ones(dim))
+        self.b = nn.Parameter(torch.zeros(dim))
+
+    def forward(
+        self, 
+        x,
+        layer_past: Optional[Tuple[torch.Tensor]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = False,
+        output_attentions: Optional[bool] = False,
+        ):
+        # pdb.set_trace()
+        # x = x[0]
+        y = F.layer_norm(x, x.shape[-1:], self.g, self.b, self.eps)
+        # y = (y, None)
+        # pdb.set_trace()
+        return y
+
 def plain_cosine_sim_attention(
     q,
     k,
@@ -114,10 +205,11 @@ class Attention(nn.Module):
     def __init__(
         self,
         dim,
-        dim_head = 64,
+        dim_head = 64, # TODO: find out what the dim is from HF config
         heads = 8,
         scale = 8,
         l2norm_groups = 1,
+        singleton = True,
         pre_norm = False,
         use_cuda_kernel = False,
         non_cosine_sim_attn = False,
@@ -126,8 +218,10 @@ class Attention(nn.Module):
         super().__init__()
         inner_dim = dim_head * heads
 
-        self.norm = nn.LayerNorm(dim) if pre_norm else nn.Identity()
+        # self.norm = nn.LayerNorm(dim) if pre_norm else nn.Identity()
+        self.norm = LayerNorm(dim)
 
+        self.singleton = singleton
         self.scale = scale
         self.heads = heads
 
@@ -161,24 +255,52 @@ class Attention(nn.Module):
         o = self.attn_fn(q, k, v, causal = True, scale = scale, groups = l2norm_groups)
 
         o = rearrange(o, 'b h n d -> b n (h d)')
-        return (self.to_out(o), None)
 
+        if self.singleton:
+            return (self.to_out(o), None)
+        else:
+            return self.to_out(o)
+
+        
 config = server.config()
 
-pre_model = server(config=config).pre_model
+unchanged_model = server(config=config)
+model = server(config=config)
+pre_model = model.pre_model
 hidden_states_model = pre_model.transformer
 
-dim = pre_model.config.n_embd
-dim_head = pre_model.config.n_inner if not None else dim 
+
+if 'gpt-neo' in config.neuron.model_name:
+    dim = pre_model.config.hidden_size
+    dim_head = dim
+    heads = pre_model.config.num_heads
+    attn_dropout = pre_model.config.summary_first_dropout
+elif "gpt2" in config.neuron.model_name:
+    dim = pre_model.config.n_embd
+    dim_head = pre_model.config.n_inner if not None else dim 
+    heads = pre_model.config.n_head
+    attn_dropout = pre_model.config.attn_pdrop
+else:
+    raise ValueError("Model name not supported")
 
 for block in hidden_states_model.h:
+    layer = Sequential(
+        Attention(dim=dim, heads=heads, causal=True, dropout=attn_dropout, use_triton=False),
+        # nn.LayerNorm(dim),
+        # FeedForward(dim=dim, pre_norm=False),
+        # nn.LayerNorm(dim)
+    )
     attn = block.attn
     print("old:", attn)
-    block.attn = Attention(dim=dim, heads=pre_model.config.n_head, causal=True, dropout=pre_model.config.attn_pdrop, use_triton=False) # TODO: need to add dropout and maybe projection
+    # block.attn = layer
+    block.attn = Attention(dim=dim, heads=heads, causal=True, dropout=attn_dropout, use_triton=False) # TODO: need to add dropout and maybe projection
     print("new:", block.attn)
 
 tokenizer = bt.tokenizer()
-input_ids = tokenizer.encode('hello my name is', return_tensors='pt')
-output = pre_model(input_ids)
+input_ids = tokenizer.encode('In a shocking finding, scientist discovered a herd of unicorns living in a remote, previously unexplored valley, in the Andes Mountains. Even more surprising to the researchers was the fact that the unicorns spoke perfect English.', return_tensors='pt')
+reg_output = unchanged_model(input_ids)
+attn_output = model(input_ids)
+attn_decoded_inputs = tokenizer.decode(attn_output[1].argmax(-1)[0])
+reg_decoded_inputs = tokenizer.decode(reg_output[1].argmax(-1)[0])
 # model = FlashNucleus(config)
 pdb.set_trace()
