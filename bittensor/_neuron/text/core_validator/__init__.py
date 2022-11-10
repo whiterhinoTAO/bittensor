@@ -531,10 +531,6 @@ class neuron:
 
             # === Logs ===
             if self.config.using_wandb:
-                for uid, vals in self.neuron_stats.items():
-                    for key in vals:  # detailed neuron evaluation fields, e.g. loss, shapley_values, synergy
-                        wandb.log({f'stats/{key}_{uid}': vals[key]}, step=current_block, commit=False)
-
                 wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
                            'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
                            'epoch/time': step_time}, step=current_block, commit=True)
@@ -592,8 +588,6 @@ class neuron:
             wandb_data_dend = self.dendrite.to_wandb()
             wandb_weight = {f'stats/weight_{uid}': weight for uid, weight in zip (sample_uids, sample_weights)}
             wandb_data = { 'stake': self.metagraph.S[ self.uid ].item(), 'dividends': self.metagraph.D[ self.uid ].item() } 
-            wandb.log( { 'stats': wandb.Table( dataframe = df ) }, step = current_block, commit=False)
-            wandb.log( { **wandb_data, **wandb_data_dend, **wandb_weight }, step = current_block, commit=True)
 
         # === Epoch Prometheus ===
         self.prometheus_gauges.labels("epoch").inc()
