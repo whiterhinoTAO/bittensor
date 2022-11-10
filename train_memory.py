@@ -215,6 +215,29 @@ class Nucleus(nn.Module):
         _losses_val, _losses = phrase_cross_entropy(inputs_nxt, query_response, reduce=True)
         return _losses
 
+    def mix_response(self, response_success, normalized_topk_routing_scores):
+        print(normalized_topk_routing_scores[:20])
+        batch_size = response_success[0][0].shape[0]
+        mixed_response = torch.zeros(batch_size, bittensor.__vocab_size__ +1 , 2)
+        all_logits = torch.tensor(list(range(bittensor.__vocab_size__)))
+        mixed_response[:, :-1, 1] = all_logits.repeat(batch_size, 1)
+
+        for r, w in list(zip(response_success, normalized_topk_routing_scores)):
+            response = torch.zeros(batch_size, bittensor.__vocab_size__ +1 , 2)
+
+            for batch in range(batch_size):
+                index = r[0][batch, :-1, 1].long()
+                prob = r[0][batch, :-1, 0] 
+                response[batch, index, 0] = prob
+            
+            mixed_response[:, :-1, 0] += w * response[:, :-1, 0]
+        
+        for batch in range(batch_size):
+            # floor_prob = (1 - sum(mixed_response[batch, :-1, 0])) / (bittensor.__vocab_size__ - 4096)
+            mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
+
+        return mixed_response
+
     def forward(self, uids, inputs, dendrite):
         inputs = inputs.to(self.config.nucleus.device)
         inputs_seq = inputs[..., :-self.config.nucleus.validation_len] 
@@ -247,10 +270,11 @@ class Nucleus(nn.Module):
         successes = [ op.item() == 1 for op in return_ops]
         if sum(successes) == 0:
             stats = {
+                'loss/min': torch.nan,
+                'loss/average': torch.nan,
                 'loss/routing': torch.nan,
-                'loss/gate_baseline': torch.nan,
+                'loss/routing_baseline': torch.nan,
                 'loss/model_baseline': torch.nan,
-                'loss/min_baseline': torch.nan,
                 'stat/receptor_time_avg': torch.nan,
                 'stat/dend_time': dend_forward_time - start_time,
                 'stat/batch_time': time.time() - start_time,
@@ -261,37 +285,28 @@ class Nucleus(nn.Module):
         response_success = [r for r, op in list(zip(responses, return_ops)) if op == 1]
         time_success = [t for t, op in list(zip(times, return_ops)) if op == 1]
         normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
-        response_weighted = sum([ r[0][:, :, :2] * w for r, w in list(zip( response_success, normalized_topk_routing_scores )) ])
-        response_averaged = sum([ r[0][:, :, :2] for r in response_success ]) / sum(successes)
-        
+        mixed_response = self.mix_response(response_success, normalized_topk_routing_scores)
+        averaged_response = self.mix_response(response_success, torch.ones_like(normalized_topk_routing_scores) / len(normalized_topk_routing_scores))
+
         # Compute loss.
-        loss = self.cal_loss(inputs, response_weighted, self.config.nucleus.validation_len)
-        loss_gate_baseline = self.cal_loss(inputs, response_averaged, self.config.nucleus.validation_len)
+        loss_routing = self.cal_loss(inputs, mixed_response, self.config.nucleus.validation_len)
+        loss_routing_baseline = self.cal_loss(inputs, averaged_response, self.config.nucleus.validation_len)
         loss_model_baseline = self.cal_loss(inputs, response_baseline, self.config.nucleus.validation_len)
         losses = torch.tensor([self.cal_loss(inputs, r[0][:, :, :2], self.config.nucleus.validation_len) for r in response_success])
         loss_min = min(losses)
         
-        print(losses)
-
-        # losses_sorted = losses.sort()
-        # best_loss = losses_sorted[0]
-        # best_loss_uid = losses_sorted[1]
         
         stats = {
-            'loss/routing': loss,
-            'loss/gate_baseline': loss_gate_baseline,
+            'loss/min': loss_min,
+            'loss/average': sum(losses) / len(losses),
+            'loss/routing': loss_routing,
+            'loss/routing_baseline': loss_routing_baseline,
             'loss/model_baseline': loss_model_baseline,
-            'loss/min_baseline': loss_min,
             'stat/receptor_time_avg': sum(time_success) / sum(successes),
             'stat/dend_time': dend_forward_time - start_time,
             'stat/batch_time': time.time() - start_time,
             'stat/qps': qps,
         }
-
-        # for i in range(1, 6):
-        #     response_best_mixed = sum([ responses[uid][0] / i for uid in best_loss_uid[:i]])
-        #     loss_best_combinded = self.cal_loss(inputs, response_best_mixed)
-        #     stats[f'loss/combinded_{i}rep'] = loss_best_combinded
 
         print(stats)
         
@@ -368,7 +383,7 @@ avg_loss_history = []
 def step(idx, uids):
     inputs = next(dataset)
     stats, success, scores = model( uids, inputs, dendrite )
-    if stats['loss/routing'] == stats['loss/routing']: #true if not nan 
+    if stats['loss/routing'] == stats['loss/routing'] and stats['loss/routing'] < 8: #true if not nan 
         stats['loss/routing'].backward()
     success_results.append(success)
     scores_history.append(scores.detach())
