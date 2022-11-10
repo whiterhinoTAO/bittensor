@@ -218,25 +218,30 @@ class Nucleus(nn.Module):
     def mix_response(self, response_success, normalized_topk_routing_scores):
         print(normalized_topk_routing_scores[:20])
         batch_size = response_success[0][0].shape[0]
-        mixed_response = torch.zeros(batch_size, bittensor.__vocab_size__ +1 , 2)
+        topk =  response_success[0][0].shape[1]
+        mixed_response = torch.zeros(batch_size, bittensor.__vocab_size__  , 2)
         all_logits = torch.tensor(list(range(bittensor.__vocab_size__)))
-        mixed_response[:, :-1, 1] = all_logits.repeat(batch_size, 1)
+        mixed_response[:, :, 1] = all_logits.repeat(batch_size, 1)
 
         for r, w in list(zip(response_success, normalized_topk_routing_scores)):
             response = torch.zeros(batch_size, bittensor.__vocab_size__ +1 , 2)
 
             for batch in range(batch_size):
-                index = r[0][batch, :-1, 1].long()
-                prob = r[0][batch, :-1, 0] 
+                index = r[0][batch, :, 1].long()
+                prob = r[0][batch, :, 0] 
                 response[batch, index, 0] = prob
             
-            mixed_response[:, :-1, 0] += w * response[:, :-1, 0]
+            mixed_response[:, :, 0] += w * response[:, :-1, 0]
         
-        for batch in range(batch_size):
-            # floor_prob = (1 - sum(mixed_response[batch, :-1, 0])) / (bittensor.__vocab_size__ - 4096)
-            mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
 
-        return mixed_response
+        reduced_mixed_response = torch.zeros(batch_size, topk + 1  , 2)
+        for batch in range(batch_size):
+            mixed_batch = mixed_response[batch, :, :][mixed_response[batch, :, 0].sort(descending=True)[1]][:topk, :]
+            floor_prob = (1 - sum(mixed_batch[:, 0])) / (bittensor.__vocab_size__ - topk)
+            reduced_mixed_response[batch, :-1, :] = mixed_batch
+            reduced_mixed_response[batch, -1, :] = torch.tensor([[floor_prob, -1]])
+
+        return reduced_mixed_response
 
     def forward(self, uids, inputs, dendrite):
         inputs = inputs.to(self.config.nucleus.device)
@@ -307,8 +312,6 @@ class Nucleus(nn.Module):
             'stat/batch_time': time.time() - start_time,
             'stat/qps': qps,
         }
-
-        print(stats)
         
         # Return.
         return stats, successes, routing_score
@@ -385,6 +388,7 @@ def step(idx, uids):
     stats, success, scores = model( uids, inputs, dendrite )
     if stats['loss/routing'] == stats['loss/routing'] and stats['loss/routing'] < 8: #true if not nan 
         stats['loss/routing'].backward()
+        print('backward!')
     success_results.append(success)
     scores_history.append(scores.detach())
     return stats, success
