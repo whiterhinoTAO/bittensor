@@ -148,64 +148,12 @@ class LayerNorm(nn.Module):
         # pdb.set_trace()
         return y
 
-def plain_cosine_sim_attention(
-    q,
-    k,
-    v,
-    mask = None,
-    attn_bias = None,
-    scale = 8,
-    groups = 1,
-    causal = False,
-    l2norm_qk = True,
-    attn_bias_batch_dim = False
-
-):
-    assert not (causal and exists(mask)), 'mask should not be supplied if causality is needed'
-
-    is_merged_batch_heads_query = q.ndim == 3
-    single_head_kv = k.ndim == 3
-
-    if is_merged_batch_heads_query:
-        assert k.ndim == 3 and v.ndim ==3, 'if batch and heads are merged for queries, keys and values must also similarly have only 3 dimensions'
-
-        attn_bias_batch_dim = True
-        q = q[:, None, ...]
-
-    if l2norm_qk:
-        q, k = l2norm_tensors(q, k, groups = groups)
-
-    kv_einsum_eq = 'b j d' if single_head_kv else 'b h j d'
-    sim = einsum(f'b h i d, {kv_einsum_eq} -> b h i j', q, k)
-    sim = sim * scale
-
-    if exists(attn_bias):
-        attn_bias = attn_bias.unsqueeze(1 if attn_bias_batch_dim else 0)
-        sim = sim + attn_bias
-
-    mask_value = -torch.finfo(sim.dtype).max
-
-    if causal:
-        i, j = sim.shape[-2:]
-        causal_mask = torch.ones((i, j), device = q.device, dtype = torch.bool).triu(j - i + 1)
-        sim = sim.masked_fill(causal_mask, mask_value)
-
-    if exists(mask):
-        sim = sim.masked_fill(~mask[:, None, None, :], mask_value)
-
-    attn = sim.softmax(dim = -1)
-    out = einsum(f'b h i j, {kv_einsum_eq} -> b h i d', attn, v)
-
-    if is_merged_batch_heads_query:
-        out = out.squeeze(1)
-
-    return out
-
 
 class Attention(nn.Module):
     def __init__(
         self,
         dim,
+        max_positions=1024,
         old_attn=None,
         dim_head = 64, # TODO: find out what the dim is from HF config
         heads = 8,
@@ -221,7 +169,14 @@ class Attention(nn.Module):
         inner_dim = dim_head * heads
 
         # self.norm = nn.LayerNorm(dim) if pre_norm else nn.Identity()
-        self.norm = LayerNorm(dim)
+        # self.norm = LayerNorm(dim)
+        self.register_buffer(
+            "bias",
+            torch.tril(torch.ones((max_positions, max_positions), dtype=torch.uint8)).view(
+                1, 1, max_positions, max_positions
+            ),
+        )
+        self.register_buffer("masked_bias", torch.tensor(-1e4))
 
         self.singleton = singleton
         self.scale = scale
@@ -234,13 +189,69 @@ class Attention(nn.Module):
         self.split_size = old_attn.split_size
         self.num_heads = old_attn.num_heads
         self.head_dim = old_attn.head_dim
-        self.attn_fn = plain_cosine_sim_attention
 
 
-        self.to_q = nn.Linear(dim, inner_dim, bias = False)
-        self.to_k = nn.Linear(dim, inner_dim, bias = False)
-        self.to_v = nn.Linear(dim, inner_dim, bias = False)
-        self.to_out = nn.Linear(inner_dim, dim, bias = False)
+        # self.to_q = nn.Linear(dim, inner_dim, bias = False)
+        # self.to_k = nn.Linear(dim, inner_dim, bias = False)
+        # self.to_v = nn.Linear(dim, inner_dim, bias = False)
+        # self.to_out = nn.Linear(inner_dim, dim, bias = False)
+        self.attn_dropout = nn.Dropout(0.1) # TODO: change this from 0.1 to config.attn_pdrop that works with any kodel
+        self.resid_dropout = nn.Dropout(0.1) #TODO: change this from 0.1 to config.resid_pdrop that works with any kodel
+
+    def _attn(
+        self,
+        q,
+        k,
+        v,
+        mask = None,
+        attn_bias = None,
+        scale = 8,
+        groups = 1,
+        causal = False,
+        l2norm_qk = True,
+        attn_bias_batch_dim = False
+    ):
+
+        assert not (causal and exists(mask)), 'mask should not be supplied if causality is needed'
+
+        is_merged_batch_heads_query = q.ndim == 3
+        single_head_kv = k.ndim == 3
+
+        if is_merged_batch_heads_query:
+            assert k.ndim == 3 and v.ndim ==3, 'if batch and heads are merged for queries, keys and values must also similarly have only 3 dimensions'
+
+            attn_bias_batch_dim = True
+            q = q[:, None, ...]
+
+        if l2norm_qk:
+            q, k = l2norm_tensors(q, k, groups = groups)
+
+        kv_einsum_eq = 'b j d' if single_head_kv else 'b h j d'
+        sim = einsum(f'b h i d, {kv_einsum_eq} -> b h i j', q, k)
+        sim = sim * scale
+
+        if exists(attn_bias):
+            attn_bias = attn_bias.unsqueeze(1 if attn_bias_batch_dim else 0)
+            sim = sim + attn_bias
+
+        mask_value = -torch.finfo(sim.dtype).max
+
+        if causal:
+            i, j = sim.shape[-2:]
+            causal_mask = torch.ones((i, j), device = q.device, dtype = torch.bool).triu(j - i + 1)
+            sim = sim.masked_fill(causal_mask, mask_value)
+
+        if exists(mask):
+            sim = sim.masked_fill(~mask[:, None, None, :], mask_value)
+
+        attn = sim.softmax(dim = -1)
+        attn = self.attn_dropout(attn)
+        out = einsum(f'b h i j, {kv_einsum_eq} -> b h i d', attn, v)
+
+        if is_merged_batch_heads_query:
+            out = out.squeeze(1)
+
+        return out
 
     def _split_heads(self, tensor, num_heads, attn_head_size):
         """
@@ -249,6 +260,14 @@ class Attention(nn.Module):
         new_shape = tensor.size()[:-1] + (num_heads, attn_head_size)
         tensor = tensor.view(*new_shape)
         return tensor.permute(0, 2, 1, 3)  # (batch, head, seq_length, head_features)
+
+    def _merge_heads(self, tensor, num_heads, attn_head_size):
+        """
+        Merges attn_head_size dim and num_attn_heads dim into hidden_size
+        """
+        tensor = tensor.permute(0, 2, 1, 3).contiguous()
+        new_shape = tensor.size()[:-2] + (num_heads * attn_head_size,)
+        return tensor.view(new_shape)
 
     def forward(
         self, 
@@ -263,9 +282,9 @@ class Attention(nn.Module):
         ):
         h, scale, l2norm_groups = self.heads, self.scale, self.l2norm_groups
 
-        x = self.norm(x)
+        # x = self.norm(x)
 
-        q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)
+        # q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)
 
         query, key, value = self.c_attn(x).split(self.split_size, dim=2)
 
@@ -273,17 +292,32 @@ class Attention(nn.Module):
         key = self._split_heads(key, self.num_heads, self.head_dim)
         value = self._split_heads(value, self.num_heads, self.head_dim)
 
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
+        # q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
 
-        o = self.attn_fn(query, key, value, causal = True, scale = scale, groups = l2norm_groups)
+        o = self._attn(query, key, value, causal = True, scale = scale, groups = l2norm_groups)
 
         o = rearrange(o, 'b h n d -> b n (h d)')
+
+        # self._merge_heads(o, self.num_heads, self.head_dim)
         o = self.c_proj(o)
+        o = self.resid_dropout(o)
+        # pdb.set_trace()
 
         if self.singleton:
-            return (self.to_out(o), None)
+            o = (o, None)
         else:
-            return self.to_out(o)
+            return o
+        
+
+        # dropout layer for attention
+        # o = self.attn_drop(o)
+
+
+        # if self.singleton:
+        #     return (self.to_out(o), None)
+        # else:
+        #     return self.to_out(o)
+            
 
         
 config = server.config()
@@ -298,12 +332,14 @@ if 'gpt-neo' in config.neuron.model_name:
     dim = pre_model.config.hidden_size
     dim_head = dim
     heads = pre_model.config.num_heads
+    max_positions = pre_model.config.max_position_embeddings
     attn_dropout = pre_model.config.summary_first_dropout
 elif "gpt2" in config.neuron.model_name:
     dim = pre_model.config.n_embd
     dim_head = pre_model.config.n_inner if not None else dim 
     heads = pre_model.config.n_head
     attn_dropout = pre_model.config.attn_pdrop
+    max_positions = pre_model.config.n_positions
 else:
     raise ValueError("Model name not supported")
 
@@ -321,8 +357,11 @@ for idx, block in enumerate(hidden_states_model.h):
     # block.attn = layer
     new_attn = Attention(dim=dim, old_attn=attn,
                          heads=heads, causal=True,
-                         dropout=attn_dropout, use_triton=False, ) # TODO: need to add dropout and maybe projection
-    block.attn = new_attn
+                         dropout=attn_dropout, use_triton=False,
+                         max_positions=max_positions ) # TODO: need to add dropout and maybe projection
+    old_state_dict = attn.state_dict()
+    # pdb.set_trace()
+    block.attn = new_attn.load_state_dict(old_state_dict, strict=False)
     print("new:", block.attn)
 
 tokenizer = bt.tokenizer()
