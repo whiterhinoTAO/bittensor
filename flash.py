@@ -1,6 +1,8 @@
+from time import time
 import torch
 from torch import nn, einsum
 from torch.nn import functional as F
+from tqdm import tqdm
 
 import math
 from functools import partial, wraps
@@ -305,9 +307,7 @@ class Attention(nn.Module):
 
         if self.singleton:
             o = (o, None)
-        else:
-            return o
-        
+        return o
 
         # dropout layer for attention
         # o = self.attn_drop(o)
@@ -361,13 +361,27 @@ for idx, block in enumerate(hidden_states_model.h):
                          max_positions=max_positions ) # TODO: need to add dropout and maybe projection
     old_state_dict = attn.state_dict()
     # pdb.set_trace()
-    block.attn = new_attn.load_state_dict(old_state_dict, strict=False)
+    new_attn.load_state_dict(old_state_dict, strict=False)
+    block_attn = new_attn
     print("new:", block.attn)
 
+
+runs = 100
 tokenizer = bt.tokenizer()
 input_ids = tokenizer.encode('In a shocking finding, scientist discovered a herd of unicorns living in a remote, previously unexplored valley, in the Andes Mountains. Even more surprising to the researchers was the fact that the unicorns spoke perfect English.', return_tensors='pt')
-reg_output = unchanged_model(input_ids)
-attn_output = model(input_ids)
+
+t = time()
+for _ in tqdm(range(runs), desc="reg"):
+    reg_output = unchanged_model(input_ids)
+t_reg = time() - t
+
+for _ in tqdm(range(runs), desc="flash"):
+    attn_output = model(input_ids)
+t_attn = time() - t
+
+print(f"Reg time: {t_reg/runs:3f}")
+print(f"Attn time: {t_attn/runs:3f}")
+
 attn_decoded_inputs = tokenizer.decode(attn_output[1].argmax(-1)[0])
 reg_decoded_inputs = tokenizer.decode(reg_output[1].argmax(-1)[0])
 
