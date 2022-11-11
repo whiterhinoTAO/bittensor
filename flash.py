@@ -375,6 +375,7 @@ for _ in tqdm(range(runs), desc="reg"):
     reg_output = unchanged_model(input_ids)
 t_reg = time() - t
 
+t = time()
 for _ in tqdm(range(runs), desc="flash"):
     attn_output = model(input_ids)
 t_attn = time() - t
