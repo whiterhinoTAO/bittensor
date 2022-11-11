@@ -16,7 +16,6 @@ from torch.nn.utils import clip_grad_norm_
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from bittensor._neuron.text.neuron_utilities import ThreadQueue, PositionalEncoding, calc_loss_fct
 from rich.traceback import install
-from memory_profiler import profile
 import pdb
 from bittensor._neuron.text.core_server.nucleus_impl import server
 from bittensor.utils.tokenizer_utils import phrase_cross_entropy
@@ -216,32 +215,36 @@ class Nucleus(nn.Module):
         return _losses
 
     def mix_response(self, response_success, normalized_topk_routing_scores):
-        print(normalized_topk_routing_scores[:20])
         batch_size = response_success[0][0].shape[0]
-        topk =  response_success[0][0].shape[1]
-        mixed_response = torch.zeros(batch_size, bittensor.__vocab_size__  , 2)
+        topk =  response_success[0][0].shape[1] - 1
+        mixed_response = torch.zeros(batch_size, bittensor.__vocab_size__ + 1  , 2)
         all_logits = torch.tensor(list(range(bittensor.__vocab_size__)))
-        mixed_response[:, :, 1] = all_logits.repeat(batch_size, 1)
+        mixed_response[:, : -1, 1] = all_logits.repeat(batch_size, 1)
 
         for r, w in list(zip(response_success, normalized_topk_routing_scores)):
-            response = torch.zeros(batch_size, bittensor.__vocab_size__ +1 , 2)
+            response = torch.zeros(batch_size, bittensor.__vocab_size__ , 2)
 
-            for batch in range(batch_size):
-                index = r[0][batch, :, 1].long()
-                prob = r[0][batch, :, 0] 
-                response[batch, index, 0] = prob
+            org = r[0][0, : -1, :]
             
-            mixed_response[:, :, 0] += w * response[:, :-1, 0]
-        
+            for batch in range(batch_size):
+                index = r[0][batch, : -1, 1].long()
+                prob = r[0][batch, : -1, 0] 
+                response[batch, :, 0] = response[batch, :, 0].index_add_(0, index, prob)
+                    
+            mixed_response_pre = mixed_response[0, :-1, :2].clone()
+            mixed_response[:, :-1, 0] += w * response[:, :, 0]
 
-        reduced_mixed_response = torch.zeros(batch_size, topk + 1  , 2)
+            mixed_response_pre = mixed_response[0, :-1, :2].clone()
+
+        # reduced_mixed_response = torch.zeros(batch_size, topk + 1  , 2)
         for batch in range(batch_size):
-            mixed_batch = mixed_response[batch, :, :][mixed_response[batch, :, 0].sort(descending=True)[1]][:topk, :]
-            floor_prob = (1 - sum(mixed_batch[:, 0])) / (bittensor.__vocab_size__ - topk)
-            reduced_mixed_response[batch, :-1, :] = mixed_batch
-            reduced_mixed_response[batch, -1, :] = torch.tensor([[floor_prob, -1]])
+            # mixed_batch = mixed_response[batch, :, :][mixed_response[batch, :, 0].sort(descending=True)[1]][:topk, :]
+            # floor_prob = (1 - sum(mixed_batch[:, 0])) / (bittensor.__vocab_size__ - topk)
+            # reduced_mixed_response[batch, :-1, :] = mixed_batch
+            mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
 
-        return reduced_mixed_response
+        # return reduced_mixed_response
+        return mixed_response
 
     def forward(self, uids, inputs, dendrite):
         inputs = inputs.to(self.config.nucleus.device)
@@ -290,10 +293,13 @@ class Nucleus(nn.Module):
         response_success = [r for r, op in list(zip(responses, return_ops)) if op == 1]
         time_success = [t for t, op in list(zip(times, return_ops)) if op == 1]
         normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
+        zero_response = self.mix_response([response_success[0]], torch.tensor([1]))
         mixed_response = self.mix_response(response_success, normalized_topk_routing_scores)
         averaged_response = self.mix_response(response_success, torch.ones_like(normalized_topk_routing_scores) / len(normalized_topk_routing_scores))
 
         # Compute loss.
+        loss_zero = self.cal_loss(inputs, zero_response, self.config.nucleus.validation_len)
+        loss_zero_org = self.cal_loss(inputs, response_success[0][0][:, : , :2], self.config.nucleus.validation_len)
         loss_routing = self.cal_loss(inputs, mixed_response, self.config.nucleus.validation_len)
         loss_routing_baseline = self.cal_loss(inputs, averaged_response, self.config.nucleus.validation_len)
         loss_model_baseline = self.cal_loss(inputs, response_baseline, self.config.nucleus.validation_len)
@@ -302,6 +308,8 @@ class Nucleus(nn.Module):
         
         
         stats = {
+            'loss/zero': loss_zero,
+            'loss/zero_org': loss_zero_org,
             'loss/min': loss_min,
             'loss/average': sum(losses) / len(losses),
             'loss/routing': loss_routing,
@@ -398,7 +406,7 @@ if config.use_wandb:
     bittensor.wandb(config = config)
 
 avg_loss_history = []
-perm_uids = torch.randperm(graph.n)
+target_uids = graph.I.sort(descending = True)[1][:config.nucleus.n_queried]
 with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
     step_chunks = list( chunks( list(range(config.n_steps)), config.chunk_size ) )
     for ci, chunk in enumerate( step_chunks ):
@@ -407,11 +415,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         chunk_futures = []
         chunk_results = []
         for i in chunk:
-            if len(perm_uids) < config.nucleus.n_queried:
-                perm_uids = torch.randperm(graph.n)
-
-            chunk_futures.append(executor.submit(step, i, perm_uids[:config.nucleus.n_queried]))
-            perm_uids = perm_uids[config.nucleus.n_queried : ]
+            chunk_futures.append(executor.submit(step, i, target_uids))
 
         for future in concurrent.futures.as_completed(chunk_futures):
             chunk_results.append( future.result() )
@@ -443,7 +447,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         # losses_best_combinded = [l[0]['best_combinded'].item() for l in chunk_results]
         
         successes = [ sum(l[1]) / len(l[1]) for l in chunk_results]
-        avg_loss_history.append( stats['loss/routing'] )
+        # avg_loss_history.append( stats['loss/routing'] )
+        avg_loss_history.append( 0 )
         print ('step:', ci+1, '/', len(step_chunks), '\tavg loss:', avg_loss_history[-1] )
 
         # average scores
