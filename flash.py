@@ -362,13 +362,17 @@ for idx, block in enumerate(hidden_states_model.h):
     old_state_dict = attn.state_dict()
     # pdb.set_trace()
     new_attn.load_state_dict(old_state_dict, strict=False)
-    block_attn = new_attn
+    block.attn = new_attn
     print("new:", block.attn)
 
 
 runs = 100
 tokenizer = bt.tokenizer()
 input_ids = tokenizer.encode('In a shocking finding, scientist discovered a herd of unicorns living in a remote, previously unexplored valley, in the Andes Mountains. Even more surprising to the researchers was the fact that the unicorns spoke perfect English.', return_tensors='pt')
+
+input_ids = input_ids.to(model.device)
+model.pre_model = model.pre_model.to(model.device)
+unchanged_model.pre_model = unchanged_model.pre_model.to(model.device)
 
 t = time()
 for _ in tqdm(range(runs), desc="reg"):
