@@ -31,7 +31,8 @@ nest_asyncio.apply()
 ##########################
 
 
-class Dataset():
+
+class Dataset:
     """ Implementation for the dataset class, which handles dataloading from ipfs
     """
 

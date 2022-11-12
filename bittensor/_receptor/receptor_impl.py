@@ -154,21 +154,26 @@ class Receptor(nn.Module):
                 synapses (:obj:`List[ 'bittensor.Synapse' ]` of shape :obj:`(num_synapses)`, `required`):
                     Bittensor synapse objects with arguments. Each corresponds to a synapse function on the axon.
                     Responses are packed in this ordering. 
+
                 inputs (:obj:`torch.Tensor` of shape :obj:`(shape)`, `required`):
                     Single torch tensor to be sent to the remote endpoint.
                     TODO(const): Make this a multi-forward tensor.
+
                 timeout (:obj:`int`, `required`):
                     Request max timeout
             Returns:
                 outputs (:obj:`List[ Union[torch.FloatTensor, torch.LongTensor] ]`, `required`):
                     outputs.shape = [batch_size, synapse_length, response] 
                     List of result tensors from the forward call each corresponding to a passed synapse enum.
+
                 codes (:obj:`bittensor.proto.ReturnCode`, `required`):
                     List of return codes associated with each passed synapse enum.
                     Connection failures return all the same code, otherwise a unique code per synapse. 
+
                 times (:obj:`float`, `required`):
                     List of times for each call associated with each passed synapse enum. 
                     Success responses all get the same time.
+
         """
         loop = asyncio.get_event_loop()
         return loop.run_until_complete( self.async_forward ( synapses = synapses,inputs = inputs, timeout = timeout ) )
@@ -239,6 +244,44 @@ class Receptor(nn.Module):
                 times (:obj:`float`, `required`):
                     List of times for each call associated with each passed synapse enum. 
                     Success responses all get the same time.
+        """
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete ( self.async_backward ( synapses = synapses, inputs = inputs, grads = grads, timeout = timeout ) )
+
+    async def async_forward (
+        self, 
+        synapses: List[ 'bittensor.Synapse' ],
+        inputs: torch.Tensor, 
+        timeout: int,
+    ) -> Tuple[ List[ torch.FloatTensor ], List['bittensor.proto.ReturnCode'], List[float] ]:
+        r""" Triggers the grpc call to the remote endpoint.
+            This triggers the synapse calls with arguments.
+            Call returns a list of output tensors one per synapse with corresponding time and bittensor.proto.ReturnCode.
+
+            Args:
+                synapses (:obj:`List[ 'bittensor.Synapse' ]` of shape :obj:`(num_synapses)`, `required`):
+                    Bittensor synapse objects with arguments. Each corresponds to a synapse function on the axon.
+                    Responses are packed in this ordering. 
+
+                inputs (:obj:`torch.Tensor` of shape :obj:`(shape)`, `required`):
+                    Single torch tensor to be sent to the remote endpoint.
+                    TODO(const): Make this a multi-forward tensor.
+
+                timeout (:obj:`int`, `required`):
+                    Request max timeout
+            Returns:
+                outputs (:obj:`List[ Union[torch.FloatTensor, torch.LongTensor] ]`, `required`):
+                    outputs.shape = [batch_size, synapse_length, response] 
+                    List of result tensors from the forward call each corresponding to a passed synapse enum.
+
+                codes (:obj:`bittensor.proto.ReturnCode`, `required`):
+                    List of return codes associated with each passed synapse enum.
+                    Connection failures return all the same code, otherwise a unique code per synapse. 
+
+                times (:obj:`float`, `required`):
+                    List of times for each call associated with each passed synapse enum. 
+                    Success responses all get the same time.
+
         """
         # =====================
         # ==== Init params ====        
@@ -638,9 +681,7 @@ class Receptor(nn.Module):
                     ('bittensor-version',str(bittensor.__version_as_int__)),
                     ('request_type', str(bittensor.proto.RequestType.FORWARD)),
                 ))
-            # Wait for essentially no time this allows us to get UnAuth errors to pass through.
-            await asyncio.wait_for( asyncio_future, timeout = 0.1 )
-
+            asyncio_future.cancel()
 
         # ====================================
         # ==== Handle GRPC Errors ====
@@ -704,3 +745,9 @@ class Receptor(nn.Module):
         finalize_stats_and_logs()
         return synapse_responses, synapse_codes, synapse_call_times            
             
+
+        
+
+
+
+        

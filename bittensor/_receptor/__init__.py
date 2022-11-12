@@ -76,6 +76,7 @@ class receptor:
 
         
 
+<<<<<<< HEAD
 # class receptor_pool:
 #     """ Create and init the receptor_pool object, which manage a pool of grpc connections 
 #     """
@@ -99,3 +100,26 @@ class receptor:
 #         )
 
 receptor_pool = receptor_pool_impl.ReceptorPool
+=======
+class receptor_pool:
+    """ Create and init the receptor_pool object, which manage a pool of grpc connections 
+    """
+    def __new__( 
+            cls, 
+            wallet: 'bittensor.Wallet',
+            max_active_receptors: int = 4096,
+            compression: str = None,
+        ) -> 'bittensor.ReceptorPool':
+        r""" Initializes a receptor grpc connection.
+            Args:
+                wallet (:obj:`bittensor.Wallet`, `required`):
+                    bittensor wallet with hotkey and coldkeypub.
+                max_active_receptors (:type:`int`, `optional`):
+                    Maximum allowed active allocated TCP connections.
+        """        
+        return bittensor.ReceptorPool ( 
+            wallet = wallet,
+            max_active_receptors = max_active_receptors,
+            compression = compression
+        )
+>>>>>>> nobunaga
