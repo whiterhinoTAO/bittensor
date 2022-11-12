@@ -40,13 +40,19 @@ class dataset:
     def __new__(
             cls,
             config: 'bittensor.config' = None,
-            block_size: int = None,
+            block_size: int = 1000,
             batch_size: int = None,
             num_workers: int = None,
-            dataset_name: list = [],
-            save_dataset: bool=None,
-            no_tokenizer: bool=None,
+            dataset_name: list = ['ArXiv'],
+            max_datasets: int = None,
+            save_dataset: bool = False,
+            sequence_length: int = 128,
+            load_dataset: bool = False,
+            no_tokenizer: bool = None,
             num_batches: int = None,
+            run_generator: bool = False,
+            cache_size: int = 5, 
+            cache_calls_per_block: int = 100,
             _mock:bool=None
         ):
         r""" Create and init the GenesisTextDataset class, which handles dataloading from ipfs.
@@ -76,11 +82,19 @@ class dataset:
         config = copy.deepcopy( config )
         config.dataset.block_size = block_size if block_size != None else config.dataset.block_size
         config.dataset.batch_size = batch_size if batch_size != None else config.dataset.batch_size
+        config.dataset.sequence_length = sequence_length if sequence_length != None else config.dataset.sequence_length
         config.dataset.num_workers = num_workers if num_workers != None else config.dataset.num_workers
         config.dataset.dataset_name = dataset_name if dataset_name != [] else config.dataset.dataset_name
+        config.dataset.max_datasets = max_datasets if max_datasets != [] else config.dataset.max_datasets
         config.dataset.save_dataset = save_dataset if save_dataset != None else config.dataset.save_dataset
+        config.dataset.load_dataset = load_dataset if load_dataset != None else config.dataset.load_dataset
+        config.dataset.run_generator = run_generator if run_generator != None else config.dataset.run_generator
         config.dataset.no_tokenizer = no_tokenizer if no_tokenizer != None else config.dataset.no_tokenizer
         config.dataset.num_batches = num_batches if num_batches != None else config.dataset.num_batches
+        config.dataset.cache_size = cache_size if cache_size != None else config.dataset.cache_size
+        config.dataset.cache_calls_per_block = cache_calls_per_block if cache_calls_per_block != None else config.dataset.cache_calls_per_block
+
+
         config.dataset._mock = _mock if _mock != None else config.dataset._mock
         dataset.check_config( config )
         if config.dataset._mock:
@@ -97,16 +111,20 @@ class dataset:
                 max_directories = config.dataset.max_directories
             )
         else:
+
             return dataset_impl.GenesisTextDataset(
                 block_size = config.dataset.block_size,
                 batch_size = config.dataset.batch_size,
                 num_workers = config.dataset.num_workers,
-                dataset_name = config.dataset.dataset_name,
+                datasets = config.dataset.dataset_name,
                 data_dir = config.dataset.data_dir,
                 save_dataset = config.dataset.save_dataset,
+                load_dataset = config.dataset.load_dataset,
                 max_datasets = config.dataset.max_datasets,
+                sequence_length = config.dataset.sequence_length,
                 no_tokenizer = config.dataset.no_tokenizer,
                 num_batches = config.dataset.num_batches,
+                run_generator = config.dataset.run_generator,
                 max_directories = config.dataset.max_directories
             )
 
@@ -164,7 +182,7 @@ class dataset:
         defaults.dataset.block_size = os.getenv('BT_DATASET_BLOCK_SIZE') if os.getenv('BT_DATASET_BLOCK_SIZE') != None else 20
         defaults.dataset.num_workers = os.getenv('BT_DATASET_NUM_WORKERS') if os.getenv('BT_DATASET_NUM_WORKERS') != None else 0
         defaults.dataset.dataset_name = os.getenv('BT_DATASET_DATASET_NAME') if os.getenv('BT_DATASET_DATASET_NAME') != None else 'default'
-        defaults.dataset.data_dir = os.getenv('BT_DATASET_DATADIR') if os.getenv('BT_DATASET_DATADIR') != None else '~/.bittensor/data/'
+        defaults.dataset.data_dir = os.getenv('BT_DATASET_DATADIR') if os.getenv('BT_DATASET_DATADIR') != None else os.path.expanduser('~/./bittensor/data')
         defaults.dataset.save_dataset = os.getenv('BT_DATASET_SAVE_DATASET') if os.getenv('BT_DATASET_SAVE_DATASET') != None else False
         defaults.dataset.max_datasets = os.getenv('BT_DATASET_MAX_DATASETS') if os.getenv('BT_DATASET_MAX_DATASETS') != None else 3
         defaults.dataset.num_batches = os.getenv('BT_DATASET_NUM_BATCHES') if os.getenv('BT_DATASET_NUM_BATCHES') != None else 500

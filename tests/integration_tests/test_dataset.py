@@ -25,6 +25,47 @@ def test_construct_text_corpus():
     dataset.construct_text_corpus()
     dataset.close()
 
+def test_change_data_size():
+    data_sizes = [(10,1000), (15, 2000),(30, 3000), (25,4000)]
+    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name, run_generator=False, no_tokenizer=False)
+    for data_size in data_sizes:
+        dataset.set_data_size(*data_size)
+        sample_dict = next(dataset)
+        for k,v in sample_dict.items():
+            v.shape[0] == data_size[0]
+        
+    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name, run_generator=False, no_tokenizer=True)
+
+    for data_size in data_sizes:
+        raw_text_sample = next(dataset)
+        len(raw_text_sample)  == data_size[1]
+    
+    dataset.close() 
+
+
+def test_text_dataset():
+    batch_size = 10
+    block_size = 128
+    num_batches = 5
+    epoch_length = 5
+
+    dataset = bittensor.dataset (
+        _mock = True,
+        batch_size = batch_size, 
+        block_size = block_size,
+        num_batches = num_batches
+    )
+    
+    dataloader = dataset.dataloader(epoch_length)
+
+    assert len(dataloader) == epoch_length
+    assert len(dataloader) != len(dataset)
+    assert len(dataset[0]) == block_size
+    assert len(dataloader.dataset) == batch_size * epoch_length
+    
+    dataset.close()
+
+
 def test_next():
     dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name)
     next(dataset)
@@ -52,41 +93,6 @@ def test_fail_IPFS_server():
     next(dataset)
     next(dataset)
     next(dataset)
-    dataset.close()
-
-def test_change_data_size():
-    data_sizes = [(10,20), (15.5, 20.5),(30, 40), (25,35)]
-    result_data_sizes = [(10,20), (10,20),(30, 40), (25,35)]
-    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name)
-    for data_size, result_data_size in zip(data_sizes, result_data_sizes):
-        dataset.set_data_size(*data_size)
-        assert next(dataset).size() == result_data_size
-        assert next(dataset).size() == result_data_size
-        assert next(dataset).size() == result_data_size
-        assert next(dataset).size() == result_data_size
-    
-    dataset.close() 
-
-def test_text_dataset():
-    batch_size = 20
-    block_size = 128
-    num_batches = 10
-    epoch_length = 10
-
-    dataset = bittensor.dataset (
-        _mock = True,
-        batch_size = batch_size, 
-        block_size = block_size,
-        num_batches = num_batches
-    )
-    
-    dataloader = dataset.dataloader(epoch_length)
-
-    assert len(dataloader) == epoch_length
-    assert len(dataloader) != len(dataset)
-    assert len(dataset[0]) == block_size
-    assert len(dataloader.dataset) == batch_size * epoch_length
-    
     dataset.close()
 
 if __name__ == "__main__":
