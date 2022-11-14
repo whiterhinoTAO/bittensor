@@ -866,7 +866,7 @@ def unravel_topk_token_phrases(compact_topk: torch.Tensor, topk: int, ignore_ind
                  [...]]
     """
 
-    atol = 1e-8  # default absolute tolerance (torch.allclose)
+    atol = 1e-3  # absolute tolerance
 
     # Find probability markers (per batch item: topk phrase probabilities + floor_prob)
     prob_idx = torch.where((-atol < compact_topk) & (compact_topk < 1 + atol))[0]  # 0 <= prob <= 1 [batch_size * (topk + 1)], expect token_ids >= 2
