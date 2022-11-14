@@ -98,6 +98,7 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         # The first axon is created with a null suffix and subsequent values are ordered like so: axon_is_started, axon_is_started_1, axon_is_started_2 etc...
 
         if self.prometheus_level != bittensor.prometheus.level.OFF.name:
+            
             registry = CollectorRegistry()
             self.is_started = Enum('is_started', 'is_started', states=['stopped', 'started'], registry=registry)
             self.total = Counter('total', 'total', registry=registry)

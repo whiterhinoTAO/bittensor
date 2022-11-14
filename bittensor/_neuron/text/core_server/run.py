@@ -77,19 +77,24 @@ def serve(
 
     # --- Setup prometheus summaries.
     # These will not be posted if the user passes --prometheus.level OFF
-    registry = CollectorRegistry()
-    prometheus_counters = Counter('neuron_counters', 'Counter sumamries for the running server-miner.', ['neuron_counters_name'], registry=registry)
-    prometheus_guages = Gauge('neuron_guages', 'Guage sumamries for the running server-miner.', ['neuron_guages_name'], registry=registry)
-    prometheus_info = Info('neuron_info', "Info sumamries for the running server-miner.", registry=registry)
-    prometheus_guages.labels( 'model_size_params' ).set( sum(p.numel() for p in model.parameters()) )
-    prometheus_guages.labels( 'model_size_bytes' ).set( sum(p.element_size() * p.nelement() for p in model.parameters()) )
-    prometheus_info.info ({
-        'type': "core_server",
-        'uid': str(metagraph.hotkeys.index( wallet.hotkey.ss58_address )),
-        'network': config.subtensor.network,
-        'coldkey': str(wallet.coldkeypub.ss58_address),
-        'hotkey': str(wallet.hotkey.ss58_address),
-    })
+        
+        
+    try:
+        registry = CollectorRegistry()
+        prometheus_counters = Counter('neuron_counters', 'Counter sumamries for the running server-miner.', ['neuron_counters_name'], registry=registry)
+        prometheus_guages = Gauge('neuron_guages', 'Guage sumamries for the running server-miner.', ['neuron_guages_name'], registry=registry)
+        prometheus_info = Info('neuron_info', "Info sumamries for the running server-miner.", registry=registry)
+        prometheus_guages.labels( 'model_size_params' ).set( sum(p.numel() for p in model.parameters()) )
+        prometheus_guages.labels( 'model_size_bytes' ).set( sum(p.element_size() * p.nelement() for p in model.parameters()) )
+        prometheus_info.info ({
+            'type': "core_server",
+            'uid': str(metagraph.hotkeys.index( wallet.hotkey.ss58_address )),
+            'network': config.subtensor.network,
+            'coldkey': str(wallet.coldkeypub.ss58_address),
+            'hotkey': str(wallet.hotkey.ss58_address),
+        })
+    except ValueError as e:
+        pass
 
     timecheck_dicts = {bittensor.proto.RequestType.FORWARD:{}, bittensor.proto.RequestType.BACKWARD:{}}
     n_topk_peer_weights = subtensor.min_allowed_weights

@@ -49,12 +49,15 @@ DUMMY = torch.empty(0, requires_grad=True)
 
 # Global prometheus 
 from prometheus_client import Summary, Counter, Histogram, CollectorRegistry
-PROM_prometheus_counters = Counter('dendrite_counters', 'dendrite_counters', ['wallet', 'identifier', 'name'])
-PROM_prometheus_latency = Histogram('dendrite_latency', 'dendrite_latency', ['wallet', 'identifier'], buckets=list(range(0,bittensor.__blocktime__,1))) 
-PROM_prometheus_latency_per_uid = Summary('dendrite_latency_per_uid', 'dendrite_latency_per_uid', ['wallet', 'identifier', 'uid'])
-PROM_prometheus_successes_per_uid = Counter('dendrite_successes_per_uid', 'dendrite_successes_per_uid', ['wallet', 'identifier', 'uid'])
-PROM_prometheus_failures_per_uid = Counter('dendrite_failures_per_uid', 'dendrite_failures_per_uid', ['wallet', 'identifier', 'uid'])
 
+try:
+    PROM_prometheus_counters = Counter('dendrite_counters', 'dendrite_counters', ['wallet', 'identifier', 'name'])
+    PROM_prometheus_latency = Histogram('dendrite_latency', 'dendrite_latency', ['wallet', 'identifier'], buckets=list(range(0,bittensor.__blocktime__,1))) 
+    PROM_prometheus_latency_per_uid = Summary('dendrite_latency_per_uid', 'dendrite_latency_per_uid', ['wallet', 'identifier', 'uid'])
+    PROM_prometheus_successes_per_uid = Counter('dendrite_successes_per_uid', 'dendrite_successes_per_uid', ['wallet', 'identifier', 'uid'])
+    PROM_prometheus_failures_per_uid = Counter('dendrite_failures_per_uid', 'dendrite_failures_per_uid', ['wallet', 'identifier', 'uid'])
+except ValueError as e:
+    pass
 class Dendrite(torch.autograd.Function):
     r""" This is the implementation class for a bittensor.dendrite(). The dendrite class operates as a normal torch autograd friendly operation
     which accepts a list of bittensor.endpoints and a list of torch tensors. The passed endpoints are queried with the passed inputs and either return

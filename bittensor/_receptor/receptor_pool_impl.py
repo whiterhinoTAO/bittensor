@@ -38,13 +38,8 @@ class ReceptorPool ( torch.nn.Module ):
     def __init__(
         self, 
         wallet: 'bittensor.Wallet',
-<<<<<<< HEAD
-        max_active_receptors: int=100,
-        compression: str=None,
-=======
         max_active_receptors: int,
         compression: str,
->>>>>>> nobunaga
     ):
         super().__init__()
         self.wallet = wallet
@@ -116,38 +111,6 @@ class ReceptorPool ( torch.nn.Module ):
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-<<<<<<< HEAD
-
-
-        return loop.run_until_complete ( 
-            self.async_forward(
-                endpoints = endpoints,
-                synapses = synapses,
-                inputs = inputs,
-                timeout = timeout
-            ) 
-        )
-
-
-    def backward(
-                self, 
-                endpoints: List [ 'bittensor.Endpoint' ],
-                synapses: List[ 'bittensor.Synapse' ],
-                inputs: List [ torch.Tensor ],
-                grads: List [ List[ torch.FloatTensor ] ],
-                timeout: int
-            ) -> Tuple[List[torch.Tensor], List[int], List[float]]:
-        r""" Backward tensor inputs to endpoints.
-            Args:
-                endpoints (:obj:`List['bittensor.Endpoint']` of shape :obj:`(num_endpoints)`, `required`):
-                    List of remote endpoints which match length of x. Tensors from x are sent backward to these endpoints.
-                synapses (:obj:`List[ 'bittensor.Synapse' ]` of shape :obj:`(num_synapses)`, `required`):
-                    Bittensor synapse objects with arguments. Each corresponds to a synapse function on the axon.
-                    Responses are packed in this ordering. 
-                inputs (:obj:`List[torch.Tensor]` of shape :obj:`(num_endpoints * [shape])`, `required`):
-                    List of tensors to send to corresponsing endpoints. Tensors are of arbitrary type and shape depending on the
-                    synapse.
-=======
         return loop.run_until_complete ( 
             self.async_forward(
                 endpoints = endpoints,
@@ -180,19 +143,11 @@ class ReceptorPool ( torch.nn.Module ):
                     List of tensors to send to corresponsing endpoints. Tensors are of arbitrary type and shape depending on the
                     synapse.
 
->>>>>>> nobunaga
                 grads (:obj:`List[torch.Tensor]` of shape :obj:`(num_endpoints * [shape])`, `required`):
                     List of list of grad tensors where each grad corresponds to a synapse call on an endpoint.
                 
                 timeout (int):
                     request timeout.
-<<<<<<< HEAD
-            Returns:
-                backward_outputs (:obj:`List[ List[ torch.FloatTensor] ]` of shape :obj:`num_endpoints * (batch_size, sequence_len, -1)]`, `required`):
-                    Gradients returned from the backward call one per endpoint.
-                backward_codes (:obj:`List[ List[ bittensor.proto.ReturnCodes ] ]` of shape :obj:`(num_endpoints)`, `required`):
-                    List of list of Backward call return ops, one per endpoint and synapse.
-=======
 
             Returns:
                 backward_outputs (:obj:`List[ List[ torch.FloatTensor] ]` of shape :obj:`num_endpoints * (batch_size, sequence_len, -1)]`, `required`):
@@ -201,7 +156,6 @@ class ReceptorPool ( torch.nn.Module ):
                 backward_codes (:obj:`List[ List[ bittensor.proto.ReturnCodes ] ]` of shape :obj:`(num_endpoints)`, `required`):
                     List of list of Backward call return ops, one per endpoint and synapse.
 
->>>>>>> nobunaga
                 backward_times (:obj:`List[float]` of shape :obj:`(num_endpoints)`, `required`):
                     List of list of Backward call times one per endpoint and synapse.
         """
@@ -235,14 +189,6 @@ class ReceptorPool ( torch.nn.Module ):
             timeout: int,
         ) -> Tuple[List[torch.Tensor], List[int], List[float]]:
         r""" Forward tensor inputs to endpoints.
-<<<<<<< HEAD
-            Args:
-                endpoints (:obj:`List[ bittensor.Endpoint ]` of shape :obj:`(num_endpoints)`, `required`):
-                    List of remote endpoints which match length of inputs. Tensors from x are sent forward to these endpoints.
-                synapses (:obj:`List[ 'bittensor.Synapse' ]` of shape :obj:`(num_synapses)`, `required`):
-                    Bittensor synapse objects with arguments. Each corresponds to a synapse function on the axon.
-                    Responses are packed in this ordering. 
-=======
 
             Args:
                 endpoints (:obj:`List[ bittensor.Endpoint ]` of shape :obj:`(num_endpoints)`, `required`):
@@ -252,20 +198,10 @@ class ReceptorPool ( torch.nn.Module ):
                     Bittensor synapse objects with arguments. Each corresponds to a synapse function on the axon.
                     Responses are packed in this ordering. 
 
->>>>>>> nobunaga
                 inputs (:obj:`List[torch.Tensor]` of shape :obj:`(num_endpoints * [shape])`, `required`):
                     TODO(const): Allow multiple tensors.
                     List of tensors to send to corresponsing endpoints. Tensors are of arbitrary type and shape depending on the
                     modality.
-<<<<<<< HEAD
-                timeout (int):
-                    Request timeout.
-            Returns:
-                forward_outputs (:obj:`List[ List[ torch.FloatTensor ]]` of shape :obj:`(num_endpoints * (num_synapses * (shape)))`, `required`):
-                    Output encodings of tensors produced by remote endpoints. Non-responses are zeroes of common shape.
-                forward_codes (:obj:`List[ List[bittensor.proto.ReturnCodes] ]` of shape :obj:`(num_endpoints * ( num_synapses ))`, `required`):
-                    dendrite backward call return ops.
-=======
 
                 timeout (int):
                     Request timeout.
@@ -277,17 +213,12 @@ class ReceptorPool ( torch.nn.Module ):
                 forward_codes (:obj:`List[ List[bittensor.proto.ReturnCodes] ]` of shape :obj:`(num_endpoints * ( num_synapses ))`, `required`):
                     dendrite backward call return ops.
 
->>>>>>> nobunaga
                 forward_times (:obj:`List[ List [float] ]` of shape :obj:`(num_endpoints * ( num_synapses ))`, `required`):
                     dendrite backward call times
         """
         # Init receptors.
         receptors = [ self._get_or_create_receptor_for_endpoint( endpoint ) for endpoint in endpoints ]
 
-<<<<<<< HEAD
-        import streamlit as st
-=======
->>>>>>> nobunaga
         # Make calls.
         calls = []
         for index, receptor in enumerate(receptors):
@@ -435,11 +366,4 @@ class ReceptorPool ( torch.nn.Module ):
             )
             self.receptors[ receptor.endpoint.hotkey ] = receptor
             
-<<<<<<< HEAD
         return receptor
-
-    def getattr(self, key):
-        return getattr(self, key)
-=======
-        return receptor
->>>>>>> nobunaga
