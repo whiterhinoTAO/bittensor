@@ -878,6 +878,7 @@ def unravel_topk_token_phrases(compact_topk: torch.Tensor, topk: int, ignore_ind
     probs_sum = probs.reshape(batch_size, topk + 1).sum(dim=1)  # [batch_size, (topk + 1)]
 
     if not torch.all((-atol < probs_sum) & (probs_sum < 1 + atol)):
+        print('probs', probs)
         print('probs.reshape(batch_size, topk + 1)', probs.reshape(batch_size, topk + 1))
         print('probs_sum', probs_sum)
     assert torch.all((-atol < probs_sum) & (probs_sum < 1 + atol)), f'unravel_topk_token_phrases(): probs_sum not in [0, 1]'
