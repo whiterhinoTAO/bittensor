@@ -125,7 +125,7 @@ class TextCausalLMNext(Synapse):
 
         atol = 1e-6  # absolute tolerance
         if (forward_response_tensor < -atol).any():
-            print(forward_response_tensor)
+            print(forward_response_tensor, forward_response_tensor[forward_response_tensor < -atol])
             raise ValueError("forward_response_tensor not allowed to be negative.")
 
     def check_backward_request_gradient(self, forward_request_tensor, backward_request_gradient):
