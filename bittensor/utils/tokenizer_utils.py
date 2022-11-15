@@ -875,7 +875,7 @@ def unravel_topk_token_phrases(compact_topk: torch.Tensor, topk: int, ignore_ind
     if not batch_size * (topk + 1) == len(prob_idx):
         probs = compact_topk[prob_idx]
         print(probs, len(probs), len(torch.where((-0.1 < compact_topk) & (compact_topk < 1.1))[0]))
-        print(compact_topk, compact_topk[compact_topk < -atol])
+        print(compact_topk, compact_topk[compact_topk < -atol], torch.argwhere(compact_topk < -atol))
     assert batch_size * (topk + 1) == len(prob_idx), f'unravel_topk_token_phrases() probability marker failure: ' \
                                                      f'{batch_size} * ({topk} + 1) != {len(prob_idx)}'  # decoding irregularity otherwise
 
