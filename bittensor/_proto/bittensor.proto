@@ -103,6 +103,7 @@ message Synapse {
 		TEXT_CAUSAL_LM = 2;
 		TEXT_SEQ_2_SEQ = 3;
 		TEXT_CAUSAL_LM_NEXT = 4;
+		GENERAL_JSON = 5;
 	}
 
 	// Position of Tensor inputs for corresponding synapse call.
@@ -139,6 +140,7 @@ message Synapse {
 		// Requires grad: [OPTIONAL] Does this synapse call require a gradient.
 		bool requires_grad = 6;
 	}
+
 
 	message TextCausalLM {
 		// Might as well have this
@@ -236,6 +238,21 @@ message Synapse {
 		// Requires grad: [OPTIONAL] Does this synapse call require a gradient.
 		bool requires_grad = 7;
 	}
+
+
+	message GeneralJSON { 
+		// Might as well have this
+		SynapseType synapse_type = 1;
+
+		// Serializer typing.
+		Serializer forward_request_serializer_type = 2;
+		Serializer forward_response_serializer_type = 3;
+		Serializer backward_request_serializer_type = 4;
+		Serializer backward_response_serializer_type = 5;
+
+		// Requires grad: [OPTIONAL] Does this synapse call require a gradient.
+		bool requires_grad = 6;
+	}
 }
 
 // Return codes from Backward and Forward call.
@@ -323,6 +340,7 @@ enum TensorType {
 	TORCH = 0; // Torch object
 	TENSORFLOW = 1; // Tensorflow tensor type.
 	NUMPY = 2; // Numpy tensor type.
+	JSON = 3; // JSON type.
 }
 
 // Dtype: [REQUIRED] The tensor datatype.
@@ -342,6 +360,7 @@ enum Modality {
 	TEXT = 0;
 	IMAGE = 1;
 	TENSOR = 2;
+	GENERAL = 3;
 }
 
 enum RequestType {

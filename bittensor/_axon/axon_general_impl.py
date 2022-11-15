@@ -52,7 +52,7 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         external_port: int,
         server: 'grpc._Server',
         module : AxonModule,
-        timeout: dict,
+        timeout: int,
         prometheus_level: str,
         priority_threadpool: 'bittensor.prioritythreadpool' = None,
     ):
@@ -84,10 +84,7 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         assert isinstance(self.module, AxonModule)
 
         self.timeout = timeout
-        self.prometheus_level = prometheus_level
         self.stats = self._init_stats()
-        self.started = None
-
         self.started = None
         
         # -- Priority 
@@ -96,16 +93,6 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
          # == Prometheus
         # We are running over various suffix values in the event that there are multiple axons in the same process.
         # The first axon is created with a null suffix and subsequent values are ordered like so: axon_is_started, axon_is_started_1, axon_is_started_2 etc...
-
-        if self.prometheus_level != bittensor.prometheus.level.OFF.name:
-            
-            registry = CollectorRegistry()
-            self.is_started = Enum('is_started', 'is_started', states=['stopped', 'started'], registry=registry)
-            self.total = Counter('total', 'total', registry=registry)
-            self.latency = Histogram('latency', 'latency', buckets=list(range(0,bittensor.__blocktime__,1)), registry=registry) 
-            self.codes = Counter('codes', 'codes', ["code"], registry=registry)
-            self.hotkeys = Counter('hotkeys', 'hotkeys', ["hotkey"], registry=registry)
-            self.bytes = Counter('axon_bytes', 'bytes', ["hotkey"], registry=registry)
 
     def __str__(self) -> str:
         return "Axon({}, {}, {}, {})".format( self.ip, self.port, self.wallet.hotkey.ss58_address, "started" if self.started else "stopped")
@@ -139,6 +126,43 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             synapses = synapses,
         )
         return response
+
+
+
+    def check_if_should_return(self) -> bool:
+        '''
+        Function which returns true if all codes are non success
+
+        Returns:
+            should_return (bool):
+                should return
+        '''
+        should_return = True
+        for code in synapse_codes:
+            if code == bittensor.proto.ReturnCode.Success:
+                should_return =  False
+        return should_return
+
+    def finalize_codes_stats_and_logs(self,  message = None):
+        '''
+        Function which prints all log statements per synapse
+        '''
+        for index, synapse in enumerate( synapses ):
+            # === Logging
+            request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
+            request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
+            bittensor.logging.rpc_log ( 
+                axon = True, 
+                forward = True, 
+                is_response = synapse_is_response [index], 
+                code = synapse_codes[ index ], 
+                call_time = synapse_call_times[ index ], 
+                pubkey = request.hotkey, 
+                inputs = synapse_inputs [index] , 
+                outputs = None if synapse_responses[index] == None else list( synapse_responses[index].shape ), 
+                message = synapse_messages[ index ] if message == None else message,
+                synapse = synapse.synapse_type
+            )
 
     def call_module(self, request):
         r""" Performs validity checks on the grpc request before passing the tensors to the forward queue.
@@ -178,50 +202,6 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         synapse_timeout = min( [self.synapse_timeouts[s.synapse_type] for s in synapses] + [bittensor.__blocktime__] )
         start_time = clock.time()
 
-        # ==================================================================
-        # ==== Function which returns true if all codes are non success ====
-        # ==================================================================
-        def check_if_should_return() -> bool:
-            for code in synapse_codes:
-                if code == bittensor.proto.ReturnCode.Success:
-                    return False
-            return True
-
-
-        # ==============================================================
-        # ==== Function which prints all log statements per synapse ====
-        # ==============================================================
-        def finalize_codes_stats_and_logs( message = None):
-            # === Prometheus
-            if self.prometheus_level != bittensor.prometheus.level.OFF.name:
-                self.total_forward.inc()
-                self.forward_latency.observe( clock.time() - start_time )
-                if self.prometheus_level == bittensor.prometheus.level.DEBUG.name:
-                    self.forward_hotkeys.labels( request.hotkey ).inc()
-                    self.forward_bytes.labels( request.hotkey ).inc( sys.getsizeof( request ) )
-
-            for index, synapse in enumerate( synapses ):
-                # === Prometheus
-                if self.prometheus_level != bittensor.prometheus.level.OFF.name:
-                    self.forward_synapses.labels( str(synapse) ).inc()
-                    self.forward_codes.labels( str(synapse_codes[ index ]) ).inc()
-
-                # === Logging
-                request.synapses [ index ].return_code = synapse_codes[ index ] # Set synapse wire proto codes.
-                request.synapses [ index ].message = synapse_messages[ index ] # Set synapse wire proto message
-                bittensor.logging.rpc_log ( 
-                    axon = True, 
-                    forward = True, 
-                    is_response = synapse_is_response [index], 
-                    code = synapse_codes[ index ], 
-                    call_time = synapse_call_times[ index ], 
-                    pubkey = request.hotkey, 
-                    inputs = synapse_inputs [index] , 
-                    outputs = None if synapse_responses[index] == None else list( synapse_responses[index].shape ), 
-                    message = synapse_messages[ index ] if message == None else message,
-                    synapse = synapse.synapse_type
-                )
-
         # ======================================
         # ==== Check Empty request ====
         # ======================================
@@ -232,7 +212,7 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             synapse_codes = [code for _ in synapses ]
             synapse_call_times = [call_time for _ in synapses ]
             synapse_messages = [ message for _ in synapses ]
-            finalize_codes_stats_and_logs()
+            self.finalize_codes_stats_and_logs()
             return [], code, request.synapses
 
         
@@ -247,7 +227,7 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             synapse_codes = [code for _ in synapses ]
             synapse_call_times = [call_time for _ in synapses ]
             synapse_messages = [ message for _ in synapses ]
-            finalize_codes_stats_and_logs()
+            self.finalize_codes_stats_and_logs()
             return [], bittensor.proto.ReturnCode.RequestShapeException, request.synapses
 
 
@@ -269,8 +249,8 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
                 synapse_call_times [index] = clock.time() - start_time
                 synapse_messages [index] = 'Input deserialization exception with error:{}'.format(str(e))
         # Check if the call can stop here.
-        if check_if_should_return():
-            finalize_codes_stats_and_logs()
+        if self.check_if_should_return():
+            self.finalize_codes_stats_and_logs()
             return [], synapse_codes[0] , request.synapses
 
 
@@ -278,7 +258,7 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         # ==== Make forward calls. =========
         # ===================================
         try:
-            finalize_codes_stats_and_logs()
+            self.finalize_codes_stats_and_logs()
             if self.priority != None:
                 priority = self.priority( request.hotkey, inputs_x = deserialized_forward_tensors, request_type = bittensor.proto.RequestType.FORWARD )
                 future = self.priority_threadpool.submit (
@@ -315,7 +295,7 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             synapse_codes = [code for _ in synapses ]
             synapse_call_times = [call_time for _ in synapses ]
             synapse_messages = [ message for _ in synapses ]
-            finalize_codes_stats_and_logs()
+            self.finalize_codes_stats_and_logs()
             return [], bittensor.proto.ReturnCode.Timeout, request.synapses
 
         # ==================================
@@ -327,7 +307,7 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             synapse_codes = [code for _ in synapses ]
             synapse_call_times = [call_time for _ in synapses ]
             synapse_messages = [ 'Exception on Server' for _ in synapses ]
-            finalize_codes_stats_and_logs(message = str(e))
+            self.finalize_codes_stats_and_logs(message = str(e))
             return [], bittensor.proto.ReturnCode.UnknownException, request.synapses
 
         # =================================================
@@ -361,8 +341,8 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
 
             
         # Check if the call can stop here.
-        if check_if_should_return():
-            finalize_codes_stats_and_logs()
+        if self.check_if_should_return():
+            self.finalize_codes_stats_and_logs()
             return [], synapse_codes[0], request.synapses
 
         # =========================================================
@@ -372,11 +352,9 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             if synapse_codes[index] == bittensor.proto.ReturnCode.Success:
                 synapse_call_times[index] = clock.time() - start_time
 
-        finalize_codes_stats_and_logs()
+        self.finalize_codes_stats_and_logs()
         return synapse_responses, bittensor.proto.ReturnCode.Success, response_synapses
  
-
-
     def __del__(self):
         r""" Called when this axon is deleted, ensures background threads shut down properly.
         """
@@ -436,23 +414,8 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             logger.success("Axon Stopped:".ljust(20) + "<blue>{}</blue>", self.ip + ':' + str(self.port))
         self.started = False
 
-        # Switch prometheus ENUM.
-        if self.prometheus_level != bittensor.prometheus.level.OFF.name:
-            self.is_started.state('stopped')
-
         return self
     
-    def check(self):
-        r""" Checks axon's forward and backward callbacks 
-        """
-        pubkey = self.wallet.hotkey.ss58_address
-        if self.forward_callback != None:
-            bittensor.axon.check_forward_callback(self.forward_callback,index,pubkey)
-
-        if self.backward_callback != None:
-            bittensor.axon.check_backward_callback(backward,index,pubkey)
-        return self
-
     def _init_stats(self):
         return SimpleNamespace(
             # Queries per second.
@@ -526,7 +489,6 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             pass  
 
 
-
     def to_dataframe ( self, metagraph ):
         r""" Return a stats info as a pandas dataframe indexed by the metagraph or pubkey if not existend.
             Args:
@@ -557,32 +519,3 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         except Exception as e:
             bittensor.logging.error(prefix='failed axon.to_dataframe()', sufix=str(e))
             return pandas.DataFrame()
-
-    def to_wandb( self ):
-        r""" Return a dictionary of axon stat info for wandb logging
-            Args:
-                metagraph: (bittensor.Metagraph):
-                    If not None, indexes the wandb data using int uids rather than string pubkeys.
-            Return:
-                wandb_info (:obj:`Dict`)
-        """
-        try:
-            avg_query_time = 0.0
-            for pubkey in self.stats.query_times_per_pubkey:
-                avg_query_time += self.stats.query_times_per_pubkey[pubkey].get() / len( self.stats.query_times_per_pubkey )
-            # ---- Axon summary for wandb
-            wandb_data = {
-                'axon/qps': self.stats.qps.get(),
-                'axon/avg_query_time': avg_query_time,
-                'axon/total_requests': self.stats.total_requests,
-                'axon/total_in_bytes' : self.stats.total_in_bytes,
-                'axon/total_out_bytes' : self.stats.total_out_bytes,
-                'axon/avg_in_bytes_per_second' : self.stats.avg_in_bytes_per_second.get(),
-                'axon/avg_out_bytes_per_second' : self.stats.avg_out_bytes_per_second.get(),
-            }
-            return wandb_data
-        except Exception as e:
-            bittensor.logging.error(prefix='failed during axon.to_wandb()', sufix=str(e))
-            return {} 
-
-
