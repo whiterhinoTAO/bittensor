@@ -30,8 +30,6 @@ from .text_lasthiddenstate_impl import TextLastHiddenState
 from .text_seq2seq_impl import TextSeq2Seq
 from .general_json_impl import GeneralJSON
 
-
-
 class synapse:
     """
     Factory class for the synapse objects. The synapses are designed to work the bittensor protocol and is 

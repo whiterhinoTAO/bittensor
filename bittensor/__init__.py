@@ -168,6 +168,7 @@ from bittensor._synapse.text_causallm_impl import TextCausalLM as TextCausalLM
 from bittensor._synapse.text_causallmnext_impl import TextCausalLMNext as TextCausalLMNext
 from bittensor._synapse.text_lasthiddenstate_impl import TextLastHiddenState as TextLastHiddenState
 from bittensor._synapse.text_seq2seq_impl import TextSeq2Seq as TextSeq2Seq
+from bittensor._synapse.general_json_impl import GeneralJSON as GeneralJSON
 
 # DEFAULTS
 defaults = Config()
