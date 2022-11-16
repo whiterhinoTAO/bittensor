@@ -179,7 +179,7 @@ class neuron:
         # === Neuron statistics variables ===
         self.neuron_stats = {}  # neuron statistics dict of dicts: [uid] -> {'stat1': val1, 'stat2': val2, ...}
         self.neuron_hotkeys = []  # keep neuron hotkeys to compare and check for changes after metagraph.sync()
-        self.alpha = 0.05  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
+        self.alpha = 0.1  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
 
         if self.config.neuron.validation_synapse == 'TextCausalLMNext':
             self.weight_key = 'shapley_values_nxt'  # stat key + ! to calculate neuron weights with
@@ -265,14 +265,14 @@ class neuron:
                 f'{self.config.wallet.hotkey}:[bold]{self.wallet.hotkey.ss58_address[:7]}[/bold])')
 
     def __del__(self):
-        self.__exit__()
+        self.dataset.close()
+        self.dendrite.__del__()
 
     def __exit__ ( self, exc_type, exc_value, exc_traceback ):
         r""" Close down neuron.
         """
         print(exc_type, exc_value, exc_traceback)
-        self.dataset.close()
-        self.dendrite.__del__()
+        self.__del__()
 
     def __enter__(self):
         r""" Sanity checks and begin validator.

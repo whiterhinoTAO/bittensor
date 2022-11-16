@@ -268,13 +268,12 @@ class Receptor(nn.Module):
         # =====================
         # These items are filled through the call and the function returns 
         # when all codes are non-success or the function finishes completely.
-        start_time = clock.time()
-        timestamp = [clock.asctime(), (clock.time(), 0)]
         synapse_messages = [ "Success" for _ in synapses ]
         synapse_codes = [ bittensor.proto.ReturnCode.Success for _ in synapses ]
         synapse_responses = [ synapse.nill_forward_response_tensor( inputs ) for synapse in synapses ]
         synapse_is_response = [ False for _ in synapses ]
         synapse_call_times = [ 0 for _ in synapses ]
+        start_time = clock.time()
 
         # ==================================================================
         # ==== Function which returns true if all codes are non success ====
@@ -391,12 +390,10 @@ class Receptor(nn.Module):
                     ('bittensor-version',str(bittensor.__version_as_int__)),
                     ('request_type', str(bittensor.proto.RequestType.FORWARD)),
                 ))
-            timestamp += [( clock.time(), 'fired', clock.time() - timestamp[-1][0])]
             grpc_response = await asyncio.wait_for(asyncio_future, timeout=timeout)
-            timestamp += [( clock.time(), 'collected', clock.time() - timestamp[-1][0])]
             self.stats.forward_bytes_in.update( grpc_response.ByteSize() )
             synapse_is_response = [ True for _ in synapses ]
-        
+
         # ====================================
         # ==== Handle GRPC Errors ====
         # ====================================
@@ -425,8 +422,7 @@ class Receptor(nn.Module):
         except asyncio.TimeoutError:
             code = bittensor.proto.ReturnCode.Timeout
             call_time = clock.time() - start_time
-            timestamp += [( clock.time(), 'timeout', clock.time() - timestamp[-1][0])]
-            message = 'GRPC request timeout after: {}s'.format(timeout) + str(timestamp)
+            message = 'GRPC request timeout after: {}s'.format(timeout)
             synapse_codes = [code for _ in synapses ]
             synapse_call_times = [call_time for _ in synapses ]
             synapse_messages = [ message for _ in synapses ]
@@ -512,8 +508,6 @@ class Receptor(nn.Module):
         for index, _ in enumerate( synapses ):
             if synapse_codes[index] == bittensor.proto.ReturnCode.Success:
                 synapse_call_times[index] = clock.time() - start_time
-        timestamp += [( clock.time(), 'deserialized',clock.time() - timestamp[-1][0])]
-        synapse_messages = [ s + str(timestamp)for s in synapse_messages]
         finalize_stats_and_logs()
         return synapse_responses, synapse_codes, synapse_call_times  
 
@@ -670,11 +664,9 @@ class Receptor(nn.Module):
                     ('rpc-auth-header','Bittensor'),
                     ('bittensor-signature',self.sign()),
                     ('bittensor-version',str(bittensor.__version_as_int__)),
-                    ('request_type', str(bittensor.proto.RequestType.FORWARD)),
+                    ('request_type', str(bittensor.proto.RequestType.BACKWARD)),
                 ))
-            # Wait for essentially no time this allows us to get UnAuth errors to pass through.
-            await asyncio.wait_for( asyncio_future, timeout = 0.1 )
-
+            asyncio_future.cancel()
 
         # ====================================
         # ==== Handle GRPC Errors ====
@@ -744,4 +736,3 @@ class Receptor(nn.Module):
 
 
         
-

@@ -225,7 +225,6 @@ class ReceptorPool ( torch.nn.Module ):
                     dendrite backward call times
         """
         timestamp = [(time.time(), 0)]
-
         # Init receptors.
         receptors = [ self._get_or_create_receptor_for_endpoint( endpoint ) for endpoint in endpoints ]
 

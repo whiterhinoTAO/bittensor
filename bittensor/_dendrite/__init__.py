@@ -32,7 +32,6 @@ class dendrite:
     The dendrite class operates as a normal torch autograd friendly operation which accepts a list of bittensor.endpoints and a list of torch tensors. 
     The passed endpoints are queried with the passed inputs and either return results or zeros. The operation is fully differentiable with a torch 
     computation graph such that calls to loss.backward() produce Backward calls on the passed endpoints.
-
     
     """
 
