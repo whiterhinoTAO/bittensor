@@ -223,18 +223,21 @@ class Nucleus(nn.Module):
 
         for r, w in list(zip(response_success, normalized_topk_routing_scores)):
             response = torch.zeros(batch_size, bittensor.__vocab_size__ , 2)
+            response[:, :, 1] = all_logits.repeat(batch_size, 1)
 
             org = r[0][0, : -1, :]
+            print('org', org[org[:, 0].sort(descending = True)[1]][: 10, :])
             
             for batch in range(batch_size):
                 index = r[0][batch, : -1, 1].long()
                 prob = r[0][batch, : -1, 0] 
                 response[batch, :, 0] = response[batch, :, 0].index_add_(0, index, prob)
-                    
-            mixed_response_pre = mixed_response[0, :-1, :2].clone()
-            mixed_response[:, :-1, 0] += w * response[:, :, 0]
 
-            mixed_response_pre = mixed_response[0, :-1, :2].clone()
+                if batch == 0:
+                    print_response = response[batch]
+                    print('print response', print_response[print_response[:, 0].sort(descending = True)[1]][: 10, :])
+            
+            mixed_response[:, :-1, 0] += w * response[:, :, 0]
 
         # reduced_mixed_response = torch.zeros(batch_size, topk + 1  , 2)
         for batch in range(batch_size):
@@ -290,10 +293,16 @@ class Nucleus(nn.Module):
             }
             return stats, successes, routing_score
             
+        for i, (r, op) in enumerate(list(zip(responses, return_ops))):
+            if op == 1 and r[0][:, :, 0].sum() < 0:
+                return_ops[i] = 0
+
+
         response_success = [r for r, op in list(zip(responses, return_ops)) if op == 1]
         time_success = [t for t, op in list(zip(times, return_ops)) if op == 1]
         normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
         zero_response = self.mix_response([response_success[0]], torch.tensor([1]))
+        mixed_ind_responses = [self.mix_response([r], torch.tensor([1])) for r in response_success]
         mixed_response = self.mix_response(response_success, normalized_topk_routing_scores)
         averaged_response = self.mix_response(response_success, torch.ones_like(normalized_topk_routing_scores) / len(normalized_topk_routing_scores))
 
@@ -303,14 +312,24 @@ class Nucleus(nn.Module):
         loss_routing = self.cal_loss(inputs, mixed_response, self.config.nucleus.validation_len)
         loss_routing_baseline = self.cal_loss(inputs, averaged_response, self.config.nucleus.validation_len)
         loss_model_baseline = self.cal_loss(inputs, response_baseline, self.config.nucleus.validation_len)
+        print('=================================================')
         losses = torch.tensor([self.cal_loss(inputs, r[0][:, :, :2], self.config.nucleus.validation_len) for r in response_success])
+        print('=================================================')
+        mixed_ind_losses = [self.cal_loss(inputs, r, self.config.nucleus.validation_len) for r in mixed_ind_responses]
+        print('=================================================')
+        fake_response = torch.zeros_like(response_success[0][0][:, : , :2])
+        fake_response[:, -2 , 0] = torch.ones_like(fake_response[:, -1 , 0]) * -46144.7734
+        fake_response[:, -1 , 0] = torch.ones_like(fake_response[:, -1 , 0])
+        lol = self.cal_loss(inputs, fake_response, self.config.nucleus.validation_len)
         loss_min = min(losses)
         
-        
+        print(losses, mixed_ind_losses)
+
         stats = {
             'loss/zero': loss_zero,
             'loss/zero_org': loss_zero_org,
             'loss/min': loss_min,
+            'loss/count': len(losses),
             'loss/average': sum(losses) / len(losses),
             'loss/routing': loss_routing,
             'loss/routing_baseline': loss_routing_baseline,
@@ -458,6 +477,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         if config.use_wandb:
             scores_log = { 'score/' + str(k) :v.item() for k, v in enumerate(average_scores)}
             stats['stat/success'] = sum(successes) / len(successes)
+            stats['stat/num_success'] = sum(successes) 
             print(stats)
             wandb.log( {**stats, **scores_log}, step=ci)
 

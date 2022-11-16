@@ -945,7 +945,6 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
             loss (:obj:`torch.Tensor`, `required`):
                 Phrase cross entropy loss, either scalar if reduce or [batch_size].
     """
-
     batch_size, topk_p1, max_len = topk_tensor.shape  # [batch_size, (topk + 1), max_len]
     topk = topk_p1 - 1
 
@@ -986,6 +985,7 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
             else:  # no matches
                 match_probs[b] += n_floor_probs[b]  # assume match is in non-topk tokens with avg floor_prob
 
+    old_val_probs = val_probs.clone()
     val_probs = torch.clamp(val_probs, 0, 1)  # [batch_size] ensure 0 <= total probability <= 1
     loss_val = - torch.log(val_probs + 1e-40)  # [batch_size] calculate cross entropy loss
 
@@ -999,6 +999,18 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
         loss = getattr(loss, reduction)()
         if loss.numel() > 1:
             raise ValueError(f'phase_cross_entropy(): Expected reduction to scalar, obtained {loss.shape} instead.')
+    print (
+        'phrase cross entropy \n', topk_tensor[0, :10, :], 
+        'topk tokens: ', topk_tokens.sum(), 
+        'topk_probs max mins: ', topk_probs.max(), topk_probs.min(),
+        'topk_probs.sum(dim=-1): ', topk_probs.sum(dim=-1), 
+        'max(0, vocab_size_min - topk) * floor_probs: ', max(0, vocab_size_min - topk) * floor_probs, 
+        'floor probs: ',floor_probs, 
+        'n_floor_probs: ', n_floor_probs, 
+        'match sum: ',match.sum(), 
+        'val_probs: ', old_val_probs, 
+        'loss',loss
+    )
 
     return loss_val, loss
 
