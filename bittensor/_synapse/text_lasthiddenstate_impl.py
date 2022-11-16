@@ -81,6 +81,7 @@ class TextLastHiddenState (Synapse):
             backward_response_serializer_type
         )
         self.mask = mask
+        self.topk_compression = topk_compression
         self.synapse_type = TextLastHiddenState.synapse_type
 
     def __repr__(self) -> str: return self.__str__()
@@ -109,8 +110,13 @@ class TextLastHiddenState (Synapse):
             mask = instance_proto.mask
         except AttributeError:
             mask = []
+        try:
+            topk_compression = instance_proto.topk_compression
+        except AttributeError:
+            topk_compression = -1
         return TextLastHiddenState (
             mask = mask,
+            topk_compression = topk_compression,
             forward_request_serializer_type = instance_proto.forward_request_serializer_type,
             forward_response_serializer_type = instance_proto.forward_response_serializer_type,
             backward_request_serializer_type = instance_proto.backward_request_serializer_type,
@@ -122,6 +128,7 @@ class TextLastHiddenState (Synapse):
         """
         return bittensor.proto.Synapse.TextLastHiddenState ( 
             mask = self.mask,
+            topk_compression = self.topk_compression,
             forward_request_serializer_type = self.forward_request_serializer_type,
             forward_response_serializer_type = self.forward_response_serializer_type,
             backward_request_serializer_type = self.backward_request_serializer_type,
@@ -173,60 +180,91 @@ class TextLastHiddenState (Synapse):
     def decode_forward_request_tensor    ( self, forward_request_tensor: torch.Tensor ) -> torch.Tensor: return forward_request_tensor
     def encode_forward_response_tensor   ( self, forward_response_tensor: torch.Tensor ) -> torch.Tensor: 
         
-        # If there is no mask, we simply return the full tensor.
-        if self.mask == None or len( self.mask ) == 0:
-            return forward_response_tensor
+        # Get shapes upfront.
+        resp_bs, resp_seq, _ = forward_response_tensor.shape
 
-        # Expand mask based on batch size and sequence length.
-        shifted_mask = TextLastHiddenState.shift_mask_based_on_shape( 
-            self.mask, 
-            batch_size = forward_response_tensor.shape[0],
-            sequence_length = forward_response_tensor.shape[1]
-        )
-
-        # Reshape the forward_response_tensor to a stack of representations
-        # stacked_forward_response_tensor [ bs * seq, net_dim ]
-        stacked_forward_response_tensor = forward_response_tensor.reshape( -1, bittensor.__network_dim__ )
+        # First stack the forward_response_tensor
+        # forward_response_tensor [ bs * seq, net_dim ]
+        forward_response_tensor = forward_response_tensor.reshape( -1, bittensor.__network_dim__ )
         
-        # The shifted_mask is a list of indices which refer to distinct rows in the  
-        # stacked stacked_forward_response_tensor [ bs * seq, net_dim ]. We pull only these 
-        # representations for the encoding so the response has shape [ len(mask), net_dim ]
-        return stacked_forward_response_tensor[ shifted_mask, : ]
+        #################
+        # Apply masking #
+        #################
+        if self.mask != None and len( self.mask ) != 0:
+            # Expand mask based on batch size and sequence length.
+            shifted_mask = TextLastHiddenState.shift_mask_based_on_shape( 
+                self.mask, 
+                batch_size = resp_bs,
+                sequence_length = resp_seq
+            )
+            # The shifted_mask is a list of indices which refer to distinct rows in the  
+            # stacked forward_response_tensor [ bs * seq, net_dim ]. We pull only these 
+            # representations for the encoding so the response has shape [ len(mask), net_dim ]
+            forward_response_tensor = forward_response_tensor[ shifted_mask, : ]
+
+        ##########################
+        # Apply topk compression #
+        ##########################
+        if self.topk_compression != -1:
+            # Take the topk values and pack the elements [values, indices]
+            values, indices, = torch.topk( forward_response_tensor, dim = -1, k = self.topk_compression )
+            forward_response_tensor = torch.concat((values, indices.type(torch.FloatTensor)), dim=-1)
+                    
+        return forward_response_tensor
 
     def decode_forward_response_tensor   ( self, forward_request_tensor: torch.Tensor, forward_response_tensor: torch.Tensor ) -> torch.Tensor: 
 
-        # If there is no mask, we simply return the full tensor.
-        if self.mask == None or len( self.mask ) == 0:
-            return forward_response_tensor
+        requ_bs, requ_seq = forward_request_tensor.shape
+        resp_bs, resp_seq = forward_response_tensor.shape
 
-        # Check if the forward_response tensor has not been mask packed.
-        # It is possible that the responding peer does not pack the message as expected.
-        if forward_response_tensor.shape[0] == forward_request_tensor.shape[0] and forward_response_tensor.shape[1] == forward_request_tensor.shape[1]:
-            # In this case we will simply encode it ourselves using the mask.
-            forward_response_tensor = self.encode_forward_response_tensor( forward_response_tensor )
+        ###################
+        # Apply unmasking #
+        ###################
+        if self.mask != None and len( self.mask ) != 0:
 
-        # Expand mask based on batch size and sequence length.
-        shifted_mask = TextLastHiddenState.shift_mask_based_on_shape( 
-            self.mask, 
-            batch_size = forward_request_tensor.shape[0],
-            sequence_length  = forward_request_tensor.shape[1]
-        )
+            # Check if the forward_response tensor has not been mask packed.
+            # It is possible that the responding peer does not pack the message as expected.
+            if ( resp_bs == requ_bs and resp_seq == requ_seq ):
+                # In this case we will simply encode it ourselves using the mask.
+                forward_response_tensor = self.encode_forward_response_tensor( forward_response_tensor )
 
-        # From the encode_forward_response function the forward_response_tensor is [ len(mask), net_dim ]
-        # a set of rows from the stacked_forward_response_tensor = [ bs * seq, net_dim ]
-        # We will load these rows into a destination tensor = [bs, seq, net_dim]
-        destination = torch.zeros( [ forward_request_tensor.size(0) * forward_request_tensor.size(1), bittensor.__network_dim__ ])
+            # Expand mask based on batch size and sequence length.
+            shifted_mask = TextLastHiddenState.shift_mask_based_on_shape( 
+                self.mask, 
+                batch_size = requ_bs,
+                sequence_length = requ_seq,
+            )
 
-        # Iterate through the mask and the rows of the forward_response_tensor
-        # replacing each row in the destination with the row from the response_tensor.
-        for i, j in list(zip(shifted_mask, range(len( shifted_mask )))):
-            destination[i, :] = forward_response_tensor[j, :]
+            # From the encode_forward_response function the forward_response_tensor is [ len(mask), net_dim ]
+            # a set of rows from the stacked_forward_response_tensor = [ bs * seq, net_dim ]
+            # We will load these rows into a destination tensor = [bs, seq, net_dim]
+            destination = torch.zeros( [ requ_bs * requ_seq, resp_seq ])
+
+            # Iterate through the mask and the rows of the forward_response_tensor
+            # replacing each row in the destination with the row from the response_tensor.
+            for i, j in list(zip(shifted_mask, range(len( shifted_mask )))):
+                destination[i, :] = forward_response_tensor[j, :]
         
-        # Reshape the destination tensor to the proper expanded size.
-        destination = destination.reshape( (forward_request_tensor.size(0), forward_request_tensor.size(1), bittensor.__network_dim__) )
+            # Reshape the destination tensor to the proper expanded size.
+            forward_response_tensor = destination.reshape( ( requ_bs * requ_seq, -1 ) )
 
-        # Destination has shape [ bs, seq, net_dim ]
-        return destination
+        ################
+        # Apply untopk #
+        ################
+        if self.topk_compression != -1:
+            # Unpack values and indices
+            topk_values = forward_response_tensor[..., :self.topk_compression] 
+            topk_indices = forward_response_tensor[..., self.topk_compression:].long()
+
+            # Scatter values on __network_dim__
+            destination = torch.ones( ( requ_bs * requ_seq, bittensor.__network_dim__ ) )
+            destination.scatter_(-1, topk_indices, topk_values)  # insert topk probs: [batch_size, sequence_len, __network_dim__]
+            forward_response_tensor = destination.reshape( ( requ_bs, requ_seq, bittensor.__network_dim__ ) )
+
+        # Finally reshape, this should always work.
+        forward_response_tensor = forward_response_tensor.reshape( ( requ_bs, requ_seq, bittensor.__network_dim__ ) )
+
+        return forward_response_tensor
 
     def encode_backward_request_gradient ( self, backward_request_gradient: torch.Tensor ) -> torch.Tensor: return backward_request_gradient
     def decode_backward_request_gradient ( self, backward_request_gradient: torch.Tensor ) -> torch.Tensor: return backward_request_gradient

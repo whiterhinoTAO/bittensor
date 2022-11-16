@@ -45,6 +45,8 @@ class synapse:
     @staticmethod
     def TextLastHiddenState (
         mask: List[int] = [],
+        topk_compression: int = -1,
+        normalize: bool = True,
         forward_request_serializer_type: 'bittensor.proto.Serializer.Type' = bittensor.proto.Serializer.MSGPACK,
         forward_response_serializer_type: 'bittensor.proto.Serializer.Type' = bittensor.proto.Serializer.MSGPACK,
         backward_request_serializer_type: 'bittensor.proto.Serializer.Type' = bittensor.proto.Serializer.MSGPACK,
@@ -53,7 +55,11 @@ class synapse:
         """ Factory function which returns a TextLastHiddenState synapse adapter given arguments.
             Args:
                 mask (:obj:`List[int]` of shape :obj:`(n)`, `optional`, :default: `[]`):
-                    An optional response mask over the returned embeddings.               
+                    An optional response mask over the returned embeddings.         
+                topk_compression (:obj:`int` of shape :obj:`(1)`, `optional`, :default: `-1`):
+                    If not -1 topk compression is applied to the response tensors where the represetation is packed as [topk_values, topk_indices]             
+                normalize (:obj:`bool` of shape :obj:`(1)`, `optional`, :default: `-1`):
+                    If true, representations are default normalized to the unit circle.        
                 forward_request_serializer_type (:obj:`bittensor.proto.Serializer.Type` of shape :obj:`(1)`, `optional`, :default: `bittensor.proto.Serializer.MSGPACK`):
                     Serializer used to pack torch tensors on forward request.
                 forward_response_serializer_type (:obj:`bittensor.proto.Serializer.Type` of shape :obj:`(1)`, `optional`, :default: `bittensor.proto.Serializer.MSGPACK`):
@@ -68,6 +74,7 @@ class synapse:
         """
         return TextLastHiddenState (
             mask = mask,
+            topk_compression = topk_compression,
             forward_request_serializer_type = forward_request_serializer_type,
             forward_response_serializer_type = forward_response_serializer_type,
             backward_request_serializer_type = backward_request_serializer_type,
