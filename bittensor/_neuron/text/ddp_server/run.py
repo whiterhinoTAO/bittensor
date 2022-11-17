@@ -128,48 +128,6 @@ class DDPPipe():
             join = True
         )
 
-    def forward_generate( self, inputs_x:torch.FloatTensor, synapse, model_output = None):
-        tokens = self.gp_server.token_remap(inputs_x)
-        output = self.gp_server.pre_model.generate(
-            input_ids=tokens['input_ids'],
-            attention_mask=tokens['attention_mask'],
-            max_length=max(tokens['input_ids'].shape[1] + 1, synapse.num_to_generate),
-            num_beams=synapse.num_beams,
-            no_repeat_ngram_size=synapse.no_repeat_ngram_size,
-            early_stopping = synapse.early_stopping,
-            do_sample=synapse.do_sample,
-            top_p=synapse.top_p,
-            num_return_sequences=synapse.num_return_sequences,
-            temperature = synapse.temperature,
-            repetition_penalty = synapse.repetition_penalty,
-            length_penalty = synapse.length_penalty,
-            max_time = synapse.max_time,
-            num_beam_groups = synapse.num_beam_groups,
-        )
-        raw_texts = [self.gp_server.tokenizer.decode(out) for out in output]
-        tokens = [self.gp_server.std_tokenizer.encode(raw_text, return_tensors="pt")[:,:synapse.num_to_generate].view(-1) for raw_text in raw_texts]
-        bittensor_output = pad_sequence(tokens, batch_first=True)
-        return None, model_output, bittensor_output
-
-    def forward_hidden_state( self, inputs_x:torch.FloatTensor, synapse, model_output = None ):
-        with self.mutex:
-            message, model_output, hidden = self.gp_server.encode_forward(inputs_x, model_output=model_output)
-        return message, model_output, hidden
-
-    def forward_casual_lm( self, inputs_x:torch.FloatTensor, synapse, model_output = None):
-        with self.mutex:
-            message, model_output, logits = self.gp_server.encode_forward_causallm(inputs_x, model_output=model_output)
-        return message, model_output, logits
-
-    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
-        with self.mutex:
-            message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
-                                                                                        topk=synapse.topk,
-                                                                                        model_output=model_output)
-        # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
-        #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
-        return message, model_output, topk_token_phrases
-
 
     def run(self, rank = 0, world_size = 0, ready= None):
         self.init_bit(rank)
@@ -194,15 +152,28 @@ class DDPPipe():
             torch.cuda.empty_cache()
             while True: 
                 try:
-                    request_id, inputs_x = self.forward_q.get(timeout = self.config.neuron.console_log_time)
+                    request_id, inputs_x, synapse = self.forward_q.get(timeout = self.config.neuron.console_log_time)
                     if inputs_x != None:
                         inputs_x = inputs_x.to(self.device)
-                        output = self.gp_server.encode_forward(inputs_x)
-                        output_clone = output.detach().clone().to(device = 'cpu')
-                        self.outputs[request_id] = output_clone
+                        with self.mutex:
+                            message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
+                                                                                                                    topk=synapse.topk,
+                                                                                                                    model_output=model_output)
+                        # output = self.gp_server.encode_forward(inputs_x)
+                        message_clone = message.detach().clone().to(device = 'cpu')
+                        model_output_clone = model_output.detach().clone().to(device = 'cpu')
+                        topk_token_phrases_clone = topk_token_phrases.detach().clone().to(device = 'cpu')
+                        self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
                         self.events[request_id].set()
-                        del output
-                        del output_clone
+                        
+                        # Delete the input tensor to free up memory.
+                        del message_clone
+                        del model_output_clone
+                        del topk_token_phrases_clone
+                        del message
+                        del model_output
+                        del topk_token_phrases
+
                     del inputs_x
                     torch.cuda.empty_cache()
                 except Exception as e:
@@ -264,14 +235,16 @@ class ddp_server:
         self.manager = Manager()
         self.events = self.manager.dict()
         self.outputs = self.manager.dict()
+
+        self.gp_server = gp_server
         
         self.axon = bittensor.axon (
             config = self.config,
             wallet = self.wallet,
-            forward_text = self.forward_text,
-            backward_text = lambda x : None,
-            blacklist = self.blacklist,
-            priority = self.priority
+            synapse_checks=self.synapse_check,
+            synapse_causal_lm_next = self.forward_casual_lm_next if self.gp_server.config.neuron.causallmnext else None,
+            blacklist = self.blacklist if not self.gp_server.config.neuron.disable_blacklist else None,
+            priority = self.priority if not self.gp_server.config.neuron.disable_priority else None,
         ) 
     
         self.axon_pipe = DDPPipe(config, gp_server, self.wallet, self.forward_q, self.events, self.outputs )
@@ -306,6 +279,45 @@ class ddp_server:
 
     #     return result
 
+    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
+        r""" Forward function that is called when the axon recieves a forward request from other peers
+            Args:
+                inputs_x ( :obj:`torch.Tensor`, `required`):
+                    torch inputs to be forward processed.
+
+                synapse (:obj:`bittensor.synapse`, `required`):
+                    The synapse object that is used to forward the request.
+
+                model_output (:obj:`torch.FloatTensor`, `optional`, defaults to None):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+
+            Returns:
+                message (:obj:`bittensor.proto.ReturnMessage`, `required`):
+                    The return message from the nucleus.
+                
+                model_output (:obj:`torch.FloatTensor`, `required`):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+                
+                topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+        """
+
+        result = None
+        request_id = id(inputs_x)
+        self.forward_q.put( (request_id, inputs_x, synapse) )
+        self.events[request_id] = self.manager.Event()
+
+        if self.events[request_id].wait(12):
+            result = self.outputs[request_id]
+
+        del self.events[request_id]
+        del self.outputs[request_id]
+
+        message = result[0]
+        model_output = result[1]
+        topk_token_phrases = result[2]
+
+        return message, model_output, topk_token_phrases
 
 
     def priority(self, pubkey:str, request_type:bittensor.proto.RequestType, inputs_x) -> float:
