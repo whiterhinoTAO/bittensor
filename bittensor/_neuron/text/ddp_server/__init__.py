@@ -124,11 +124,7 @@ class neuron:
     def run(self):
         ddp_server(
             self.config,
-            self.model,
-            subtensor = self.subtensor,
-            wallet = self.wallet,
-            axon = self.axon,
-            metagraph = self.metagraph,
+            self.model
         )
 
 
