@@ -123,10 +123,8 @@ class neuron:
         self.metagraph = metagraph
 
     def run(self):
-        return ddp_server(
-            self.config,
-            self.model
-        ).run()
+        ddp = ddp_server(self.model, self.config)
+        ddp.run()
 
 
     @classmethod
