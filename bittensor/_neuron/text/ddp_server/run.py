@@ -200,7 +200,7 @@ class DDPPipe():
             # --- Unknown error ----
             logger.exception('Unknown exception: {} with traceback {}', e, traceback.format_exc())
 
-class Server:
+class ddp_server:
     def __init__( self, config: 'bittensor.config', gp_server):
         r""" Initializes the neuron with the passed config.
         """

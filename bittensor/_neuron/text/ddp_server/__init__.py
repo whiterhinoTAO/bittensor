@@ -26,7 +26,7 @@ import bittensor
 import os
 
 from .nucleus_impl import server
-from .run import serve
+from .run import ddp_server
 
 class neuron:
     r"""
@@ -122,7 +122,7 @@ class neuron:
         self.metagraph = metagraph
 
     def run(self):
-        serve(
+        ddp_server(
             self.config,
             self.model,
             subtensor = self.subtensor,
