@@ -696,8 +696,8 @@ class neuron:
 
         for uid in self.neuron_stats:
             if weight_key in self.neuron_stats[uid]:
-                
-                neuron_weights[uid] = torch.tensor([self.neuron_stats[uid][weight_key]])
+                pre_exponent = torch.tensor([self.neuron_stats[uid][weight_key]])
+                neuron_weights[uid] = torch.pow(torch.exp(pre_exponent), 0.5)
         
         # === Filter to non-zero weights ===
         neuron_weights = neuron_weights[preferred_uids]  # rearrange neuron_weights to match preferred_uids order
@@ -1004,11 +1004,10 @@ class nucleus( torch.nn.Module ):
         return loss, neuron_stats
 
 
-def scaling_law_loss_to_params(loss):
+def scaling_law_loss_to_params_no_exp(loss):
     r""" (OpenAI scaling laws) Kaplan, Jared, et al. "Scaling laws for neural language models." arXiv:2001.08361 (2020)
     """
-    num_params = torch.exp(torch.log(torch.tensor(8.8e13).to(loss.device)) -
-                           torch.log(torch.clamp(loss, 1.69)) / 0.076)  # loss lower bound 1.69 is entropy of natural text
+    num_params = torch.log(torch.tensor(8.8e13).to(loss.device)) - torch.log(torch.clamp(loss, 1.69)) / 0.076 # loss lower bound 1.69 is entropy of natural text
     return num_params
 
 
@@ -1071,7 +1070,7 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
                 _loss = 20  # assign large loss
 
             # estimate the effective number of model parameters, modified with the scaling_law_power
-            _num_params = scaling_law_loss_to_params(_loss)
+            _num_params = scaling_law_loss_to_params_no_exp(_loss)
 
             # powered down number of params, e.g. dynamic range 3 → 6 nats for scaling_law_power=0.5
             _pow_num_params = torch.pow(_num_params, scaling_law_power)
@@ -1194,13 +1193,13 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
         _loss = _losses.mean()
 
         # estimate the effective number of model parameters, modified with the scaling_law_power
-        _num_params = scaling_law_loss_to_params(_loss)
+        _num_params = scaling_law_loss_to_params_no_exp(_loss)
 
         # powered down number of params, e.g. dynamic range 3 → 6 nats for scaling_law_power=0.5
-        _pow_num_params = torch.pow(_num_params, scaling_law_power)
+        #_pow_num_params = torch.pow(_num_params, scaling_law_power)
 
         _stats.update({'loss_val_nxt': _loss_val, 'losses_nxt': _losses, 'loss_nxt': _loss,
-                       'est_params_nxt': _num_params, 'base_params_nxt': _pow_num_params,
+                       'est_params_nxt': _num_params, 'base_params_nxt': _num_params,
                        'synergy_nxt': 0, 'synergy_loss_diff_nxt': 0})
 
     def _synergy(first, second, target, ext):
@@ -1382,15 +1381,15 @@ def shapley_synergy(stats: Dict, synergy: Callable, ext: str, target: torch.Tens
                 first_diff[_second] = loss_diff_share
                 second_diff[_first] = loss_diff_share
 
-                measured_params = scaling_law_loss_to_params(measured_loss_full).mean()
-                expected_params = torch.max(scaling_law_loss_to_params(first['losses_nxt']).mean(),
-                                            scaling_law_loss_to_params( second['losses_nxt']).mean()) 
+                measured_params = scaling_law_loss_to_params_no_exp(measured_loss_full).mean()
+                expected_params = torch.max(scaling_law_loss_to_params_no_exp(first['losses_nxt']).mean(),
+                                            scaling_law_loss_to_params_no_exp(second['losses_nxt']).mean()) 
 
                 # powered down number of params, e.g. dynamic range 3 → 6 nats for scaling_law_power=0.5
-                pow_measured_params = torch.pow(measured_params, scaling_law_power)
-                pow_expected_params = torch.pow(expected_params, scaling_law_power)
+                #pow_measured_params = torch.pow(measured_params, scaling_law_power)
+                #pow_expected_params = torch.pow(expected_params, scaling_law_power)
 
-                synergy_share = torch.clamp(pow_measured_params - pow_expected_params, 0) / 2
+                synergy_share = torch.clamp(measured_params - expected_params, 0) / 2
                 synergy_share /= len(responsives)  # average over responsives
                 first['synergy' + ext] += synergy_share  # share synergy amongst coalition members
                 second['synergy' + ext] += synergy_share
