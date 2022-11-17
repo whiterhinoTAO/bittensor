@@ -26,6 +26,8 @@ import bittensor
 import os
 import pdb
 
+import torch
+
 import torch.multiprocessing as mp
 from multiprocessing import Process, Manager, Event 
 import threading 
@@ -131,7 +133,7 @@ class neuron:
 
         self.axon_pipe = DDPPipe(config, self.model, self.wallet, self.forward_q, self.events, self.outputs )
 
-        self.ddp = ddp_server(
+        self.ddp_server = ddp_server(
                     self.model, 
                     self.config,
                     self.axon_pipe,
@@ -146,7 +148,10 @@ class neuron:
         self.metagraph = metagraph
 
     def run(self):
-        self.ddp.run()
+        self.ddp_server.run()
+        while True:
+            print("Running")
+            time.sleep(5)
 
 
     @classmethod
