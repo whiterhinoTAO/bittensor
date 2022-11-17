@@ -101,7 +101,7 @@ class neuron:
         config.neuron.causallmnext = causallmnext if causallmnext is not None else config.neuron.causallmnext
         config.neuron.seq2seq = seq2seq if seq2seq != None else config.neuron.seq2seq
 
-
+        self.check_config( config )
         bittensor.logging (
             config = config,
             logging_dir = config.neuron.full_path,
