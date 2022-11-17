@@ -24,6 +24,7 @@ Example:
 
 import bittensor
 import os
+import pdb
 
 from .nucleus_impl import server
 from .run import ddp_server
@@ -107,11 +108,12 @@ class neuron:
         )
         # Init prometheus.
         # By default we pick the prometheus port to be axon.port - 1000 so that we can match port to server.
-        # bittensor.prometheus ( 
-        #     config = config,
-        #     port = config.prometheus.port if config.axon.port == bittensor.defaults.axon.port else config.axon.port - 1000
-        # )
+        bittensor.prometheus ( 
+            config = config,
+            port = config.prometheus.port if config.axon.port == bittensor.defaults.axon.port else config.axon.port - 1000
+        )
 
+        pdb.set_trace()
         self.model = server(config = config)
         self.config = config
         self.config.to_prometheus()
