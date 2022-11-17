@@ -22,6 +22,7 @@ Example:
 
 """
 from re import I
+import pdb
 
 import bittensor
 import torch
@@ -451,8 +452,8 @@ class ddp_server:
         try: 
             self.wallet.create()
             self.subtensor.register( self.wallet )
+            pdb.set_trace()
             self.metagraph.sync()
-            print('Metagraph synced')
             neuron = self.subtensor.neuron_for_pubkey(self.wallet.hotkey.ss58_address)
             self.uid = neuron.uid
 
