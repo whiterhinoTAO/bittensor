@@ -226,10 +226,13 @@ class ddp_server:
         r""" Initializes the neuron with the passed config.
         """
         self.config = config
+        pdb.set_trace()
         self.wallet = bittensor.wallet( config = config ).create().register()
+        pdb.set_trace()
         self.subtensor = bittensor.subtensor ( config = self.config )
+        pdb.set_trace()
         self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
-        
+        pdb.set_trace()
         ctx = mp.get_context('spawn')
         self.forward_q = ctx.Queue()
         
@@ -452,7 +455,6 @@ class ddp_server:
         try: 
             self.wallet.create()
             self.subtensor.register( self.wallet )
-            pdb.set_trace()
             self.metagraph.sync()
             neuron = self.subtensor.neuron_for_pubkey(self.wallet.hotkey.ss58_address)
             self.uid = neuron.uid
