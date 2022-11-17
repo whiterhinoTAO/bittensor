@@ -32,15 +32,20 @@ import sys
 import os
 
 from loguru import logger; logger = logger.opt(colors=True)
-from torch.nn.utils import clip_grad_norm_
 from datetime import datetime,timedelta
 from threading import Lock
+
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils import clip_grad_norm_
+
 import time
 from multiprocessing import Process, Manager, Event 
 import threading 
+
+
 
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
@@ -96,6 +101,7 @@ class DDPPipe():
         self.subtensor = bittensor.subtensor ( config = self.config )
         self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
         self.metagraph.sync()
+        self.mutex = Lock()
         self.optimizer = torch.optim.SGD(
             [ {'params': self.gp_server.parameters() } ],
             lr = self.config.neuron.learning_rate,
@@ -121,6 +127,49 @@ class DDPPipe():
             nprocs=self.world_size,
             join = True
         )
+
+    def forward_generate( self, inputs_x:torch.FloatTensor, synapse, model_output = None):
+        tokens = self.gp_server.token_remap(inputs_x)
+        output = self.gp_server.pre_model.generate(
+            input_ids=tokens['input_ids'],
+            attention_mask=tokens['attention_mask'],
+            max_length=max(tokens['input_ids'].shape[1] + 1, synapse.num_to_generate),
+            num_beams=synapse.num_beams,
+            no_repeat_ngram_size=synapse.no_repeat_ngram_size,
+            early_stopping = synapse.early_stopping,
+            do_sample=synapse.do_sample,
+            top_p=synapse.top_p,
+            num_return_sequences=synapse.num_return_sequences,
+            temperature = synapse.temperature,
+            repetition_penalty = synapse.repetition_penalty,
+            length_penalty = synapse.length_penalty,
+            max_time = synapse.max_time,
+            num_beam_groups = synapse.num_beam_groups,
+        )
+        raw_texts = [self.gp_server.tokenizer.decode(out) for out in output]
+        tokens = [self.gp_server.std_tokenizer.encode(raw_text, return_tensors="pt")[:,:synapse.num_to_generate].view(-1) for raw_text in raw_texts]
+        bittensor_output = pad_sequence(tokens, batch_first=True)
+        return None, model_output, bittensor_output
+
+    def forward_hidden_state( self, inputs_x:torch.FloatTensor, synapse, model_output = None ):
+        with self.mutex:
+            message, model_output, hidden = self.gp_server.encode_forward(inputs_x, model_output=model_output)
+        return message, model_output, hidden
+
+    def forward_casual_lm( self, inputs_x:torch.FloatTensor, synapse, model_output = None):
+        with self.mutex:
+            message, model_output, logits = self.gp_server.encode_forward_causallm(inputs_x, model_output=model_output)
+        return message, model_output, logits
+
+    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
+        with self.mutex:
+            message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
+                                                                                        topk=synapse.topk,
+                                                                                        model_output=model_output)
+        # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
+        #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
+        return message, model_output, topk_token_phrases
+
 
     def run(self, rank = 0, world_size = 0, ready= None):
         self.init_bit(rank)
@@ -207,7 +256,7 @@ class ddp_server:
         self.config = config
         self.wallet = bittensor.wallet( config = config ).create().register()
         self.subtensor = bittensor.subtensor ( config = self.config )
-        logger.success( self.subtensor )
+        self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
         
         ctx = mp.get_context('spawn')
         self.forward_q = ctx.Queue()
@@ -227,8 +276,6 @@ class ddp_server:
     
         self.axon_pipe = DDPPipe(config, gp_server, self.wallet, self.forward_q, self.events, self.outputs )
         self.timecheck = {}
-        self.subtensor = bittensor.subtensor ( config = self.config )
-        self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
         self.futures = {}
         self.last_sync_block = None
         self.last_set_weight_block = None
@@ -236,28 +283,30 @@ class ddp_server:
     # Instantiate the model we are going to serve on the network.
     # Creating a threading lock for updates to the model
     # Define our forward function.
-    def forward_text ( self, inputs_x):
-        r""" Forward function that is called when the axon recieves a forward request from other peers
-            Args:
-                inputs_x ( :obj:`torch.Tensor`, `required`):
-                    torch inputs to be forward processed.
+    # def forward_text ( self, inputs_x):
+    #     r""" Forward function that is called when the axon recieves a forward request from other peers
+    #         Args:
+    #             inputs_x ( :obj:`torch.Tensor`, `required`):
+    #                 torch inputs to be forward processed.
 
-            Returns:
-                outputs (:obj:`torch.FloatTensor`):
-                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
-        """
-        result = None
-        request_id = id(inputs_x)
-        self.forward_q.put( (request_id, inputs_x) )
-        self.events[request_id] = self.manager.Event()
+    #         Returns:
+    #             outputs (:obj:`torch.FloatTensor`):
+    #                 The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+    #     """
+    #     result = None
+    #     request_id = id(inputs_x)
+    #     self.forward_q.put( (request_id, inputs_x) )
+    #     self.events[request_id] = self.manager.Event()
         
-        if self.events[request_id].wait(12):
-            result = self.outputs[request_id]
+    #     if self.events[request_id].wait(12):
+    #         result = self.outputs[request_id]
 
-        del self.events[request_id]
-        del self.outputs[request_id]
+    #     del self.events[request_id]
+    #     del self.outputs[request_id]
 
-        return result
+    #     return result
+
+
 
     def priority(self, pubkey:str, request_type:bittensor.proto.RequestType, inputs_x) -> float:
         r"""Calculates the priority on requests based on stake and size of input
@@ -328,6 +377,45 @@ class ddp_server:
             return True
         else: 
             return False
+
+    def synapse_check(self, synapse, hotkey):
+        """
+            Custom synapse function to protect certain synapse functions depending on the stake and weight.
+            Certain synapses require more compute than others. For instance, TEXT_SEQ_2_SEQ requires a significantly
+            more commitment by the server than a requeset for TEXT_CAUSAL_LM_NEXT.
+
+            Args:
+                synapse (:obj:`bittensor.proto.SynapseArgs`, `required`): 
+                    The proto message that contains additional args for individual synapse functions
+                hotkey (:obj:`torch.FloatTensor`, `required`):
+                    The hotkey that sent the request
+
+        """
+        ## Uid that sent the request
+        incoming_uid = self.metagraph.hotkeys.index(hotkey)
+        if synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE:
+            
+            if self.metagraph.S[incoming_uid] < self.config.neuron.lasthidden_stake:
+                return False
+            
+        elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM:
+
+            if self.metagraph.S[incoming_uid] < self.config.neuron.causallm_stake:
+                return False
+
+        elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM_NEXT:
+
+            if self.metagraph.S[incoming_uid] < self.config.neuron.causallmnext_stake:
+                return False
+
+        elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_SEQ_2_SEQ:
+
+            if (self.metagraph.S[incoming_uid] < self.config.neuron.seq2seq_stake) and (self.metagraph.S[incoming_uid,  self.uid]):
+                return False     
+        else:
+            return False
+
+        return True
 
     def run(self):
         def serve_when_ready(serve_kwargs, pipe_ready):
