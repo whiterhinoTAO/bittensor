@@ -221,271 +221,261 @@ class DDPPipe():
             # --- Unknown error ----
             logger.exception('Unknown exception: {} with traceback {}', e, traceback.format_exc())
 
-# class ddp_server:
-#     def __init__( self, config: 'bittensor.config', gp_server):
-#         r""" Initializes the neuron with the passed config.
-#         """
-#         self.config = config
-#         self.wallet = bittensor.wallet( config = config ).create().register()
-#         self.subtensor = bittensor.subtensor ( config = self.config )
-#         self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
-        
-#         ctx = mp.get_context('spawn')
-#         self.forward_q = ctx.Queue()
-        
-#         self.manager = Manager()
-#         self.events = self.manager.dict()
-#         self.outputs = self.manager.dict()
-
-#         self.gp_server = gp_server
-        
-#         self.axon = bittensor.axon (
-#             config = self.config,
-#             wallet = self.wallet,
-#             synapse_checks=self.synapse_check,
-#             synapse_causal_lm_next = self.forward_casual_lm_next if self.gp_server.config.neuron.causallmnext else None,
-#             blacklist = self.blacklist if not self.gp_server.config.neuron.disable_blacklist else None,
-#             priority = self.priority if not self.gp_server.config.neuron.disable_priority else None,
-#         ) 
-    
-#         self.axon_pipe = DDPPipe(config, gp_server, self.wallet, self.forward_q, self.events, self.outputs )
-#         self.timecheck = {}
-#         self.futures = {}
-#         self.last_sync_block = None
-#         self.last_set_weight_block = None
-
-#     def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
-#         r""" Forward function that is called when the axon recieves a forward request from other peers
-#             Args:
-#                 inputs_x ( :obj:`torch.Tensor`, `required`):
-#                     torch inputs to be forward processed.
-
-#                 synapse (:obj:`bittensor.synapse`, `required`):
-#                     The synapse object that is used to forward the request.
-
-#                 model_output (:obj:`torch.FloatTensor`, `optional`, defaults to None):
-#                     The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
-
-#             Returns:
-#                 message (:obj:`bittensor.proto.ReturnMessage`, `required`):
-#                     The return message from the nucleus.
-                
-#                 model_output (:obj:`torch.FloatTensor`, `required`):
-#                     The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
-                
-#                 topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
-#                     The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
-#         """
-
-#         result = None
-#         request_id = id(inputs_x)
-#         self.forward_q.put( (request_id, inputs_x, synapse) )
-#         self.events[request_id] = self.manager.Event()
-
-#         if self.events[request_id].wait(12):
-#             result = self.outputs[request_id]
-
-#         del self.events[request_id]
-#         del self.outputs[request_id]
-
-#         message = result[0]
-#         model_output = result[1]
-#         topk_token_phrases = result[2]
-
-#         return message, model_output, topk_token_phrases
-
-
-#     def priority(self, pubkey:str, request_type:bittensor.proto.RequestType, inputs_x) -> float:
-#         r"""Calculates the priority on requests based on stake and size of input
-
-#             Args:
-#                 pubkey ( str, `required`):
-#                     The public key of the caller.
-#                 inputs_x ( :obj:`torch.Tensor`, `required`):
-#                     torch inputs to be forward processed.
-#                 request_type ( bittensor.proto.RequestType, `required`):
-#                     the request type ('FORWARD' or 'BACKWARD').
-#         """        
-#         uid = self.metagraph.hotkeys.index(pubkey)
-#         priority = self.metagraph.S[uid].item()/ sys.getsizeof(inputs_x)
-
-#         return priority
-
-#     def blacklist(self, pubkey:str, request_type:bittensor.proto.RequestType) -> bool:
-#         r"""Axon security blacklisting, used to blacklist message from low stake members
-#             Args:
-#                 pubkey ( str, `required`):
-#                     The public key of the caller.
-#                 request_type ( bittensor.proto.RequestType, `required`):
-#                     the request type ('FORWARD' or 'BACKWARD').
-#         """
-
-#         # Check for stake
-#         def stake_check() -> bool:
-#             # If we allow non-registered requests return False = not blacklisted.
-#             is_registered = pubkey in self.metagraph.hotkeys
-#             if not is_registered:
-#                 if self.config.neuron.blacklist_allow_non_registered:
-#                     return False
-#                 else:
-#                     return True
-
-#             # Check stake.
-#             uid = self.metagraph.hotkeys.index(pubkey)
-#             if request_type == bittensor.proto.RequestType.FORWARD:
-#                 if self.metagraph.S[uid].item() < self.config.neuron.blacklist.stake.forward:
-#                     return True
-#                 else:
-#                     return False
-
-#             elif request_type == bittensor.proto.RequestType.BACKWARD:
-#                 if self.metagraph.S[uid].item() < self.config.neuron.blacklist.stake.backward:
-#                     return True
-#                 else:
-#                     return False
-
-#         # Check for time
-#         def time_check():
-#             current_time = datetime.now()
-#             if pubkey in self.timecheck.keys():
-#                 prev_time = self.timecheck[pubkey]
-#                 if current_time - prev_time >= timedelta(seconds=self.config.neuron.blacklist.time):
-#                     self.timecheck[pubkey] = current_time
-#                     return False
-#                 else:
-#                     self.timecheck[pubkey] = current_time
-#                     return True
-#             else:
-#                 self.timecheck[pubkey] = current_time
-#                 return False
-
-#         # Black list or not
-#         if stake_check() or time_check():
-#             return True
-#         else: 
-#             return False
-
-#     def synapse_check(self, synapse, hotkey):
-#         """
-#             Custom synapse function to protect certain synapse functions depending on the stake and weight.
-#             Certain synapses require more compute than others. For instance, TEXT_SEQ_2_SEQ requires a significantly
-#             more commitment by the server than a requeset for TEXT_CAUSAL_LM_NEXT.
-
-#             Args:
-#                 synapse (:obj:`bittensor.proto.SynapseArgs`, `required`): 
-#                     The proto message that contains additional args for individual synapse functions
-#                 hotkey (:obj:`torch.FloatTensor`, `required`):
-#                     The hotkey that sent the request
-
-#         """
-#         ## Uid that sent the request
-#         incoming_uid = self.metagraph.hotkeys.index(hotkey)
-#         if synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE:
-            
-#             if self.metagraph.S[incoming_uid] < self.config.neuron.lasthidden_stake:
-#                 return False
-            
-#         elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM:
-
-#             if self.metagraph.S[incoming_uid] < self.config.neuron.causallm_stake:
-#                 return False
-
-#         elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM_NEXT:
-
-#             if self.metagraph.S[incoming_uid] < self.config.neuron.causallmnext_stake:
-#                 return False
-
-#         elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_SEQ_2_SEQ:
-
-#             if (self.metagraph.S[incoming_uid] < self.config.neuron.seq2seq_stake) and (self.metagraph.S[incoming_uid,  self.uid]):
-#                 return False     
-#         else:
-#             return False
-
-#         return True
-
-#     def run(self):
-#         def serve_when_ready(serve_kwargs, pipe_ready):
-#             r""" Start to serve Axon when DDP have started
-#                 Args:
-#                     serve_kwargs(map):
-#                         Arguments for serving axon.
-#                     pipe_ready(manager.Event):
-#                         The Event when the DDP is ready
-#             """
-#             if pipe_ready.wait():
-#                 self.axon.start().serve(**serve_kwargs)
-            
-#             return 
-        
-#         def sync(keyboard_interupt):
-#             r""" Sync with metagraph and set weight to chain.
-#                 Args:
-#                     keyboard_interupt(manager.Event):
-#                         Whether we have tried to stop the program with keyboard_interupt.
-#             """
-#             while not keyboard_interupt.is_set():
-#                 current_block = self.subtensor.get_current_block()
-#                 if (self.last_sync_block == None) or (current_block - self.last_sync_block > self.config.neuron.metagraph_sync):
-#                     self.last_sync_block = current_block
-#                     self.metagraph.sync()
-#                     bittensor.logging.success('Metagraph synced', sufix = f'{self.last_sync_block} --> {current_block}')
-                    
-#                 if (self.last_set_weight_block == None) or (current_block - self.last_set_weight_block > self.config.neuron.blocks_per_set_weights):
-#                     self.last_set_weight_block = current_block
-#                     chain_weights = torch.zeros(self.metagraph.n)
-#                     chain_weights [ self.uid ] = 1 
-#                     did_set = self.subtensor.set_weights(
-#                         uids=self.metagraph.uids,
-#                         weights = chain_weights,
-#                         wait_for_inclusion = False,
-#                         wallet = self.wallet,
-#                     )
-                    
-#                     if did_set:
-#                         logger.success('Successfully set weights on the chain')
-#                     else:
-#                         logger.error('Failed to set weights on chain. (Timeout)')
-                
-#                 time.sleep(self.config.neuron.check_sync_time)
-            
-#         try: 
-#             self.wallet.create()
-#             self.subtensor.register( self.wallet )
-#             self.metagraph.sync()
-#             neuron = self.subtensor.neuron_for_pubkey(self.wallet.hotkey.ss58_address)
-#             self.uid = neuron.uid
-
-#             pipe_ready = self.manager.Event()
-#             keyboard_interupt = self.manager.Event()
-#             axon_start_thread = threading.Thread( target = serve_when_ready, args = ({'subtensor': self.subtensor}, pipe_ready) )
-#             sync_thread = threading.Thread( target = sync, args = (keyboard_interupt, ))
-#             axon_start_thread.start()
-#             sync_thread.start()
-#             self.axon_pipe.run_parallel(ready = pipe_ready)
-            
-#             # Just to keep this run function alive.
-#             while True:
-#                 time.sleep(20)
-
-#         except KeyboardInterrupt:
-#             keyboard_interupt.set()
-#             logger.success('Keyboard Interuped')
-#             self.axon.stop()
-#             axon_start_thread.join()
-#             sync_thread.join()
-#         except Exception as e:
-#             # --- Unknown error ----
-#             logger.exception('Unknown exception: {} with traceback {}', e, traceback.format_exc())
-
-
 class ddp_server:
-    def __init__( self, config, model ):
+    def __init__( self, config: 'bittensor.config', gp_server):
+        r""" Initializes the neuron with the passed config.
+        """
         self.config = config
-        self.model = model
+        self.wallet = bittensor.wallet( config = config ).create().register()
+        self.subtensor = bittensor.subtensor ( config = self.config )
+        self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
+        
+        ctx = mp.get_context('spawn')
+        self.forward_q = ctx.Queue()
+        
+        self.manager = Manager()
+        self.events = self.manager.dict()
+        self.outputs = self.manager.dict()
 
+        self.gp_server = gp_server
+        
+        self.axon = bittensor.axon (
+            config = self.config,
+            wallet = self.wallet,
+            synapse_checks=self.synapse_check,
+            synapse_causal_lm_next = self.forward_casual_lm_next if self.gp_server.config.neuron.causallmnext else None,
+            blacklist = self.blacklist if not self.gp_server.config.neuron.disable_blacklist else None,
+            priority = self.priority if not self.gp_server.config.neuron.disable_priority else None,
+        ) 
     
+        self.axon_pipe = DDPPipe(config, gp_server, self.wallet, self.forward_q, self.events, self.outputs )
+        self.timecheck = {}
+        self.futures = {}
+        self.last_sync_block = None
+        self.last_set_weight_block = None
+
+    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
+        r""" Forward function that is called when the axon recieves a forward request from other peers
+            Args:
+                inputs_x ( :obj:`torch.Tensor`, `required`):
+                    torch inputs to be forward processed.
+
+                synapse (:obj:`bittensor.synapse`, `required`):
+                    The synapse object that is used to forward the request.
+
+                model_output (:obj:`torch.FloatTensor`, `optional`, defaults to None):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+
+            Returns:
+                message (:obj:`bittensor.proto.ReturnMessage`, `required`):
+                    The return message from the nucleus.
+                
+                model_output (:obj:`torch.FloatTensor`, `required`):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+                
+                topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+        """
+
+        result = None
+        request_id = id(inputs_x)
+        self.forward_q.put( (request_id, inputs_x, synapse) )
+        self.events[request_id] = self.manager.Event()
+
+        if self.events[request_id].wait(12):
+            result = self.outputs[request_id]
+
+        del self.events[request_id]
+        del self.outputs[request_id]
+
+        message = result[0]
+        model_output = result[1]
+        topk_token_phrases = result[2]
+
+        return message, model_output, topk_token_phrases
+
+
+    def priority(self, pubkey:str, request_type:bittensor.proto.RequestType, inputs_x) -> float:
+        r"""Calculates the priority on requests based on stake and size of input
+
+            Args:
+                pubkey ( str, `required`):
+                    The public key of the caller.
+                inputs_x ( :obj:`torch.Tensor`, `required`):
+                    torch inputs to be forward processed.
+                request_type ( bittensor.proto.RequestType, `required`):
+                    the request type ('FORWARD' or 'BACKWARD').
+        """        
+        uid = self.metagraph.hotkeys.index(pubkey)
+        priority = self.metagraph.S[uid].item()/ sys.getsizeof(inputs_x)
+
+        return priority
+
+    def blacklist(self, pubkey:str, request_type:bittensor.proto.RequestType) -> bool:
+        r"""Axon security blacklisting, used to blacklist message from low stake members
+            Args:
+                pubkey ( str, `required`):
+                    The public key of the caller.
+                request_type ( bittensor.proto.RequestType, `required`):
+                    the request type ('FORWARD' or 'BACKWARD').
+        """
+
+        # Check for stake
+        def stake_check() -> bool:
+            # If we allow non-registered requests return False = not blacklisted.
+            is_registered = pubkey in self.metagraph.hotkeys
+            if not is_registered:
+                if self.config.neuron.blacklist_allow_non_registered:
+                    return False
+                else:
+                    return True
+
+            # Check stake.
+            uid = self.metagraph.hotkeys.index(pubkey)
+            if request_type == bittensor.proto.RequestType.FORWARD:
+                if self.metagraph.S[uid].item() < self.config.neuron.blacklist.stake.forward:
+                    return True
+                else:
+                    return False
+
+            elif request_type == bittensor.proto.RequestType.BACKWARD:
+                if self.metagraph.S[uid].item() < self.config.neuron.blacklist.stake.backward:
+                    return True
+                else:
+                    return False
+
+        # Check for time
+        def time_check():
+            current_time = datetime.now()
+            if pubkey in self.timecheck.keys():
+                prev_time = self.timecheck[pubkey]
+                if current_time - prev_time >= timedelta(seconds=self.config.neuron.blacklist.time):
+                    self.timecheck[pubkey] = current_time
+                    return False
+                else:
+                    self.timecheck[pubkey] = current_time
+                    return True
+            else:
+                self.timecheck[pubkey] = current_time
+                return False
+
+        # Black list or not
+        if stake_check() or time_check():
+            return True
+        else: 
+            return False
+
+    def synapse_check(self, synapse, hotkey):
+        """
+            Custom synapse function to protect certain synapse functions depending on the stake and weight.
+            Certain synapses require more compute than others. For instance, TEXT_SEQ_2_SEQ requires a significantly
+            more commitment by the server than a requeset for TEXT_CAUSAL_LM_NEXT.
+
+            Args:
+                synapse (:obj:`bittensor.proto.SynapseArgs`, `required`): 
+                    The proto message that contains additional args for individual synapse functions
+                hotkey (:obj:`torch.FloatTensor`, `required`):
+                    The hotkey that sent the request
+
+        """
+        ## Uid that sent the request
+        incoming_uid = self.metagraph.hotkeys.index(hotkey)
+        if synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE:
+            
+            if self.metagraph.S[incoming_uid] < self.config.neuron.lasthidden_stake:
+                return False
+            
+        elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM:
+
+            if self.metagraph.S[incoming_uid] < self.config.neuron.causallm_stake:
+                return False
+
+        elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM_NEXT:
+
+            if self.metagraph.S[incoming_uid] < self.config.neuron.causallmnext_stake:
+                return False
+
+        elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_SEQ_2_SEQ:
+
+            if (self.metagraph.S[incoming_uid] < self.config.neuron.seq2seq_stake) and (self.metagraph.S[incoming_uid,  self.uid]):
+                return False     
+        else:
+            return False
+
+        return True
+
     def run(self):
-        while True:
-            print(self.model)
-            time.sleep(20)
+        def serve_when_ready(serve_kwargs, pipe_ready):
+            r""" Start to serve Axon when DDP have started
+                Args:
+                    serve_kwargs(map):
+                        Arguments for serving axon.
+                    pipe_ready(manager.Event):
+                        The Event when the DDP is ready
+            """
+            if pipe_ready.wait():
+                self.axon.start().serve(**serve_kwargs)
+            
+            return 
+        
+        def sync(keyboard_interupt):
+            r""" Sync with metagraph and set weight to chain.
+                Args:
+                    keyboard_interupt(manager.Event):
+                        Whether we have tried to stop the program with keyboard_interupt.
+            """
+            while not keyboard_interupt.is_set():
+                current_block = self.subtensor.get_current_block()
+                if (self.last_sync_block == None) or (current_block - self.last_sync_block > self.config.neuron.metagraph_sync):
+                    self.last_sync_block = current_block
+                    self.metagraph.sync()
+                    bittensor.logging.success('Metagraph synced', sufix = f'{self.last_sync_block} --> {current_block}')
+                    
+                if (self.last_set_weight_block == None) or (current_block - self.last_set_weight_block > self.config.neuron.blocks_per_set_weights):
+                    self.last_set_weight_block = current_block
+                    chain_weights = torch.zeros(self.metagraph.n)
+                    chain_weights [ self.uid ] = 1 
+                    did_set = self.subtensor.set_weights(
+                        uids=self.metagraph.uids,
+                        weights = chain_weights,
+                        wait_for_inclusion = False,
+                        wallet = self.wallet,
+                    )
+                    
+                    if did_set:
+                        logger.success('Successfully set weights on the chain')
+                    else:
+                        logger.error('Failed to set weights on chain. (Timeout)')
+                
+                time.sleep(self.config.neuron.check_sync_time)
+            
+        try: 
+            self.wallet.create()
+            self.subtensor.register( self.wallet )
+            self.metagraph.sync()
+            neuron = self.subtensor.neuron_for_pubkey(self.wallet.hotkey.ss58_address)
+            self.uid = neuron.uid
+
+            pipe_ready = self.manager.Event()
+            keyboard_interupt = self.manager.Event()
+            axon_start_thread = threading.Thread( target = serve_when_ready, args = ({'subtensor': self.subtensor}, pipe_ready) )
+            sync_thread = threading.Thread( target = sync, args = (keyboard_interupt, ))
+            axon_start_thread.start()
+            sync_thread.start()
+            self.axon_pipe.run_parallel(ready = pipe_ready)
+            
+            # Just to keep this run function alive.
+            while True:
+                time.sleep(20)
+
+        except KeyboardInterrupt:
+            keyboard_interupt.set()
+            logger.success('Keyboard Interuped')
+            self.axon.stop()
+            axon_start_thread.join()
+            sync_thread.join()
+        except Exception as e:
+            # --- Unknown error ----
+            logger.exception('Unknown exception: {} with traceback {}', e, traceback.format_exc())
+
+

@@ -126,7 +126,7 @@ class neuron:
         ddp_server(
             self.config,
             self.model
-        )
+        ).run()
 
 
     @classmethod
