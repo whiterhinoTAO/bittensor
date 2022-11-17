@@ -253,32 +253,6 @@ class ddp_server:
         self.last_sync_block = None
         self.last_set_weight_block = None
 
-    # Instantiate the model we are going to serve on the network.
-    # Creating a threading lock for updates to the model
-    # Define our forward function.
-    # def forward_text ( self, inputs_x):
-    #     r""" Forward function that is called when the axon recieves a forward request from other peers
-    #         Args:
-    #             inputs_x ( :obj:`torch.Tensor`, `required`):
-    #                 torch inputs to be forward processed.
-
-    #         Returns:
-    #             outputs (:obj:`torch.FloatTensor`):
-    #                 The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
-    #     """
-    #     result = None
-    #     request_id = id(inputs_x)
-    #     self.forward_q.put( (request_id, inputs_x) )
-    #     self.events[request_id] = self.manager.Event()
-        
-    #     if self.events[request_id].wait(12):
-    #         result = self.outputs[request_id]
-
-    #     del self.events[request_id]
-    #     del self.outputs[request_id]
-
-    #     return result
-
     def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
         r""" Forward function that is called when the axon recieves a forward request from other peers
             Args:
@@ -478,6 +452,7 @@ class ddp_server:
             self.wallet.create()
             self.subtensor.register( self.wallet )
             self.metagraph.sync()
+            print('Metagraph synced')
             neuron = self.subtensor.neuron_for_pubkey(self.wallet.hotkey.ss58_address)
             self.uid = neuron.uid
 

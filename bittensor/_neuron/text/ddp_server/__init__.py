@@ -124,7 +124,6 @@ class neuron:
         self.metagraph = metagraph
 
     def run(self):
-        pdb.set_trace()
         ddp_server(
             self.config,
             self.model
