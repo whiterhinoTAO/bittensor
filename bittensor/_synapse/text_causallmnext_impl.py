@@ -184,7 +184,6 @@ class TextCausalLMNext(Synapse):
             return torch.tensor([])
 
         forward_response_tensor = torch.zeros(forward_request_tensor.shape[0], (self.topk + 1), 1 + 1)
-        forward_response_tensor[:, :, 1] = 2  # set 2 <= token_ids to preserve 0 <= probs <= 1 in column 0
         forward_response_tensor[:, self.topk::(self.topk + 1), 1] = ignore_index  # add ignore_index padding after floor_prob
 
         if encoded:

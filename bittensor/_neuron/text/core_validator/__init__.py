@@ -526,6 +526,7 @@ class neuron:
 
                 # === Calculate neuron weights ===
                 sample_uids, sample_weights = self.calculate_weights(epoch_responsive_uids, epoch_queried_uids)
+
                 self.weights_table(sample_uids, sample_weights,
                                    include_uids=list(stats.keys()), num_rows=2 * len(stats))  # print weights table
 
@@ -695,8 +696,9 @@ class neuron:
 
         for uid in self.neuron_stats:
             if weight_key in self.neuron_stats[uid]:
+                
                 neuron_weights[uid] = torch.tensor([self.neuron_stats[uid][weight_key]])
-
+        
         # === Filter to non-zero weights ===
         neuron_weights = neuron_weights[preferred_uids]  # rearrange neuron_weights to match preferred_uids order
         preferred_uids = preferred_uids[neuron_weights > 0]  # filter to non-zero weights
@@ -706,6 +708,9 @@ class neuron:
         weights_to_set = max([min_allowed_weights, len(responsive_uids)])
         sample_uids = preferred_uids[:weights_to_set]  # slice to weights_to_set
         sample_weights = neuron_weights[:weights_to_set]  # slice to weights_to_set
+
+        val_, ind_  = torch.sort(sample_weights)
+        #print(sample_uids[ind_], val_)
 
         # === If no uids responds, return ===
         if len(sample_uids) == 0:
@@ -1201,9 +1206,9 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
     def _synergy(first, second, target, ext):
         # average first + second probabilities per batch item, convert to loss
         measured_loss = -torch.log((torch.exp(-first['losses_nxt']) +
-                                    torch.exp(-second['losses_nxt'])) / 2 + 1e-40).mean()
+                                    torch.exp(-second['losses_nxt'])) / 2 + 1e-40)
 
-        return measured_loss
+        return measured_loss.mean(), measured_loss
 
     shapley_start_time = time.time()
 
@@ -1366,7 +1371,7 @@ def shapley_synergy(stats: Dict, synergy: Callable, ext: str, target: torch.Tens
             with torch.no_grad():
                 expected_loss = torch.min(first['loss' + ext], second['loss' + ext])  # expecting min loss
 
-                measured_loss = synergy(first, second, target, ext)
+                measured_loss, measured_loss_full = synergy(first, second, target, ext)
 
                 loss_diff_share = torch.clamp(expected_loss - measured_loss, 0) / 2  # record direct loss diff
                 loss_diff_share /= len(responsives)  # average over responsives
@@ -1377,8 +1382,9 @@ def shapley_synergy(stats: Dict, synergy: Callable, ext: str, target: torch.Tens
                 first_diff[_second] = loss_diff_share
                 second_diff[_first] = loss_diff_share
 
-                measured_params = scaling_law_loss_to_params(measured_loss)
-                expected_params = scaling_law_loss_to_params(expected_loss)
+                measured_params = scaling_law_loss_to_params(measured_loss_full).mean()
+                expected_params = torch.max(scaling_law_loss_to_params(first['losses_nxt']).mean(),
+                                            scaling_law_loss_to_params( second['losses_nxt']).mean()) 
 
                 # powered down number of params, e.g. dynamic range 3 → 6 nats for scaling_law_power=0.5
                 pow_measured_params = torch.pow(measured_params, scaling_law_power)
