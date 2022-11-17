@@ -232,7 +232,6 @@ class ddp_server:
         
         ctx = mp.get_context('spawn')
         self.forward_q = ctx.Queue()
-        logger.info('spawned forward_q')
         
         self.manager = Manager()
         self.events = self.manager.dict()
@@ -450,33 +449,33 @@ class ddp_server:
                 
                 time.sleep(self.config.neuron.check_sync_time)
             
-        try: 
-            self.wallet.create()
-            self.subtensor.register( self.wallet )
-            self.metagraph.sync()
-            neuron = self.subtensor.neuron_for_pubkey(self.wallet.hotkey.ss58_address)
-            self.uid = neuron.uid
+        # try: 
+        self.wallet.create()
+        self.subtensor.register( self.wallet )
+        self.metagraph.sync()
+        neuron = self.subtensor.neuron_for_pubkey(self.wallet.hotkey.ss58_address)
+        self.uid = neuron.uid
 
-            pipe_ready = self.manager.Event()
-            keyboard_interupt = self.manager.Event()
-            axon_start_thread = threading.Thread( target = serve_when_ready, args = ({'subtensor': self.subtensor}, pipe_ready) )
-            sync_thread = threading.Thread( target = sync, args = (keyboard_interupt, ))
-            axon_start_thread.start()
-            sync_thread.start()
-            self.axon_pipe.run_parallel(ready = pipe_ready)
-            
-            # Just to keep this run function alive.
-            while True:
-                time.sleep(20)
+        pipe_ready = self.manager.Event()
+        keyboard_interupt = self.manager.Event()
+        axon_start_thread = threading.Thread( target = serve_when_ready, args = ({'subtensor': self.subtensor}, pipe_ready) )
+        sync_thread = threading.Thread( target = sync, args = (keyboard_interupt, ))
+        axon_start_thread.start()
+        sync_thread.start()
+        self.axon_pipe.run_parallel(ready = pipe_ready)
+        
+        # Just to keep this run function alive.
+        while True:
+            time.sleep(20)
 
-        except KeyboardInterrupt:
-            keyboard_interupt.set()
-            logger.success('Keyboard Interuped')
-            self.axon.stop()
-            axon_start_thread.join()
-            sync_thread.join()
-        except Exception as e:
-            # --- Unknown error ----
-            logger.exception('Unknown exception: {} with traceback {}', e, traceback.format_exc())
+        # except KeyboardInterrupt:
+        #     keyboard_interupt.set()
+        #     logger.success('Keyboard Interuped')
+        #     self.axon.stop()
+        #     axon_start_thread.join()
+        #     sync_thread.join()
+        # except Exception as e:
+        #     # --- Unknown error ----
+        #     logger.exception('Unknown exception: {} with traceback {}', e, traceback.format_exc())
 
 
