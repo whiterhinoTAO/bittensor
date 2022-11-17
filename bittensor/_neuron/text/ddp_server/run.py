@@ -230,8 +230,8 @@ class ddp_server:
         self.subtensor = bittensor.subtensor ( config = self.config )
         self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
         
-        ctx = mp.get_context('spawn')
-        self.forward_q = ctx.Queue()
+        # ctx = mp.get_context('spawn')
+        # self.forward_q = ctx.Queue()
         
         self.manager = Manager()
         self.events = self.manager.dict()

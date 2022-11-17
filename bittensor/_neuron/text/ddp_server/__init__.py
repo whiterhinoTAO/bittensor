@@ -75,10 +75,8 @@ class neuron:
         seq2seq = None,
         synapse_list = None,
     ):
-        print('bong')
         if config == None: config = server.config()
         config = config; 
-        print('uppp')
 
         if synapse_list != None:
             config.neuron.lasthidden = False
@@ -104,7 +102,6 @@ class neuron:
         config.neuron.seq2seq = seq2seq if seq2seq != None else config.neuron.seq2seq
 
 
-        print('down')
         bittensor.logging (
             config = config,
             logging_dir = config.neuron.full_path,
