@@ -222,7 +222,7 @@ class DDPPipe():
             logger.exception('Unknown exception: {} with traceback {}', e, traceback.format_exc())
 
 class ddp_server:
-    def __init__( self, config: 'bittensor.config', gp_server):
+    def __init__( self, config: 'bittensor.config', gp_server, axon_pipe, forward_q, outputs, events ):
         r""" Initializes the neuron with the passed config.
         """
         self.config = config
@@ -230,14 +230,12 @@ class ddp_server:
         self.subtensor = bittensor.subtensor ( config = self.config )
         self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
         
-        ctx = mp.get_context('spawn')
-        self.forward_q = ctx.Queue()
-        
-        self.manager = Manager()
-        self.events = self.manager.dict()
-        self.outputs = self.manager.dict()
-
         self.gp_server = gp_server
+        self.axon_pipe = axon_pipe
+        self.forward_q = forward_q
+        self.outputs = outputs
+        self.events = events
+
         
         self.axon = bittensor.axon (
             config = self.config,
@@ -248,7 +246,7 @@ class ddp_server:
             priority = self.priority if not self.gp_server.config.neuron.disable_priority else None,
         ) 
     
-        self.axon_pipe = DDPPipe(config, gp_server, self.wallet, self.forward_q, self.events, self.outputs )
+        self.axon_pipe = axon_pipe
         self.timecheck = {}
         self.futures = {}
         self.last_sync_block = None

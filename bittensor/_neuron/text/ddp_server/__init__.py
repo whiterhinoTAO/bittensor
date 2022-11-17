@@ -26,8 +26,12 @@ import bittensor
 import os
 import pdb
 
+import torch.multiprocessing as mp
+from multiprocessing import Process, Manager, Event 
+import threading 
+
 from .nucleus_impl import server
-from .run import ddp_server
+from .run import ddp_server, DDPPipe
 
 class neuron:
     r"""
@@ -117,14 +121,32 @@ class neuron:
         self.config = config
         self.config.to_prometheus()
 
+        ctx = mp.get_context('spawn')
+        self.forward_q = ctx.Queue()
+        
+        self.manager = Manager()
+        self.events = self.manager.dict()
+        self.outputs = self.manager.dict()
+
+
+        self.axon_pipe = DDPPipe(config, self.model, self.wallet, self.forward_q, self.events, self.outputs )
+
+        self.ddp = ddp_server(
+                    self.model, 
+                    self.config,
+                    self.axon_pipe,
+                    self.forward_q,
+                    self.outputs,
+                    self.events,
+                    )
+
         self.subtensor = subtensor
         self.wallet = wallet
         self.axon = axon
         self.metagraph = metagraph
 
     def run(self):
-        ddp = ddp_server(self.model, self.config)
-        ddp.run()
+        self.ddp.run()
 
 
     @classmethod
