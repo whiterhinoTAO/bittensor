@@ -451,9 +451,6 @@ class ddp_server:
                 time.sleep(self.config.neuron.check_sync_time)
             
         try: 
-            self.wallet.create()
-            self.subtensor.register( self.wallet )
-            self.metagraph.sync()
             neuron = self.subtensor.neuron_for_pubkey(self.wallet.hotkey.ss58_address)
             self.uid = neuron.uid
 
