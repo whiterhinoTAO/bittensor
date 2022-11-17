@@ -3,4 +3,4 @@ import bittensor
 
 if __name__ == "__main__":
     # Setup the subtensor.
-    bittensor.neurons.multitron_server.neuron().run()
+    bittensor._neuron.text.ddp_server.neuron().run()
