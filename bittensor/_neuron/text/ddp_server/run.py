@@ -121,7 +121,7 @@ class DDPPipe():
         """
         dist.destroy_process_group()
 
-    def run_parallel( self, ready = None):
+    def run_parallel( self, ready = True):
         r""" Spawn multiple processes.
         """
         self.process_ctx = mp.spawn(self.run,
