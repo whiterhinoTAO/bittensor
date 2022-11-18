@@ -38,7 +38,6 @@ from prometheus_client import Counter, Gauge, Histogram, Summary, Info, Collecto
 import torch
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
-from accelerate import Accelerator
 
 def serve( 
         config, 
@@ -49,7 +48,8 @@ def serve(
         metagraph = None,
     ):
     config.to_defaults()
-    accelerator = Accelerator()
+
+
 
     model= model
 
@@ -76,8 +76,6 @@ def serve(
         lr = config.neuron.learning_rate,
         momentum = config.neuron.momentum,
     )
-
-    model, optimizer = accelerator.prepare( model, optimizer )
     mutex = Lock()
 
     # --- Setup prometheus summaries.
