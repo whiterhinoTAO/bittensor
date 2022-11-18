@@ -14,7 +14,7 @@ from bittensor.utils.tokenizer_utils import prep_tokenizer, get_translation_map,
     translate_special_token_text, pad_offsets, topk_token_phrases, compact_topk_token_phrases
 
 from loguru import logger; logger = logger.opt(colors=True)
-from accelerate import Accelerator
+from accelerate import Accelerator, load_checkpoint_and_dispatch, init_empty_weights
 
 class server(torch.nn.Module):
     def __init__(self, 
@@ -65,8 +65,16 @@ class server(torch.nn.Module):
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto")
-            self.pre_model = accelerator.prepare( model )
+            config = AutoConfig.from_pretrained(self.model_name)
+
+            with init_empty_weights():
+                model = AutoModelForCausalLM.from_config(config)
+            
+            self.pre_model = load_checkpoint_and_dispatch(
+                model, self.model_name, device_map="auto", no_split_module_classes=["GPTJBlock", "GPT2Block", "GPTNeoBlock"]
+            )
+            # model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto")
+            # self.pre_model = accelerator.prepare( model )
 
             self.tokenizer = tokenizer
             if tokenizer is None:
