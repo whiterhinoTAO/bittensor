@@ -25,7 +25,7 @@ __all_neurons__ =   {
                      'text_core_validator': core_validator.neuron,
                      'core_server': core_server.neuron,
                      'ddp_server': ddp_server.neuron,
-                     'mp_server': mp_server.neuron
+                     'mp_server': mp_server.neuron,
                     }
 
 __text_neurons__ =  { 

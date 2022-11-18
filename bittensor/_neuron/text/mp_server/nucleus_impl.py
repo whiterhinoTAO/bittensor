@@ -14,7 +14,9 @@ from bittensor.utils.tokenizer_utils import prep_tokenizer, get_translation_map,
     translate_special_token_text, pad_offsets, topk_token_phrases, compact_topk_token_phrases
 
 from loguru import logger; logger = logger.opt(colors=True)
-from accelerate import Accelerator, load_checkpoint_and_dispatch, init_empty_weights
+# from accelerate import Accelerator
+
+from parallelformers import parallelize
 
 class server(torch.nn.Module):
     def __init__(self, 
@@ -58,24 +60,17 @@ class server(torch.nn.Module):
         if config == None: config = server.config()
         self.config = config;print(config)
         self.std_tokenizer = bittensor.tokenizer()
-        accelerator = Accelerator()
+        # accelerator = Accelerator()
 
-        self.device = accelerator.device
+        # self.device = accelerator.device
         #setting up pretrained model
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            config = AutoConfig.from_pretrained(self.model_name)
-
-            with init_empty_weights():
-                model = AutoModelForCausalLM.from_config(config)
-            
-            self.pre_model = load_checkpoint_and_dispatch(
-                model, self.model_name, device_map="auto", no_split_module_classes=["GPTJBlock", "GPT2Block", "GPTNeoBlock"]
-            )
-            # model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto")
+            model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto")
             # self.pre_model = accelerator.prepare( model )
-
+            parallelize(model, num_gpus=config.neuron.world_size, fp16=config.neuron.autocast)
+            self.pre_model = model
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
@@ -535,6 +530,7 @@ class server(torch.nn.Module):
         parser.add_argument('--config', type=str, help='If set, defaults are overridden by passed file.')
 
         # ML model arguements
+        parser.add_argument('--neuron.world_size', type=int, default=1, help='Number of workers in the distributed training.')
         parser.add_argument('--neuron.learning_rate', type=float, help='Training initial learning rate.', default=0.01)
         parser.add_argument('--neuron.momentum', type=float, help='optimizer momentum.', default=0.8)
         parser.add_argument('--neuron.clip_gradients', type=float, help='Implement gradient clipping to avoid exploding loss on smaller architectures.', default=1.0)
