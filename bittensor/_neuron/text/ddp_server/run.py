@@ -380,6 +380,7 @@ class ddp_server:
 
         """
         ## Uid that sent the request
+        logger.info('synapse_check')
         incoming_uid = self.metagraph.hotkeys.index(hotkey)
         if synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE:
             
