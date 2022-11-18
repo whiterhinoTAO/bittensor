@@ -67,10 +67,10 @@ class server(torch.nn.Module):
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto")
+            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto")
             # self.pre_model = accelerator.prepare( model )
-            parallelize(model, num_gpus=config.neuron.world_size, fp16=config.neuron.autocast)
-            self.pre_model = model
+            parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=config.neuron.autocast)
+            # self.pre_model = model
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
@@ -216,7 +216,7 @@ class server(torch.nn.Module):
         to_text_batch, from_offsets_batch, to_offsets_batch, pad_offsets_batch = result
 
         tokens = self.tokenizer(to_text_batch, padding=True, truncation=True, max_length=token_batch.size(1), return_tensors='pt',
-                                add_special_tokens=False).to(self.device)  # assume tokenizer.padding_side = 'left'
+                                add_special_tokens=False)  # assume tokenizer.padding_side = 'left'
 
         if return_offsets_mapping:  # get offsets_mapping in tokenization to delineate token segment positions
             server_tokens = self.tokenizer(to_text_batch, return_offsets_mapping=True, add_special_tokens=False)
@@ -382,7 +382,7 @@ class server(torch.nn.Module):
                                                       self.split_map_cache,
                                                       self.to_translation_map, self.from_translation_map,
                                                       tokens['input_ids'], token_batch)
-            probs_std = probs_std.to(self.device)
+            probs_std = probs_std
             logits_std = torch.log(probs_std + 1e-40)
 
             #removing the loss calculation for stablity testing
