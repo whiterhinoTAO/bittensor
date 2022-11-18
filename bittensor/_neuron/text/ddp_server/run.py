@@ -156,8 +156,8 @@ class DDPPipe():
                     request_id, inputs_x, synapse = self.forward_q.get(timeout = self.config.neuron.console_log_time)
                     if inputs_x != None:
                         inputs_x = inputs_x.to(self.device)
-                        with self.mutex:
-                            message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
+                        # with self.mutex:
+                        message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
                                                                                                                     topk=synapse.topk,
                                                                                                                     model_output=model_output)
                         # output = self.gp_server.encode_forward(inputs_x)
