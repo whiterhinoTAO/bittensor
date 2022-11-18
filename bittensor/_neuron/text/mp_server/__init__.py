@@ -117,7 +117,7 @@ class neuron:
         )
 
         mp_model = AutoModelForCausalLM.from_pretrained(config.neuron.model_name_or_path)
-        parallelize(mp_model, num_gpus=config.neuron.num_gpus, fp16=config.neuron.autocast)
+        parallelize(mp_model, num_gpus=config.neuron.world_size, fp16=config.neuron.autocast)
         self.model = server(config = config, model = mp_model)
         self.config = config
         self.config.to_prometheus()
