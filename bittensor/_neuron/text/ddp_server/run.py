@@ -478,6 +478,7 @@ class ddp_server:
             
             # Just to keep this run function alive.
             while True:
+                logger.info(pipe_ready)
                 time.sleep(20)
 
         except KeyboardInterrupt:
