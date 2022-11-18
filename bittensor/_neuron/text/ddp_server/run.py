@@ -114,6 +114,7 @@ class DDPPipe():
             self.subtensor.register( self.wallet )
 
         bittensor.tokenizer()
+        logger.success( 'Initialized process: {}', rank )
 
     def cleanup(self):
         r""" Kill the process.
@@ -159,7 +160,7 @@ class DDPPipe():
                         # with self.mutex:
                         message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
                                                                                                                     topk=synapse.topk,
-                                                                                                                    model_output=model_output)
+                                                                                                                    model_output=None)
                         # output = self.gp_server.encode_forward(inputs_x)
                         message_clone = message.detach().clone().to(device = 'cpu')
                         model_output_clone = model_output.detach().clone().to(device = 'cpu')
