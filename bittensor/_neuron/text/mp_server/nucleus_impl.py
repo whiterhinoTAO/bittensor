@@ -72,7 +72,9 @@ class server(torch.nn.Module):
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name)
+            model = AutoModelForCausalLM.from_pretrained(self.model_name)
+            parallelize(model, num_gpus=config.neuron.world_size, fp16=self.config.neuron.autocast, verbose='detail')
+            self.pre_model = model
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
@@ -95,8 +97,6 @@ class server(torch.nn.Module):
         self.to_translation_map = get_translation_map(self.tokenizer, self.std_tokenizer)
         self.from_translation_map = get_translation_map(self.std_tokenizer, self.tokenizer)
         self.split_map_cache = {}
-
-        parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=self.config.neuron.autocast, verbose='detail')
 
 
         if self.config.neuron.local_train or self.config.neuron.remote_train:
