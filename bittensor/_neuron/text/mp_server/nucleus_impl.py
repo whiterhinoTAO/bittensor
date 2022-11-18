@@ -16,7 +16,7 @@ from bittensor.utils.tokenizer_utils import prep_tokenizer, get_translation_map,
 from loguru import logger; logger = logger.opt(colors=True)
 
 try:
-    import parallelformers
+    from parallelformers import parallelize
 except ImportError:
     logger.warning("parallelformers not installed. Please install parallelformers for model parallel. pip install parallelformers")
     raise ImportError
@@ -69,7 +69,7 @@ class server(torch.nn.Module):
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name)
+            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto")
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
@@ -101,7 +101,10 @@ class server(torch.nn.Module):
             self.pre_model.eval()
 
         if self.config.neuron.autocast and self.device[:4] == 'cuda':
-            self.pre_model.half()
+            # self.pre_model.half()
+            parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=True, verbose='detail')
+        else:
+            parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=False, verbose='detail')
 
         #parameters of the models
         self.final_dim =  bittensor.__network_dim__
@@ -544,7 +547,8 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.finetune.all', action='store_true', help='Finetune your whole model instead of only on the last (few) layers', default=False)
         parser.add_argument('--neuron.finetune.num_layers', type=int, help='The number of layers to finetune on your model.', default=1)
         parser.add_argument('--neuron.finetune.layer_name', type=str, help='Specify since which layer to finetune. eg. encoder.layer.11', default=None)
-        
+        parser.add_argument('--neuron.world_size', type=int, help='Number of workers in the world', default=1)
+
         # Miner arguements
         parser.add_argument('--neuron.name', type=str, help='Trials for this miner go in miner.root / (wallet_cold - wallet_hot) / miner.name ', default='core_server')
         parser.add_argument('--neuron.checking', action='store_false', help='To check if server settings are correct',default=True)
