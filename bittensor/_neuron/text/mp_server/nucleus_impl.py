@@ -96,6 +96,9 @@ class server(torch.nn.Module):
         self.from_translation_map = get_translation_map(self.std_tokenizer, self.tokenizer)
         self.split_map_cache = {}
 
+        parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=self.config.neuron.autocast, verbose='detail')
+
+
         if self.config.neuron.local_train or self.config.neuron.remote_train:
             self.pre_model.train()
             self.set_fine_tuning_params()
@@ -107,8 +110,6 @@ class server(torch.nn.Module):
         #     self.pre_model.half()
 
         
-        parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=self.config.neuron.autocast, verbose='detail')
-
         #parameters of the models
         self.final_dim =  bittensor.__network_dim__
         self.pre_dimension = self.pre_model.config.hidden_size
