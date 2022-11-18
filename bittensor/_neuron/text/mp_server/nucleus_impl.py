@@ -101,8 +101,8 @@ class server(torch.nn.Module):
         else:
             self.pre_model.eval()
 
-        if self.config.neuron.autocast and self.device[:4] == 'cuda':
-            self.pre_model.half()
+        # if self.config.neuron.autocast and self.device[:4] == 'cuda':
+        #     self.pre_model.half()
 
         #parameters of the models
         self.final_dim =  bittensor.__network_dim__
