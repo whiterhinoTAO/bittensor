@@ -277,7 +277,7 @@ class ddp_server:
                 topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
                     The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
         """
-
+        logger.info('forward_casual_lm_next')
         result = None
         request_id = id(inputs_x)
         self.forward_q.put( (request_id, inputs_x, synapse) )
