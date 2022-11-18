@@ -27,6 +27,10 @@ import os
 
 from .nucleus_impl import server
 from .run import serve
+from parallelformers import parallelize
+from transformers import AutoModelForCausalLM
+
+
 
 class neuron:
     r"""
@@ -112,7 +116,9 @@ class neuron:
             port = config.prometheus.port if config.axon.port == bittensor.defaults.axon.port else config.axon.port - 1000
         )
 
-        self.model = server(config = config)
+        mp_model = AutoModelForCausalLM.from_pretrained(config.neuron.model_name_or_path)
+        parallelize(mp_model, num_gpus=config.neuron.num_gpus, fp16=config.neuron.autocast)
+        self.model = server(config = config, model = mp_model)
         self.config = config
         self.config.to_prometheus()
 

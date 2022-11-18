@@ -72,8 +72,6 @@ class server(torch.nn.Module):
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            model = AutoModelForCausalLM.from_pretrained(self.model_name)
-            parallelize(model, num_gpus=4, fp16=self.config.neuron.autocast, verbose='detail')
             self.pre_model = model
             self.tokenizer = tokenizer
             if tokenizer is None:
