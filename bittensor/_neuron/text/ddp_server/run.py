@@ -248,7 +248,12 @@ class ddp_server:
             blacklist = self.blacklist if not self.gp_server.config.neuron.disable_blacklist else None,
             priority = self.priority if not self.gp_server.config.neuron.disable_priority else None,
         ) 
-    
+
+        self.optimizer = torch.optim.SGD(
+            [ {"params": self.gp_server.parameters()} ],
+            lr = config.neuron.learning_rate,
+            momentum = config.neuron.momentum,
+        )    
         self.axon_pipe = DDPPipe(config, gp_server, self.wallet, self.forward_q, self.events, self.outputs )
         self.timecheck = {}
         self.futures = {}
@@ -406,6 +411,12 @@ class ddp_server:
 
         return True
 
+
+    def optimizer_step(self):
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+
+
     def run(self):
         def serve_when_ready(serve_kwargs, pipe_ready):
             r""" Start to serve Axon when DDP have started
@@ -417,6 +428,8 @@ class ddp_server:
             """
             if pipe_ready.wait():
                 self.axon.start().serve(**serve_kwargs)
+
+                self.axon.optimizer_step = self.optimizer_step
             
             return 
         
