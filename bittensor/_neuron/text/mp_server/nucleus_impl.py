@@ -21,6 +21,9 @@ except ImportError:
     logger.warning("parallelformers not installed. Please install parallelformers for model parallel. pip install parallelformers")
     raise ImportError
 
+from parallelformers import parallelize
+
+
 class server(torch.nn.Module):
     def __init__(self, 
                 config: 'bittensor.config' = None,
@@ -69,7 +72,7 @@ class server(torch.nn.Module):
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto")
+            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name)
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
@@ -100,11 +103,11 @@ class server(torch.nn.Module):
         else:
             self.pre_model.eval()
 
-        if self.config.neuron.autocast and self.device[:4] == 'cuda':
-            # self.pre_model.half()
-            parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=True, verbose='detail')
-        else:
-            parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=False, verbose='detail')
+        # if self.config.neuron.autocast and self.device[:4] == 'cuda':
+        #     self.pre_model.half()
+
+        
+        parallelize(self.pre_model, num_gpus=config.neuron.world_size, fp16=self.config.neuron.autocast, verbose='detail')
 
         #parameters of the models
         self.final_dim =  bittensor.__network_dim__
