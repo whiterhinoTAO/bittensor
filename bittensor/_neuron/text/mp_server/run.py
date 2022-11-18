@@ -48,7 +48,6 @@ def serve(
         metagraph = None,
     ):
     config.to_defaults()
-    model= model.to(model.device)
 
     # Create Subtensor connection
     subtensor = bittensor.subtensor(config = config) if subtensor == None else subtensor

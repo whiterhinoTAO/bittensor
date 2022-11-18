@@ -15,12 +15,6 @@ from bittensor.utils.tokenizer_utils import prep_tokenizer, get_translation_map,
 
 from loguru import logger; logger = logger.opt(colors=True)
 
-try:
-    from parallelformers import parallelize
-except ImportError:
-    logger.warning("parallelformers not installed. Please install parallelformers for model parallel. pip install parallelformers")
-    raise ImportError
-
 from parallelformers import parallelize
 
 
