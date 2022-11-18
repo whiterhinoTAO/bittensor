@@ -549,7 +549,6 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.finetune.all', action='store_true', help='Finetune your whole model instead of only on the last (few) layers', default=False)
         parser.add_argument('--neuron.finetune.num_layers', type=int, help='The number of layers to finetune on your model.', default=1)
         parser.add_argument('--neuron.finetune.layer_name', type=str, help='Specify since which layer to finetune. eg. encoder.layer.11', default=None)
-        parser.add_argument('--neuron.world_size', type=int, help='Number of workers in the world', default=1)
 
         # Miner arguements
         parser.add_argument('--neuron.name', type=str, help='Trials for this miner go in miner.root / (wallet_cold - wallet_hot) / miner.name ', default='core_server')
@@ -565,6 +564,7 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.disable_blacklist', action='store_true', help='Turns off blacklisting', default=False)
         parser.add_argument('--neuron.disable_priority', action='store_true', help='Turns off priority threadpool', default=False)
         parser.add_argument('--neuron.num_remote_loss', type=int, help='Number of past remote loss to keep in stat.', default=20)
+        parser.add_argument('--neuron.world_size', type=int, help='Number of workers in the world', default=1)
 
         # Synapse Arguements
         parser.add_argument('--neuron.lasthidden', action='store_false', help='To turn off last hidden synapse', default=True)
