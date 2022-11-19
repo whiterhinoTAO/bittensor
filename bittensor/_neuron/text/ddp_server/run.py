@@ -303,6 +303,8 @@ class ddp_server:
 
     def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None):
         # with mutex:
+
+        bittensor.logging.success('forward_casual_lm_next', sufix = f'rank: {self.gp_server.rank}')
         message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
                                                                                     topk=synapse.topk,
                                                                                     model_output=model_output)
