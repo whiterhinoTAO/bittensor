@@ -169,13 +169,11 @@ class DDPPipe():
                         # message_clone = message.detach().clone().to(device = 'cpu')
                         # model_output_clone = model_output.detach().clone().to(device = 'cpu')
                         # topk_token_phrases_clone = topk_token_phrases.detach().clone().to(device = 'cpu')
-                        self.outputs = (message, model_output, topk_token_phrases)
+                        # self.outputs = (message, model_output, topk_token_phrases)
+                        self.outputs[request_id] = (message, model_output, topk_token_phrases)
                         self.events[request_id].set()
                         
                         # Delete the input tensor to free up memory.
-                        del message_clone
-                        del model_output_clone
-                        del topk_token_phrases_clone
                         del message
                         del model_output
                         del topk_token_phrases
@@ -302,7 +300,7 @@ class ddp_server:
         self.forward_q.put( inputs )
         self.events[request_id] = self.manager.Event()
 
-        if self.events[request_id].wait(8):
+        if self.events[request_id].wait(12):
             result = self.outputs[request_id]
 
         del self.events[request_id]
@@ -314,7 +312,7 @@ class ddp_server:
         model_output = result[1]
         topk_token_phrases = result[2]
 
-        return result
+        return message, model_output, topk_token_phrases
 
     def priority(self, pubkey:str, request_type:bittensor.proto.RequestType, inputs_x) -> float:
         r"""Calculates the priority on requests based on stake and size of input
