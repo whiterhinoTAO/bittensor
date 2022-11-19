@@ -170,9 +170,9 @@ class DDPPipe():
                         # model_output_clone = model_output.detach().clone().to(device = 'cpu')
                         # topk_token_phrases_clone = topk_token_phrases.detach().clone().to(device = 'cpu')
                         # self.outputs = (message, model_output, topk_token_phrases)
-                        print(message)
-                        print(topk_token_phrases)
-                        print(model_output)
+                        # print(message)
+                        # print(topk_token_phrases)
+                        # print(model_output)
                         output_dict = {
                             'message': message,
                             'model_output': model_output,
@@ -316,8 +316,8 @@ class ddp_server:
 
         # bittensor.logging.info( 'forward_casual_lm_next: result: {}', result )
 
-        logger.info('result: ')
-        logger.info(result)
+        # logger.info('result: ')
+        # logger.info(result)
         message = result['message']
         model_output = result['model_output']
         topk_token_phrases = result['topk_token_phrases']
