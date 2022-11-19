@@ -245,8 +245,8 @@ class ddp_server:
             wallet = self.wallet,
             synapse_checks=self.synapse_check,
             synapse_causal_lm_next = self.forward_casual_lm_next,
-            blacklist = self.blacklist if not self.gp_server.config.neuron.disable_blacklist else None,
-            priority = self.priority if not self.gp_server.config.neuron.disable_priority else None,
+            # blacklist = self.blacklist if not self.gp_server.config.neuron.disable_blacklist else None,
+            # priority = self.priority if not self.gp_server.config.neuron.disable_priority else None,
         ) 
 
         self.optimizer = torch.optim.SGD(
