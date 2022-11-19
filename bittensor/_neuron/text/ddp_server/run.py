@@ -169,7 +169,7 @@ class DDPPipe():
 
                         # self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
                         self.outputs[request_id] = (message, model_output, topk_token_phrases)
-                        self.events[request_id].set()
+                        # self.events[request_id].set()
                         
                         # Delete the input tensor to free up memory.
                         del message
@@ -296,7 +296,6 @@ class ddp_server:
             'synapse': synapse,
         }
 
-        print(input_dict)
     
         self.forward_q.put( input_dict )
         self.events[request_id] = self.manager.Event()
