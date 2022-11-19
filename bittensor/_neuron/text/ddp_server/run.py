@@ -173,7 +173,12 @@ class DDPPipe():
                         print(message)
                         print(topk_token_phrases)
                         print(model_output)
-                        self.outputs[request_id] = (message, model_output, topk_token_phrases)
+                        output_dict = {
+                            'message': message,
+                            'model_output': model_output,
+                            'topk_token_phrases': topk_token_phrases
+                        }
+                        self.outputs[request_id] = output_dict
                         self.events[request_id].set()
                         
                         # Delete the input tensor to free up memory.
@@ -303,7 +308,7 @@ class ddp_server:
         self.forward_q.put( inputs )
         self.events[request_id] = self.manager.Event()
 
-        if self.events[request_id].wait(12):
+        if self.events[request_id].wait(16):
             result = self.outputs[request_id]
 
         del self.events[request_id]
@@ -313,9 +318,9 @@ class ddp_server:
 
         logger.info('result: ')
         logger.info(result)
-        message = result[0]
-        model_output = result[1]
-        topk_token_phrases = result[2]
+        message = result['message']
+        model_output = result['model_output']
+        topk_token_phrases = result['topk_token_phrases']
 
         return message, model_output, topk_token_phrases
 
