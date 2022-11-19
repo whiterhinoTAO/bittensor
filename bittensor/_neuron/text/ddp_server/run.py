@@ -102,7 +102,6 @@ class DDPPipe():
         self.subtensor = bittensor.subtensor ( config = self.config )
         self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor )
         self.metagraph.sync()
-        self.mutex = Lock()
         self.optimizer = torch.optim.SGD(
             [ {'params': self.gp_server.parameters() } ],
             lr = self.config.neuron.learning_rate,
