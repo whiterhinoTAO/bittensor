@@ -233,7 +233,6 @@ class ddp_server:
         
         ctx = mp.get_context('spawn')
         self.forward_q = ctx.Queue()
-        logger.info('spawned forward_q')
         
         self.manager = Manager()
         self.events = self.manager.dict()
@@ -293,7 +292,8 @@ class ddp_server:
         self.forward_q.put( (request_id, inputs_x, synapse) )
         self.events[request_id] = self.manager.Event()
 
-        if self.events[request_id].wait(16):
+        if self.events[request_id].wait(4):
+            pdb.set_trace()
             result = self.outputs[request_id]
 
         del self.events[request_id]
