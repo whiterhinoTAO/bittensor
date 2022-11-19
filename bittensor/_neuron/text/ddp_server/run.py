@@ -161,10 +161,10 @@ class DDPPipe():
                                                                                                                     topk=synapse.topk,
                                                                                                                     model_output=None)
                         # output = self.gp_server.encode_forward(inputs_x)
-                        message_clone = message.detach().clone().to(device = 'cpu')
-                        model_output_clone = model_output.detach().clone().to(device = 'cpu')
-                        topk_token_phrases_clone = topk_token_phrases.detach().clone().to(device = 'cpu')
-                        self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
+                        # message_clone = message.detach().clone().to(device = 'cpu')
+                        # model_output_clone = model_output.detach().clone().to(device = 'cpu')
+                        # topk_token_phrases_clone = topk_token_phrases.detach().clone().to(device = 'cpu')
+                        self.outputs = (message, model_output, topk_token_phrases)
                         self.events[request_id].set()
                         
                         # Delete the input tensor to free up memory.
