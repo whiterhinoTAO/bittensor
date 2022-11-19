@@ -307,7 +307,7 @@ class ddp_server:
 
 
     def forward_casual_lm_next(self, inputs_x: torch.FloatTensor, synapse, model_output=None):
-        message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x.to(model.device),
+        message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x.to(self.gp_server.device),
                                                                                         topk=synapse.topk,
                                                                                         model_output=model_output)
         # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
