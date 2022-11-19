@@ -293,8 +293,8 @@ class ddp_server:
         self.events[request_id] = self.manager.Event()
 
         if self.events[request_id].wait(4):
-            pdb.set_trace()
             result = self.outputs[request_id]
+            print(result)
 
         del self.events[request_id]
         del self.outputs[request_id]
