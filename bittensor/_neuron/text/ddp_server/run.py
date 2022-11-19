@@ -287,8 +287,6 @@ class ddp_server:
         logger.info('request_id:')
         logger.info(request_id)
         self.forward_q.put( (request_id, inputs_x, synapse) )
-        logger.info('forward_q')
-        logger.info(self.forward_q)
         self.events[request_id] = self.manager.Event()
 
         if self.events[request_id].wait(12):
@@ -303,9 +301,13 @@ class ddp_server:
         model_output = result[1]
         topk_token_phrases = result[2]
 
-        bittensor.logging.info( f'forward_casual_lm_next: message: {message}'  )
-        bittensor.logging.info( f'forward_casual_lm_next: model_output: {model_output}' )
-        bittensor.logging.info( f'forward_casual_lm_next: topk_token_phrases: {topk_token_phrases}' )
+        logger.info('message:')
+        logger.info(message)
+        logger.info('model_output:')
+        logger.info(model_output)
+        logger.info('topk_token_phrases:')
+        logger.info(topk_token_phrases)
+        
 
         return result
 
