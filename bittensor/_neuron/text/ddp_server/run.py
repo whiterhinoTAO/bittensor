@@ -153,7 +153,11 @@ class DDPPipe():
             torch.cuda.empty_cache()
             while True: 
                 try:
-                    request_id, inputs_x, synapse = self.forward_q.get(timeout = self.config.neuron.console_log_time)
+                    input_dict = self.forward_q.get(timeout = self.config.neuron.console_log_time)
+
+                    request_id = input_dict['request_id']
+                    inputs_x = input_dict['inputs_x']
+                    synapse = input_dict['synapse']
 
                     if inputs_x != None:
                         inputs_x = inputs_x.to(self.device)
@@ -170,9 +174,8 @@ class DDPPipe():
                         del message
                         del model_output
                         del topk_token_phrases
-                        del message_clone
-                        del model_output_clone
-                        del topk_token_phrases_clone
+                    else:
+                        print('None input')
 
                     del inputs_x
                     torch.cuda.empty_cache()
@@ -286,8 +289,14 @@ class ddp_server:
 
         # logger.info('inputs: ')
         # logger.info(inputs)
+
+        input_dict = {
+            'request_id': request_id,
+            'inputs_x': inputs_x,
+            'synapse': synapse,
+        }
     
-        self.forward_q.put( (request_id, inputs_x, synapse) )
+        self.forward_q.put( input_dict )
         self.events[request_id] = self.manager.Event()
 
         if self.events[request_id].wait(12):
