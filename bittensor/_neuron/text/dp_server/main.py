@@ -34,7 +34,7 @@ if __name__ == "__main__":
     for i in range(instances_count):
         queue.put(pretrained_model)
 
-        config.wallet.hotkey = wallet_hotkey + str(i + 1 + config.wallet.hotkey_id)
+        config.wallet.hotkey = wallet_hotkey
         config.axon.port = axon_port + i
 
         instance = mp.Process(target=processfn, args=(queue,config))
