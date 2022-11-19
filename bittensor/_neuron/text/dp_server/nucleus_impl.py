@@ -521,7 +521,8 @@ class server(torch.nn.Module):
     def config ():
         parser = argparse.ArgumentParser()
         parser.add_argument('--config', type=str, help='If set, defaults are overridden by passed file.')
-
+        parser.add_argument('--create_instances', type=int, help='Specify number of the instances to spawn', default = 1)
+        parser.add_argument('--wallet.hotkey_id', type=int, help='Specify offset of the first instance to spawn', default = 0)
         # ML model arguements
         parser.add_argument('--neuron.learning_rate', type=float, help='Training initial learning rate.', default=0.01)
         parser.add_argument('--neuron.momentum', type=float, help='optimizer momentum.', default=0.8)

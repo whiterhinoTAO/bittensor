@@ -14,14 +14,14 @@ def load_pretrained_model(config):
 
 
 def processfn(queue, config):
-    bittensor.neurons.core_server.neuron(queue=queue, config=config).run()
+    bittensor.neurons.dp_server.neuron(queue=queue, config=config).run()
 
 if __name__ == "__main__":
     mp.set_start_method("spawn")
 
     bittensor.utils.version_checking()
     
-    config = bittensor.neurons.core_server.server.config()
+    config = bittensor.neurons.dp_server.server.config()
     wallet_hotkey = config.wallet.hotkey
     axon_port = config.axon.port
     pretrained_model = load_pretrained_model(config=config)
