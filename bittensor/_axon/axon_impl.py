@@ -40,20 +40,22 @@ from datetime import datetime
 logger = logger.opt(colors=True)
 
 from prometheus_client import Counter, Histogram, Enum, CollectorRegistry
-PROM_axon_is_started = Enum('axon_is_started', 'is_started', states=['stopped', 'started'])
-PROM_total_forward = Counter('axon_total_forward', 'total_forward', ['wallet', 'identifier'])
-PROM_total_backward = Counter('axon_total_backward', 'total_backward', ['wallet', 'identifier'])
-PROM_forward_latency = Histogram('axon_forward_latency', 'forward_latency', ['wallet', 'identifier'], buckets=list(range(0,bittensor.__blocktime__,1)))
-PROM_backward_latency = Histogram('axon_backward_latency', 'backward_latency', ['wallet', 'identifier'], buckets=list(range(0,bittensor.__blocktime__,1))) 
-PROM_forward_synapses = Counter('axon_forward_synapses', 'forward_synapses', ['wallet', 'identifier', "synapse"])
-PROM_backward_synapses = Counter('axon_backward_synapses', 'backward_synapses', ['wallet', 'identifier', "synapse"])
-PROM_forward_codes = Counter('axon_forward_codes', 'forward_codes', ['wallet', 'identifier', "code"])
-PROM_backward_codes = Counter('axon_backward_codes', 'backward_codes', ['wallet', 'identifier', "code"])
-PROM_forward_hotkeys = Counter('axon_forward_hotkeys', 'forward_hotkeys', ['wallet', 'identifier', "hotkey"])
-PROM_backward_hotkeys = Counter('axon_backward_hotkeys', 'backward_hotkeys', ['wallet', 'identifier', "hotkey"])
-PROM_forward_bytes = Counter('axon_forward_bytes', 'forward_bytes', ['wallet', 'identifier', "hotkey"])
-PROM_backward_bytes = Counter('axon_backward_bytes', 'backward_bytes', ['wallet', 'identifier', "hotkey"])
-
+try:
+    PROM_axon_is_started = Enum('axon_is_started', 'is_started', states=['stopped', 'started'])
+    PROM_total_forward = Counter('axon_total_forward', 'total_forward', ['wallet', 'identifier'])
+    PROM_total_backward = Counter('axon_total_backward', 'total_backward', ['wallet', 'identifier'])
+    PROM_forward_latency = Histogram('axon_forward_latency', 'forward_latency', ['wallet', 'identifier'], buckets=list(range(0,bittensor.__blocktime__,1)))
+    PROM_backward_latency = Histogram('axon_backward_latency', 'backward_latency', ['wallet', 'identifier'], buckets=list(range(0,bittensor.__blocktime__,1))) 
+    PROM_forward_synapses = Counter('axon_forward_synapses', 'forward_synapses', ['wallet', 'identifier', "synapse"])
+    PROM_backward_synapses = Counter('axon_backward_synapses', 'backward_synapses', ['wallet', 'identifier', "synapse"])
+    PROM_forward_codes = Counter('axon_forward_codes', 'forward_codes', ['wallet', 'identifier', "code"])
+    PROM_backward_codes = Counter('axon_backward_codes', 'backward_codes', ['wallet', 'identifier', "code"])
+    PROM_forward_hotkeys = Counter('axon_forward_hotkeys', 'forward_hotkeys', ['wallet', 'identifier', "hotkey"])
+    PROM_backward_hotkeys = Counter('axon_backward_hotkeys', 'backward_hotkeys', ['wallet', 'identifier', "hotkey"])
+    PROM_forward_bytes = Counter('axon_forward_bytes', 'forward_bytes', ['wallet', 'identifier', "hotkey"])
+    PROM_backward_bytes = Counter('axon_backward_bytes', 'backward_bytes', ['wallet', 'identifier', "hotkey"])
+except ValueError as e:
+    pass
 class Axon( bittensor.grpc.BittensorServicer ):
     r""" Services Forward and Backward requests from other neurons.
     """
