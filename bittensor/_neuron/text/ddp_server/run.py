@@ -260,66 +260,43 @@ class ddp_server:
         self.last_sync_block = None
         self.last_set_weight_block = None
 
-    # def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
-    #     r""" Forward function that is called when the axon recieves a forward request from other peers
-    #         Args:
-    #             inputs_x ( :obj:`torch.Tensor`, `required`):
-    #                 torch inputs to be forward processed.
+    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
+        r""" Forward function that is called when the axon recieves a forward request from other peers
+            Args:
+                inputs_x ( :obj:`torch.Tensor`, `required`):
+                    torch inputs to be forward processed.
 
-    #             synapse (:obj:`bittensor.synapse`, `required`):
-    #                 The synapse object that is used to forward the request.
+                synapse (:obj:`bittensor.synapse`, `required`):
+                    The synapse object that is used to forward the request.
 
-    #             model_output (:obj:`torch.FloatTensor`, `optional`, defaults to None):
-    #                 The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+                model_output (:obj:`torch.FloatTensor`, `optional`, defaults to None):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
 
-    #         Returns:
-    #             message (:obj:`bittensor.proto.ReturnMessage`, `required`):
-    #                 The return message from the nucleus.
+            Returns:
+                message (:obj:`bittensor.proto.ReturnMessage`, `required`):
+                    The return message from the nucleus.
                 
-    #             model_output (:obj:`torch.FloatTensor`, `required`):
-    #                 The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+                model_output (:obj:`torch.FloatTensor`, `required`):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
                 
-    #             topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
-    #                 The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
-    #     """
-    #     logger.info('forward_casual_lm_next')
-    #     result = None
-    #     request_id = id(inputs_x)
-    #     self.forward_q.put( (request_id, inputs_x, synapse) )
-    #     self.events[request_id] = self.manager.Event()
+                topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+        """
+        logger.info('forward_casual_lm_next')
+        result = None
+        request_id = id(inputs_x)
+        self.forward_q.put( (request_id, inputs_x, synapse) )
+        self.events[request_id] = self.manager.Event()
 
-    #     if self.events[request_id].wait(12):
-    #         result = self.outputs[request_id]
+        if self.events[request_id].wait(12):
+            result = self.outputs[request_id]
 
-    #     del self.events[request_id]
-    #     del self.outputs[request_id]
+        del self.events[request_id]
+        del self.outputs[request_id]
 
-    #     message = result[0]
-    #     model_output = result[1]
-    #     topk_token_phrases = result[2]
-
-    #     return message, model_output, topk_token_phrases
-
-
-    # def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None):
-    #     # with mutex:
-
-    #     bittensor.logging.success('forward_casual_lm_next', sufix = f'rank: {self.gp_server.rank}')
-    #     message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
-    #                                                                                 topk=synapse.topk,
-    #                                                                                 model_output=model_output)
-    #     # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
-    #     #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
-    #     return message, model_output, topk_token_phrases
-
-
-    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None):
-        bittensor.logging.success('forward_casual_lm_next', sufix = f'rank: {self.gp_server.rank}')
-
-        message = []
-
-        model_output = None
-        topk_token_phrases = None
+        message = result[0]
+        model_output = result[1]
+        topk_token_phrases = result[2]
 
         return message, model_output, topk_token_phrases
 
