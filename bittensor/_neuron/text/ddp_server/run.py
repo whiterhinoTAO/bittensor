@@ -155,22 +155,21 @@ class DDPPipe():
                 try:
                     request_id, inputs_x, synapse = self.forward_q.get(timeout = self.config.neuron.console_log_time)
 
-                    start_time = time.time()
                     if inputs_x != None:
                         inputs_x = inputs_x.to(self.device)
                         # with self.mutex:
                         message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
                                                                                                                     topk=synapse.topk,
                                                                                                                     model_output=None)
-                        message_clone = message.detach().clone().cpu()
-                        model_output_clone = model_output.detach().clone().cpu()
-                        topk_token_phrases_clone = topk_token_phrases.detach().clone().cpu()
-                        end_time = time.time()
+                        # message_clone = message.detach().clone().cpu()
+                        # model_output_clone = model_output.detach().clone().cpu()
+                        # topk_token_phrases_clone = topk_token_phrases.detach().clone().cpu()
 
                         # print(f"Rank {rank} finished forward in {end_time - start_time} seconds")
-                        times = (end_time - start_time)
-                        print(times)
-                        self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
+
+                        print(model_output.shape)
+                        # self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
+                        self.outputs[request_id] = (message, model_output, topk_token_phrases)
                         self.events[request_id].set()
                         
                         # Delete the input tensor to free up memory.
@@ -297,9 +296,8 @@ class ddp_server:
         self.forward_q.put( (request_id, inputs_x, synapse) )
         self.events[request_id] = self.manager.Event()
 
-        if self.events[request_id].wait(4):
+        if self.events[request_id].wait(12):
             result = self.outputs[request_id]
-            print(result)
 
         del self.events[request_id]
         del self.outputs[request_id]
