@@ -160,16 +160,13 @@ class DDPPipe():
                     synapse = input_dict['synapse']
 
 
-                    logger.info('input_dict')
-                    logger.info(input_dict)
-
                     if inputs_x != None:
+                        raise Exception('inputs_x is not None')
                         inputs_x = inputs_x.to(self.device)
                         # with self.mutex:
                         message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
                                                                                                                     topk=synapse.topk,
                                                                                                                     model_output=None)
-                        print(model_output.shape)
                         # self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
                         self.outputs[request_id] = (message, model_output, topk_token_phrases)
                         self.events[request_id].set()
@@ -179,6 +176,7 @@ class DDPPipe():
                         del model_output
                         del topk_token_phrases
                     else:
+                        raise Exception('inputs_x is not None')
                         print('None input')
 
                     del inputs_x
