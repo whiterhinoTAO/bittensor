@@ -284,6 +284,8 @@ class ddp_server:
         """
         result = None
         request_id = id(inputs_x)
+        logger.info('forward_casual_lm_next: request_id:')
+        logger.info(request_id)
         self.forward_q.put( (request_id, inputs_x, synapse) )
         self.events[request_id] = self.manager.Event()
 
@@ -303,7 +305,7 @@ class ddp_server:
         bittensor.logging.info( f'forward_casual_lm_next: model_output: {model_output}' )
         bittensor.logging.info( f'forward_casual_lm_next: topk_token_phrases: {topk_token_phrases}' )
 
-        return message, model_output, topk_token_phrases
+        return result
 
 
 
