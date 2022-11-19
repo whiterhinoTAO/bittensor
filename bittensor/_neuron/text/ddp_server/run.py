@@ -293,15 +293,15 @@ class ddp_server:
         del self.events[request_id]
         del self.outputs[request_id]
 
-        logger.info( 'forward_casual_lm_next: result: {}', result )
+        bittensor.logging.info( 'forward_casual_lm_next: result: {}', result )
 
         message = result[0]
         model_output = result[1]
         topk_token_phrases = result[2]
 
-        logger.info( 'forward_casual_lm_next: message: {}', message )
-        logger.info( 'forward_casual_lm_next: model_output: {}', model_output )
-        logger.info( 'forward_casual_lm_next: topk_token_phrases: {}', topk_token_phrases )
+        bittensor.logging.info( f'forward_casual_lm_next: message: {message}'  )
+        bittensor.logging.info( f'forward_casual_lm_next: model_output: {model_output}' )
+        bittensor.logging.info( f'forward_casual_lm_next: topk_token_phrases: {topk_token_phrases}' )
 
         return message, model_output, topk_token_phrases
 
