@@ -282,7 +282,6 @@ class ddp_server:
                 topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
                     The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
         """
-        logger.info('forward_casual_lm_next')
         result = None
         request_id = id(inputs_x)
         self.forward_q.put( (request_id, inputs_x, synapse) )
@@ -294,9 +293,15 @@ class ddp_server:
         del self.events[request_id]
         del self.outputs[request_id]
 
+        logger.info( 'forward_casual_lm_next: result: {}', result )
+
         message = result[0]
         model_output = result[1]
         topk_token_phrases = result[2]
+
+        logger.info( 'forward_casual_lm_next: message: {}', message )
+        logger.info( 'forward_casual_lm_next: model_output: {}', model_output )
+        logger.info( 'forward_casual_lm_next: topk_token_phrases: {}', topk_token_phrases )
 
         return message, model_output, topk_token_phrases
 
@@ -386,7 +391,6 @@ class ddp_server:
 
         """
         ## Uid that sent the request
-        logger.info('synapse_check')
         incoming_uid = self.metagraph.hotkeys.index(hotkey)
         if synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE:
             
