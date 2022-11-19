@@ -159,6 +159,10 @@ class DDPPipe():
                     inputs_x = input_dict['inputs_x']
                     synapse = input_dict['synapse']
 
+
+                    logger.info('input_dict')
+                    logger.info(input_dict)
+
                     if inputs_x != None:
                         inputs_x = inputs_x.to(self.device)
                         # with self.mutex:
@@ -283,7 +287,6 @@ class ddp_server:
                 topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
                     The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
         """
-        result = None
         request_id = id(inputs_x)
 
 
