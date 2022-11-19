@@ -153,7 +153,12 @@ class DDPPipe():
             torch.cuda.empty_cache()
             while True: 
                 try:
-                    request_id, inputs_x, synapse = self.forward_q.get(timeout = self.config.neuron.console_log_time)
+                    inputs_dict = self.forward_q.get(timeout = self.config.neuron.console_log_time)
+                    
+                    request_id = inputs_dict['request_id']
+                    inputs_x = inputs_dict['inputs_x']
+                    synapse = inputs_dict['synapse']
+                    
                     if inputs_x != None:
                         inputs_x = inputs_x.to(self.device)
                         # with self.mutex:
@@ -260,61 +265,56 @@ class ddp_server:
         self.last_sync_block = None
         self.last_set_weight_block = None
 
-    # def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
-    #     r""" Forward function that is called when the axon recieves a forward request from other peers
-    #         Args:
-    #             inputs_x ( :obj:`torch.Tensor`, `required`):
-    #                 torch inputs to be forward processed.
+    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None ):
+        r""" Forward function that is called when the axon recieves a forward request from other peers
+            Args:
+                inputs_x ( :obj:`torch.Tensor`, `required`):
+                    torch inputs to be forward processed.
 
-    #             synapse (:obj:`bittensor.synapse`, `required`):
-    #                 The synapse object that is used to forward the request.
+                synapse (:obj:`bittensor.synapse`, `required`):
+                    The synapse object that is used to forward the request.
 
-    #             model_output (:obj:`torch.FloatTensor`, `optional`, defaults to None):
-    #                 The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+                model_output (:obj:`torch.FloatTensor`, `optional`, defaults to None):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
 
-    #         Returns:
-    #             message (:obj:`bittensor.proto.ReturnMessage`, `required`):
-    #                 The return message from the nucleus.
+            Returns:
+                message (:obj:`bittensor.proto.ReturnMessage`, `required`):
+                    The return message from the nucleus.
                 
-    #             model_output (:obj:`torch.FloatTensor`, `required`):
-    #                 The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+                model_output (:obj:`torch.FloatTensor`, `required`):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
                 
-    #             topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
-    #                 The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
-    #     """
-    #     result = None
-    #     request_id = id(inputs_x)
-    #     logger.info('request_id:')
-    #     logger.info(request_id)
-    #     self.forward_q.put( (request_id, inputs_x, synapse) )
-    #     self.events[request_id] = self.manager.Event()
+                topk_token_phrases (:obj:`torch.FloatTensor`, `required`):
+                    The nucleus's outputs as a torch tensor of shape [batch_size, sequence_len, __network_dim__]
+        """
+        result = None
+        request_id = id(inputs_x)
 
-    #     if self.events[request_id].wait(8):
-    #         result = self.outputs[request_id]
+        inputs = {
+            'request_id': request_id,
+            'inputs_x': inputs_x,
+            'synapse': synapse,
+        }
 
-    #     del self.events[request_id]
-    #     del self.outputs[request_id]
+        logger.info('inputs: ')
+        logger.info(inputs)
+    
+        self.forward_q.put( inputs )
+        self.events[request_id] = self.manager.Event()
 
-    #     bittensor.logging.info( 'forward_casual_lm_next: result: {}', result )
+        if self.events[request_id].wait(8):
+            result = self.outputs[request_id]
 
-    #     message = result[0]
-    #     model_output = result[1]
-    #     topk_token_phrases = result[2]
+        del self.events[request_id]
+        del self.outputs[request_id]
 
+        bittensor.logging.info( 'forward_casual_lm_next: result: {}', result )
 
+        message = result[0]
+        model_output = result[1]
+        topk_token_phrases = result[2]
 
-    #     return result
-
-
-    def forward_casual_lm_next(self, inputs_x: torch.FloatTensor, synapse, model_output=None):
-        message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x.to(self.gp_server.device),
-                                                                                        topk=synapse.topk,
-                                                                                        model_output=model_output)
-        # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
-        #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
-        return message, model_output, topk_token_phrases
-
-
+        return result
 
     def priority(self, pubkey:str, request_type:bittensor.proto.RequestType, inputs_x) -> float:
         r"""Calculates the priority on requests based on stake and size of input
