@@ -289,7 +289,7 @@ class ddp_server:
         self.forward_q.put( (request_id, inputs_x, synapse) )
         self.events[request_id] = self.manager.Event()
 
-        if self.events[request_id].wait(12):
+        if self.events[request_id].wait(8):
             result = self.outputs[request_id]
 
         del self.events[request_id]
@@ -301,13 +301,7 @@ class ddp_server:
         model_output = result[1]
         topk_token_phrases = result[2]
 
-        logger.info('message:')
-        logger.info(message)
-        logger.info('model_output:')
-        logger.info(model_output)
-        logger.info('topk_token_phrases:')
-        logger.info(topk_token_phrases)
-        
+
 
         return result
 
