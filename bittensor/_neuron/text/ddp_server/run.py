@@ -153,11 +153,8 @@ class DDPPipe():
             torch.cuda.empty_cache()
             while True: 
                 try:
-                    inputs_dict = self.forward_q.get(timeout = self.config.neuron.console_log_time)
-                    
-                    request_id = inputs_dict['request_id']
-                    inputs_x = inputs_dict['inputs_x']
-                    synapse = inputs_dict['synapse']
+                    request_id, inputs_x, synapse = self.forward_q.get(timeout = self.config.neuron.console_log_time)
+
                     
                     if inputs_x != None:
                         inputs_x = inputs_x.to(self.device)
@@ -289,16 +286,11 @@ class ddp_server:
         result = None
         request_id = id(inputs_x)
 
-        inputs = {
-            'request_id': request_id,
-            'inputs_x': inputs_x,
-            'synapse': synapse,
-        }
 
         # logger.info('inputs: ')
         # logger.info(inputs)
     
-        self.forward_q.put( inputs )
+        self.forward_q.put( (request_id, inputs_x, synapse) )
         self.events[request_id] = self.manager.Event()
 
         if self.events[request_id].wait(16):
