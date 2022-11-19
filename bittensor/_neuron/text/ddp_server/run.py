@@ -284,9 +284,11 @@ class ddp_server:
         """
         result = None
         request_id = id(inputs_x)
-        logger.info('forward_casual_lm_next: request_id:')
+        logger.info('request_id:')
         logger.info(request_id)
         self.forward_q.put( (request_id, inputs_x, synapse) )
+        logger.info('forward_q')
+        logger.info(self.forward_q)
         self.events[request_id] = self.manager.Event()
 
         if self.events[request_id].wait(12):
