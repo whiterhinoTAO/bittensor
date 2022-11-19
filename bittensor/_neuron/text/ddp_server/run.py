@@ -165,26 +165,19 @@ class DDPPipe():
                         message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
                                                                                                                     topk=synapse.topk,
                                                                                                                     model_output=None)
-                        # output = self.gp_server.encode_forward(inputs_x)
-                        # message_clone = message.detach().clone().to(device = 'cpu')
-                        # model_output_clone = model_output.detach().clone().to(device = 'cpu')
-                        # topk_token_phrases_clone = topk_token_phrases.detach().clone().to(device = 'cpu')
-                        # self.outputs = (message, model_output, topk_token_phrases)
-                        # print(message)
-                        # print(topk_token_phrases)
-                        # print(model_output)
-                        output_dict = {
-                            'message': message,
-                            'model_output': model_output,
-                            'topk_token_phrases': topk_token_phrases
-                        }
-                        self.outputs[request_id] = output_dict
+                        message_clone = message.detach().clone().cpu()
+                        model_output_clone = model_output.detach().clone().cpu()
+                        topk_token_phrases_clone = topk_token_phrases.detach().clone().cpu()
+                        self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
                         self.events[request_id].set()
                         
                         # Delete the input tensor to free up memory.
                         del message
                         del model_output
                         del topk_token_phrases
+                        del message_clone
+                        del model_output_clone
+                        del topk_token_phrases_clone
 
                     del inputs_x
                     torch.cuda.empty_cache()
