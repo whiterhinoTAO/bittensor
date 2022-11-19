@@ -167,7 +167,9 @@ class DDPPipe():
                         topk_token_phrases_clone = topk_token_phrases.detach().clone().cpu()
                         end_time = time.time()
 
-                        print(f"Rank {rank} finished forward in {end_time - start_time} seconds")
+                        # print(f"Rank {rank} finished forward in {end_time - start_time} seconds")
+                        times = (end_time - start_time)
+                        print(times)
                         self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
                         self.events[request_id].set()
                         
