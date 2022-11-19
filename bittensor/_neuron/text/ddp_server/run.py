@@ -161,12 +161,6 @@ class DDPPipe():
                         message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
                                                                                                                     topk=synapse.topk,
                                                                                                                     model_output=None)
-                        # message_clone = message.detach().clone().cpu()
-                        # model_output_clone = model_output.detach().clone().cpu()
-                        # topk_token_phrases_clone = topk_token_phrases.detach().clone().cpu()
-
-                        # print(f"Rank {rank} finished forward in {end_time - start_time} seconds")
-
                         print(model_output.shape)
                         # self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
                         self.outputs[request_id] = (message, model_output, topk_token_phrases)
@@ -306,9 +300,8 @@ class ddp_server:
 
         # logger.info('result: ')
         # logger.info(result)
-        message = result['message']
-        model_output = result['model_output']
-        topk_token_phrases = result['topk_token_phrases']
+
+        message, model_output, topk_token_phrases = result
 
         return message, model_output, topk_token_phrases
 
