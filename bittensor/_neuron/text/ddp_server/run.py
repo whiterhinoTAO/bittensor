@@ -170,6 +170,9 @@ class DDPPipe():
                         # model_output_clone = model_output.detach().clone().to(device = 'cpu')
                         # topk_token_phrases_clone = topk_token_phrases.detach().clone().to(device = 'cpu')
                         # self.outputs = (message, model_output, topk_token_phrases)
+                        logger.info(message)
+                        logger.info(topk_token_phrases)
+                        logger.info(model_output)
                         self.outputs[request_id] = (message, model_output, topk_token_phrases)
                         self.events[request_id].set()
                         
