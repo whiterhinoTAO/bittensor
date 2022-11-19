@@ -155,7 +155,7 @@ class DDPPipe():
                 try:
                     request_id, inputs_x, synapse = self.forward_q.get(timeout = self.config.neuron.console_log_time)
 
-                    
+                    start_time = time.time()
                     if inputs_x != None:
                         inputs_x = inputs_x.to(self.device)
                         # with self.mutex:
@@ -165,6 +165,9 @@ class DDPPipe():
                         message_clone = message.detach().clone().cpu()
                         model_output_clone = model_output.detach().clone().cpu()
                         topk_token_phrases_clone = topk_token_phrases.detach().clone().cpu()
+                        end_time = time.time()
+
+                        print(f"Rank {rank} finished forward in {end_time - start_time} seconds")
                         self.outputs[request_id] = (message_clone, model_output_clone, topk_token_phrases_clone)
                         self.events[request_id].set()
                         
