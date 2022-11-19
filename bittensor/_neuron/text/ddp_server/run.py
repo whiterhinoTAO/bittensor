@@ -301,15 +301,26 @@ class ddp_server:
     #     return message, model_output, topk_token_phrases
 
 
-    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None):
-        # with mutex:
+    # def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None):
+    #     # with mutex:
 
+    #     bittensor.logging.success('forward_casual_lm_next', sufix = f'rank: {self.gp_server.rank}')
+    #     message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
+    #                                                                                 topk=synapse.topk,
+    #                                                                                 model_output=model_output)
+    #     # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
+    #     #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
+    #     return message, model_output, topk_token_phrases
+
+
+    def forward_causal_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None):
         bittensor.logging.success('forward_casual_lm_next', sufix = f'rank: {self.gp_server.rank}')
-        message, model_output, topk_token_phrases = self.gp_server.encode_forward_causallmnext(inputs_x,
-                                                                                    topk=synapse.topk,
-                                                                                    model_output=model_output)
-        # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
-        #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
+
+        message = []
+
+        model_output = None
+        topk_token_phrases = None
+
         return message, model_output, topk_token_phrases
 
 
