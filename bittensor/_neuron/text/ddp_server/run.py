@@ -313,7 +313,7 @@ class ddp_server:
     #     return message, model_output, topk_token_phrases
 
 
-    def forward_causal_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None):
+    def forward_casual_lm_next( self, inputs_x: torch.FloatTensor, synapse, model_output=None):
         bittensor.logging.success('forward_casual_lm_next', sufix = f'rank: {self.gp_server.rank}')
 
         message = []
