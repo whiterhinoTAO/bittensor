@@ -2,11 +2,11 @@ import pdb
 import bittensor as bt
 
 # import torch
-# import argparse
+import argparse
 
 from transformers import AutoModelForCausalLM
 
-from accelerate import Accelerator
+from parallelformers import parallelize
 
 # def split_models(model, num_gpus: int):
 #     layers = model.transformer.h
@@ -55,15 +55,17 @@ from accelerate import Accelerator
 
 
 if __name__ == "__main__":
-    accelerator = Accelerator()
-    pre_model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M", device_map="auto")
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--num_gpus', type=int, default=1)
+    args = parser.parse_args()
 
-    pre_model = accelerator.prepare(pre_model)
+    pre_model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
 
     tokenizer = bt.tokenizer()
+    model = parallelize(pre_model, num_gpus=args.num_gpus, fp16=False)
 
-    inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+    inputs = tokenizer("the dog is cute", return_tensors="pt")
 
-    outputs = pre_model(**inputs)
+    outputs = model(**inputs)
 
     pdb.set_trace()
