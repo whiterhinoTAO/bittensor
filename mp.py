@@ -18,7 +18,8 @@ def split_models(model, num_gpus: int):
         # then the first 3 layers will be on gpu 0, the next 3 layers will be on gpu 1, etc.
         gpu = i // layers_per_gpu
         layer = layers[i]
-        layer.device = torch.device(f"cuda:{gpu}")
+        device = torch.device(f"cuda:{gpu}")
+        layer.to(device)
 
 
 
