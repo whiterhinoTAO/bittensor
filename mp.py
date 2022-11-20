@@ -12,7 +12,9 @@ def split_models(model, num_gpus: int):
     layers = model.transformer.h
     layers_per_gpu = len(layers) // num_gpus
     
+    pdb.set_trace()
 
+    # here we add the layers to the gpus
     for i in range(len(layers)):
         # assume the num_gpus is 4, and the layers_per_gpu is 3 (12 layers total)
         # then the first 3 layers will be on gpu 0, the next 3 layers will be on gpu 1, etc.
