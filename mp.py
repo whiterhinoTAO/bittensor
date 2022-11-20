@@ -14,6 +14,15 @@ def split_models(model, num_gpus: int):
     
     pdb.set_trace()
 
+    # move everything in the model (model.transformer) with the exception of the layers (model.transformer.h)
+
+    for module in model.transformer.children():
+        # check if the module is transformer.h
+        if module != model.transformer.h:
+            module = module.to('cuda:0')
+        
+        
+
     # here we add the layers to the gpus
     for i in range(len(layers)):
         # assume the num_gpus is 4, and the layers_per_gpu is 3 (12 layers total)
