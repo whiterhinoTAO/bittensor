@@ -5,7 +5,7 @@ from parallelformers import parallelize
 
 
 model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
-model = parallelize(model, num_gpus=4)
+model = parallelize(model, num_gpus=4, fp16=True)
 
 tokenizer = bt.tokenizer()
 
