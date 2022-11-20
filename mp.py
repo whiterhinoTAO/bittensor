@@ -56,8 +56,7 @@ from accelerate import Accelerator
 
 if __name__ == "__main__":
     accelerator = Accelerator()
-    pre_model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
-    device = accelerator.device
+    pre_model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M", device_map="auto")
 
     pre_model = accelerator.prepare(pre_model)
 
@@ -66,5 +65,5 @@ if __name__ == "__main__":
     inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
 
     outputs = pre_model(**inputs)
-    
+
     pdb.set_trace()
