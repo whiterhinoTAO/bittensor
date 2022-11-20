@@ -306,10 +306,6 @@ class ddp_server:
         del self.events[request_id]
         del self.outputs[request_id]
 
-        # bittensor.logging.info( 'forward_casual_lm_next: result: {}', result )
-
-        # logger.info('result: ')
-        # logger.info(result)
 
         message, model_output, topk_token_phrases = result
 
