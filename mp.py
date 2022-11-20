@@ -11,7 +11,7 @@ tokenizer = bt.tokenizer()
 
 def split_models(model, num_gpus: int):
     layers = model.transformer.h
-    layers_per_gpu = layers // num_gpus
+    layers_per_gpu = len(layers) // num_gpus
     
     # a for loop that adds the layers to the gpu with .to(device)
     for i in range(len(layers)):
