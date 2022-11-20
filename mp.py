@@ -1,13 +1,11 @@
 import pdb
 import bittensor as bt
 
+import argparse
+
 from transformers import AutoModelForCausalLM
 
 
-# if __name__ == "__main__":
-model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
-
-tokenizer = bt.tokenizer()
 
 def split_models(model, num_gpus: int):
     layers = model.transformer.h
@@ -21,6 +19,7 @@ def split_models(model, num_gpus: int):
         if i+1 % layers_per_gpu == 0:
             gpu_id += 1
             counter = 0
+            
         print(f"Adding layer {i} to gpu {gpu_id}")
         layers[i].to(f"cuda:{gpu_id}")
         counter += 1
@@ -30,4 +29,11 @@ def split_models(model, num_gpus: int):
 
 
 if __name__ == "__main__":
-    split_models(model, 1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--num_gpus', type=int, default=1)
+    args = parser.parse_args()
+
+    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
+
+    tokenizer = bt.tokenizer()
+    split_models(model, args.num_gpus)
