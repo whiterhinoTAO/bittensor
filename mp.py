@@ -62,10 +62,10 @@ if __name__ == "__main__":
     pre_model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
 
     tokenizer = bt.tokenizer()
-    model = parallelize(pre_model, num_gpus=args.num_gpus, fp16=False)
+    parallelize(pre_model, num_gpus=args.num_gpus, fp16=False)
 
     inputs = tokenizer("the dog is cute", return_tensors="pt")
 
-    outputs = model(**inputs)
+    outputs = pre_model(**inputs)
 
     pdb.set_trace()
