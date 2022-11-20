@@ -23,7 +23,7 @@ def split_models(model, num_gpus: int):
 
 
 
-    pdb.set_trace()
+    return model
 
 
 
@@ -32,7 +32,12 @@ if __name__ == "__main__":
     parser.add_argument('--num_gpus', type=int, default=1)
     args = parser.parse_args()
 
-    model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
+    pre_model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
 
     tokenizer = bt.tokenizer()
-    split_models(model, args.num_gpus)
+    model = split_models(pre_model, args.num_gpus)
+
+    inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+    outputs = model(**inputs)
+
+    pdb.set_trace()
