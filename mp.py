@@ -37,7 +37,7 @@ if __name__ == "__main__":
     tokenizer = bt.tokenizer()
     model = split_models(pre_model, args.num_gpus)
 
-    inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+    inputs = tokenizer("Hello, my dog is cute", return_tensors="pt").to("cuda:0")
     outputs = model(**inputs)
 
     pdb.set_trace()
