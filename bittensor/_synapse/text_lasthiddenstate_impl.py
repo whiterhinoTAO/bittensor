@@ -181,6 +181,7 @@ class TextLastHiddenState (Synapse):
     def encode_forward_response_tensor   ( self, forward_response_tensor: torch.Tensor ) -> torch.Tensor: 
         
         # Get shapes upfront.
+        forward_response_tensor = forward_response_tensor.clone()
         resp_bs, resp_seq, _ = forward_response_tensor.shape
 
         # First stack the forward_response_tensor

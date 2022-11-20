@@ -181,36 +181,35 @@ def test_last_hidden_state_encode_forward_response_tensor_topk_with_mask():
 
 def test_last_hidden_state_encode_forward_response_tensor_topk_with_mask_multiple():
     topk = 2
-    mask = [0,1,2,4]
+    bs = 30
+    seq = 256
+    dim = 1024
+    mask = [0,5, 10, 30]
     synapse = bittensor.synapse.TextLastHiddenState(
         mask = mask, # No Mask.
         topk_compression = topk,
     )
-    forward_response_tensor = torch.randn( 30, 256, 1024 )
+    forward_response_tensor = torch.randn( bs, seq, dim )
     encoded_forward_response_tensor = synapse.encode_forward_response_tensor( forward_response_tensor )
     assert len(encoded_forward_response_tensor.shape) == 2
-    assert encoded_forward_response_tensor.shape[0] == 30 * len(mask)
+    assert encoded_forward_response_tensor.shape[0] == bs * len(mask)
     assert encoded_forward_response_tensor.shape[1] == topk + topk
-
-    for el in mask:
-        topk_vals, topk_indices = torch.topk( forward_response_tensor[:, el, 0].reshape( 1, 1024 ), topk, dim = -1)
-        enc_topk_values = encoded_forward_response_tensor[el, :topk] 
-        enc_topk_indices = encoded_forward_response_tensor[el, topk:].long()
+    for i, el in enumerate(mask):
+        topk_vals, topk_indices = torch.topk( forward_response_tensor[0, el, :], topk, dim = -1)
+        enc_topk_values = encoded_forward_response_tensor[i, :topk] 
+        enc_topk_indices = encoded_forward_response_tensor[i, topk:].long()
         assert torch.all( torch.eq(topk_vals, enc_topk_values) ) 
         assert torch.all( torch.eq(topk_indices, enc_topk_indices) ) 
 
-    decoded_forward_response_tensor = synapse.decode_forward_response_tensor( torch.randn( 30, 256 ), encoded_forward_response_tensor )
-    assert decoded_forward_response_tensor.shape[0] == 30
-    assert decoded_forward_response_tensor.shape[1] == 256
-    assert decoded_forward_response_tensor.shape[2] == 1024
-    for el in mask:
-        topk_vals_1, topk_indices_1 = torch.topk( forward_response_tensor[:, el].reshape( -1, 1024 ), topk, dim = -1)
-        topk_vals_2, topk_indices_2 = torch.topk( decoded_forward_response_tensor[:, el].reshape( -1, 1024 ), topk, dim = -1)
+    decoded_forward_response_tensor = synapse.decode_forward_response_tensor( torch.randn( bs, seq ), encoded_forward_response_tensor )
+    assert decoded_forward_response_tensor.shape[0] == bs
+    assert decoded_forward_response_tensor.shape[1] == seq
+    assert decoded_forward_response_tensor.shape[2] == dim
+    for i,el in enumerate(mask):
+        topk_vals_1, topk_indices_1 = torch.topk( forward_response_tensor[0, el, :].reshape( 1, 1024 ), topk, dim = -1)
+        topk_vals_2, topk_indices_2 = torch.topk( decoded_forward_response_tensor[0, el, :].reshape( 1, 1024 ), topk, dim = -1)
         assert torch.all( torch.eq(topk_vals_1, topk_vals_2) ) 
         assert torch.all( torch.eq(topk_indices_1, topk_indices_2) ) 
-
-
-
 
 
 
