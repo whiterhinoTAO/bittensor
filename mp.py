@@ -14,10 +14,16 @@ def split_models(model, num_gpus: int):
     layers_per_gpu = len(layers) // num_gpus
     
     # a for loop that adds the layers to the gpu with .to(device)
+    counter = 0
+    gpu_id = 0
     for i in range(len(layers)):
         # add the layer to the gpu
-        print(f"Adding layer {i} to gpu {i // layers_per_gpu}")
-        layers[i].to(f"cuda:{i // layers_per_gpu}")
+        if i+1 % layers_per_gpu == 0:
+            gpu_id += 1
+            counter = 0
+        print(f"Adding layer {i} to gpu {gpu_id}")
+        layers[i].to(f"cuda:{gpu_id}")
+        counter += 1
 
     pdb.set_trace()
 
