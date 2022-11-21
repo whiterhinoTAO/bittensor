@@ -57,12 +57,13 @@ from parallelformers import parallelize
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_gpus', type=int, default=1)
+    parser.add_argument('--model_name', type=str, default="EleutherAI/gpt-neo-125M")
     args = parser.parse_args()
 
-    pre_model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-neo-125M")
+    pre_model = AutoModelForCausalLM.from_pretrained(args.model_name)
 
     tokenizer = bt.tokenizer()
-    m = parallelize(pre_model, num_gpus=args.num_gpus, fp16=False)
+    parallelize(pre_model, num_gpus=args.num_gpus, fp16=False)
 
     inputs = tokenizer("the dog is cute", return_tensors="pt")
 
