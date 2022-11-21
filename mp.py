@@ -63,7 +63,7 @@ if __name__ == "__main__":
     pre_model = AutoModelForCausalLM.from_pretrained(args.model_name)
 
     tokenizer = bt.tokenizer()
-    parallelize(pre_model, num_gpus=args.num_gpus, fp16=False)
+    parallelize(pre_model, num_gpus=args.num_gpus, fp16=True)
 
     inputs = tokenizer("the dog is cute", return_tensors="pt")
 
