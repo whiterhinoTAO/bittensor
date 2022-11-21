@@ -69,7 +69,7 @@ if __name__ == "__main__":
     inputs = tokenizer("the dog is cute", return_tensors="pt")
 
     start_time = time.time()
-    outputs = pre_model.generate(**inputs, do_sample=True, max_length=256, top_k=50, top_p=0.95, num_return_sequences=1)
+    outputs = pre_model(**inputs)
     end_time = time.time()
     # target_output = 
 
