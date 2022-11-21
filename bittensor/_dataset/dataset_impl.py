@@ -692,7 +692,7 @@ class GenesisTextDataset:
                 else:
                     return_result = res
 
-                # if num_chunks != None
+                
                 if num_chunks:
                     return_result = b''
                     async for data in res.content.iter_chunked(chunk_size):

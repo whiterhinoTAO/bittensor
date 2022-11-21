@@ -148,6 +148,7 @@ from bittensor._tokenizer import tokenizer as tokenizer
 from bittensor._serializer import serializer as serializer
 from bittensor._synapse import synapse  as synapse 
 from bittensor._dataset import dataset as dataset
+from bittensor._dataset import old_dataset as old_dataset
 from bittensor._receptor import receptor_pool as receptor_pool
 from bittensor._wandb import wandb as wandb
 from bittensor._threadpool import prioritythreadpool as prioritythreadpool

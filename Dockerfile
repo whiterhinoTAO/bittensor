@@ -43,3 +43,4 @@ RUN cd /root/.bittensor/ && \
 RUN prlimit --pid=$PPID --nofile=1000000
 
 EXPOSE 8091
+
