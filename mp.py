@@ -67,6 +67,6 @@ if __name__ == "__main__":
 
     inputs = tokenizer("the dog is cute", return_tensors="pt")
 
-    outputs = pre_model.generate(**inputs)
+    outputs = pre_model(inputs['input_ids'])
 
     pdb.set_trace()
