@@ -66,8 +66,9 @@ if __name__ == "__main__":
     tokenizer = bt.tokenizer()
     # parallelize(pre_model, num_gpus=args.num_gpus, fp16=True)
     pre_model = torch.nn.DataParallel(pre_model)
+    pre_model.to("cuda")
 
-    inputs = tokenizer("the dog is cute", return_tensors="pt")
+    inputs = tokenizer("the dog is cute", return_tensors="pt").to("cuda")
 
     start_time = time.time()
     outputs = pre_model(**inputs)
