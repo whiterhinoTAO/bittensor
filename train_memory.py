@@ -209,9 +209,9 @@ class Nucleus(nn.Module):
         for f in futures: del f
         return [ r.to(self.config.nucleus.device) for r in results], successes
 
-    def cal_loss(self, inputs, query_response, validation_len = 8):
+    def cal_loss(self, inputs, query_response, validation_len = 8, p = False):
         inputs_nxt = inputs[..., -validation_len:]
-        _losses_val, _losses = phrase_cross_entropy(inputs_nxt, query_response, reduce=True)
+        _losses_val, _losses = phrase_cross_entropy(inputs_nxt, query_response, reduce=True, p = p)
         return _losses
 
     def mix_response(self, response_success, normalized_topk_routing_scores):
@@ -225,26 +225,20 @@ class Nucleus(nn.Module):
             response = torch.zeros(batch_size, bittensor.__vocab_size__ , 2)
             response[:, :, 1] = all_logits.repeat(batch_size, 1)
 
-            org = r[0][0, : -1, :]
-            print('org', org[org[:, 0].sort(descending = True)[1]][: 10, :])
             
             for batch in range(batch_size):
-                index = r[0][batch, : -1, 1].long()
-                prob = r[0][batch, : -1, 0] 
-                response[batch, :, 0] = response[batch, :, 0].index_add_(0, index, prob)
-
-                if batch == 0:
-                    print_response = response[batch]
-                    print('print response', print_response[print_response[:, 0].sort(descending = True)[1]][: 10, :])
+                r_batch = r[0][batch, : -1, :]
+                r_batch_sorted = r_batch[r_batch[:, 0].sort(descending = False)[1]]
+                index = r_batch_sorted[:, 1].long()
+                prob = r_batch_sorted[:, 0] 
+                response[batch, index, 0] = prob
             
             mixed_response[:, :-1, 0] += w * response[:, :, 0]
 
-        # reduced_mixed_response = torch.zeros(batch_size, topk + 1  , 2)
         for batch in range(batch_size):
-            # mixed_batch = mixed_response[batch, :, :][mixed_response[batch, :, 0].sort(descending=True)[1]][:topk, :]
-            # floor_prob = (1 - sum(mixed_batch[:, 0])) / (bittensor.__vocab_size__ - topk)
-            # reduced_mixed_response[batch, :-1, :] = mixed_batch
-            mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
+            mixed_batch = mixed_response[batch, :, :][mixed_response[batch, :, 0].sort(descending=True)[1]][:topk, :]
+            floor_prob = (1 - sum(mixed_batch[:, 0])) / (bittensor.__vocab_size__ - topk)
+            mixed_response[batch, -1, :] = torch.tensor([[floor_prob, -1]])
 
         # return reduced_mixed_response
         return mixed_response
@@ -301,33 +295,18 @@ class Nucleus(nn.Module):
         response_success = [r for r, op in list(zip(responses, return_ops)) if op == 1]
         time_success = [t for t, op in list(zip(times, return_ops)) if op == 1]
         normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
-        zero_response = self.mix_response([response_success[0]], torch.tensor([1]))
-        mixed_ind_responses = [self.mix_response([r], torch.tensor([1])) for r in response_success]
         mixed_response = self.mix_response(response_success, normalized_topk_routing_scores)
         averaged_response = self.mix_response(response_success, torch.ones_like(normalized_topk_routing_scores) / len(normalized_topk_routing_scores))
 
         # Compute loss.
-        loss_zero = self.cal_loss(inputs, zero_response, self.config.nucleus.validation_len)
-        loss_zero_org = self.cal_loss(inputs, response_success[0][0][:, : , :2], self.config.nucleus.validation_len)
         loss_routing = self.cal_loss(inputs, mixed_response, self.config.nucleus.validation_len)
         loss_routing_baseline = self.cal_loss(inputs, averaged_response, self.config.nucleus.validation_len)
         loss_model_baseline = self.cal_loss(inputs, response_baseline, self.config.nucleus.validation_len)
-        print('=================================================')
         losses = torch.tensor([self.cal_loss(inputs, r[0][:, :, :2], self.config.nucleus.validation_len) for r in response_success])
-        print('=================================================')
-        mixed_ind_losses = [self.cal_loss(inputs, r, self.config.nucleus.validation_len) for r in mixed_ind_responses]
-        print('=================================================')
-        fake_response = torch.zeros_like(response_success[0][0][:, : , :2])
-        fake_response[:, -2 , 0] = torch.ones_like(fake_response[:, -1 , 0]) * -46144.7734
-        fake_response[:, -1 , 0] = torch.ones_like(fake_response[:, -1 , 0])
-        lol = self.cal_loss(inputs, fake_response, self.config.nucleus.validation_len)
+        print(list(zip(uids.tolist(), losses.tolist())))
         loss_min = min(losses)
-        
-        print(losses, mixed_ind_losses)
 
         stats = {
-            'loss/zero': loss_zero,
-            'loss/zero_org': loss_zero_org,
             'loss/min': loss_min,
             'loss/count': len(losses),
             'loss/average': sum(losses) / len(losses),
@@ -339,6 +318,28 @@ class Nucleus(nn.Module):
             'stat/batch_time': time.time() - start_time,
             'stat/qps': qps,
         }
+        print(stats)
+
+        if loss_routing > 10:
+            print("==================================================")
+            for r in response_success[:3]:
+                ind_r = self.mix_response([r], torch.tensor([1]))
+                org_loss = self.cal_loss(inputs, r[0][:, :, :2], self.config.nucleus.validation_len, p = True)
+                ind_loss = self.cal_loss(inputs, ind_r, self.config.nucleus.validation_len, p = True)
+
+                org = r[0][0, : , :]
+                mixed = ind_r[0, :, :]
+                print('org \n', org[org[:, 0].sort(descending = True)[1]][: 10, :2])
+                print('ind r \n', mixed[mixed[:, 0].sort(descending = True)[1]][:10, :2])
+                print('org tail\n', org[org[:, 0].sort(descending = True)[1]][-20:, :2])
+                ind_r_tail = mixed[mixed[:, 0].sort(descending = True)[1]]
+                print('ind r tail \n', ind_r_tail[ind_r_tail[:, 0].nonzero()][-20:])
+                print('org token \n', org[org[:, 1].sort()[1]][:10, :2])
+                print('ind r token \n', mixed[mixed[:, 1].sort()[1]][:10, :2])
+                print(org_loss, ind_loss)
+            print("==================================================")
+
+
         
         # Return.
         return stats, successes, routing_score
@@ -475,10 +476,15 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         topk_vals, topk_uids = average_scores.topk( config.nucleus.n_queried )
 
         if config.use_wandb:
-            scores_log = { 'score/' + str(k) :v.item() for k, v in enumerate(average_scores)}
+            scores_log = {}
+            for k, v in enumerate(average_scores):
+                if k in target_uids:
+                    scores_log['score/target/' + str(k)] = v.item()
+                else:
+                    scores_log['score/' + str(k)] = v.item()
+
             stats['stat/success'] = sum(successes) / len(successes)
             stats['stat/num_success'] = sum(successes) 
-            print(stats)
             wandb.log( {**stats, **scores_log}, step=ci)
 
 # Measure state after.

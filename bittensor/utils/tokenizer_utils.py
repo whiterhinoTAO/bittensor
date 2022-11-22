@@ -916,7 +916,7 @@ def unravel_topk_token_phrases(compact_topk: torch.Tensor, topk: int, ignore_ind
 def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
                          topk_tensor: torch.Tensor,
                          ignore_index: int = -100, reduce=True, reduction='mean',
-                         vocab_size_min: int = 50257) -> Tuple[torch.Tensor, torch.Tensor]:
+                         vocab_size_min: int = 50257, p = False) -> Tuple[torch.Tensor, torch.Tensor]:
     r"""
     Calculates the cross entropy of a phrase prediction against a target phrase, so that this is a multi-token
     extension of typical cross entropy calculated for next token prediction.
@@ -974,7 +974,7 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
             target_phrase = torch.tensor(target_phrases[b])
 
         match = (topk_tokens[b, :, 0] == target_phrase[0].item())  # bool where first tokens match (validation token)
-        if match.sum() > 0:
+        if match.sum() > 0 and n_topk_probs[b, match].sum() > 0:
             val_probs[b] = n_topk_probs[b, match].sum()  # accumulate all matches
         else:  # no matches
             val_probs[b] = n_floor_probs[b]  # assume match is in non-topk tokens with avg floor_prob
@@ -989,15 +989,20 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
             match = (topk_tokens[b, :, :check_len] == target)
             match_idx = torch.where(match.sum(dim=-1) == check_len)[0]  # phrase indices which match sub target
 
-            if len(match_idx):  # at least one match
+            if len(match_idx) and n_topk_probs[b, match_idx].sum() > 0:  # at least one match
                 match_probs[b] += n_topk_probs[b, match_idx].sum()  # accumulate all matches
             else:  # no matches
                 match_probs[b] += n_floor_probs[b]  # assume match is in non-topk tokens with avg floor_prob
+
+            if p and match_probs[b] == 0:
+                print(len(match_idx), match[match_idx], n_topk_probs[b, match_idx].sum(), n_floor_probs[b])                
 
     old_val_probs = val_probs.clone()
     val_probs = torch.clamp(val_probs, 0, 1)  # [batch_size] ensure 0 <= total probability <= 1
     loss_val = - torch.log(val_probs + 1e-40)  # [batch_size] calculate cross entropy loss
 
+
+    old_match_probs = match_probs.clone()
     match_probs = torch.clamp(match_probs, 0, 1)  # [batch_size] ensure 0 <= total probability <= 1
     loss = - torch.log(match_probs + 1e-40)  # [batch_size] calculate cross entropy loss
 
@@ -1008,18 +1013,22 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
         loss = getattr(loss, reduction)()
         if loss.numel() > 1:
             raise ValueError(f'phase_cross_entropy(): Expected reduction to scalar, obtained {loss.shape} instead.')
-    print (
-        'phrase cross entropy \n', topk_tensor[0, :10, :], 
-        'topk tokens: ', topk_tokens.sum(), 
-        'topk_probs max mins: ', topk_probs.max(), topk_probs.min(),
-        'topk_probs.sum(dim=-1): ', topk_probs.sum(dim=-1), 
-        'max(0, vocab_size_min - topk) * floor_probs: ', max(0, vocab_size_min - topk) * floor_probs, 
-        'floor probs: ',floor_probs, 
-        'n_floor_probs: ', n_floor_probs, 
-        'match sum: ',match.sum(), 
-        'val_probs: ', old_val_probs, 
-        'loss',loss
-    )
+    
+    if p:
+        topk_tensor_sorted = topk_tensor[0, : , :][topk_tensor[0, : , 0].sort(descending= True)[1]]
+        print (
+            '\nphrase cross entropy\n', topk_tensor_sorted[: 10, :], 
+            '\ntopk tokens: ', topk_tokens.sum(), 
+            '\ntopk_probs max mins: ', topk_probs.max(), topk_probs.min(),
+            '\ntopk_probs.sum(dim=-1): ', topk_probs.sum(dim=-1), 
+            '\nmax(0, vocab_size_min - topk) * floor_probs: ', max(0, vocab_size_min - topk) * floor_probs, 
+            '\nfloor probs: ',floor_probs, 
+            '\nn_floor_probs: ', n_floor_probs, 
+            '\nmatch sum: ',match.sum(), 
+            '\nval_probs: ', old_val_probs, 
+            '\nmatch probs: ', old_match_probs,
+            '\nloss ',loss
+        )
 
     return loss_val, loss
 
