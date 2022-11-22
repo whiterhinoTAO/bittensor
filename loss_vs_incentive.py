@@ -172,7 +172,7 @@ class Nucleus(nn.Module):
         for uid, r, op in list(zip(uids, responses, return_ops)):
             if op == 1:
                 losses[uid] = self.cal_loss(inputs, r[0][:, :, :2], self.config.nucleus.validation_len)
-        print (losses)
+        # print (losses)
         loss_min = min(list(losses.values()))
 
         stats = {
