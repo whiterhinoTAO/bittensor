@@ -256,19 +256,15 @@ success_results = []
 scores_history = []
 avg_loss_history = []
 neuron_losses = {k: [] for k in range(graph.n)} 
-
+last_losses = {}
 def step(idx, uids):
     inputs = next(dataset)
     stats, success, scores, losses = model( uids, inputs, dendrite )
-    # if stats['loss/routing'] == stats['loss/routing'] and stats['loss/routing'] < 8: #true if not nan 
-    #     stats['loss/routing'].backward()
-    #     print('backward!')
     success_results.append(success)
     scores_history.append(scores.detach())
     for k,v in losses.items():
         neuron_losses[k].append(v)
-
-    return stats, success
+    return stats, success, losses
 
 
 if config.use_wandb: 
@@ -307,11 +303,26 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
                 if v == v:
                     stats[k].append(v)
         
+        losses = {}
+        # Aggregate losses
+        for r in chunk_results:
+            for k, v in r[2].items():
+                if k not in stats.keys():
+                    losses['losses/' + str(k)] = []
+                if v == v:
+                    losses['losses/' + str(k)].append(v)
+        
         for k, v in stats.items():
             if len(v) > 0:
                 stats[k] = sum(v)/len(v)
                 if hasattr(stats[k], 'item'):
                     stats[k] = stats[k].item()
+        
+        for k, v in losses.items():
+            if len(v) > 0:
+                losses[k] = sum(v)/len(v)
+                if hasattr(losses[k], 'item'):
+                    losses[k] = losses[k].item()
         
         successes = [ sum(l[1]) / len(l[1]) for l in chunk_results]
         # avg_loss_history.append( stats['loss/routing'] )
@@ -332,7 +343,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
 
             stats['stat/success'] = sum(successes) / len(successes)
             stats['stat/num_success'] = sum(successes) 
-            wandb.log( {**stats, **scores_log}, step=ci)
+            wandb.log( {**stats, **scores_log, **losses}, step=ci)
     
         if ci % math.ceil( graph.n /config.nucleus.n_queried) * 5 == 0:
             neuron_losses_mean = []
