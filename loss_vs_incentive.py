@@ -349,7 +349,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
             neuron_losses_mean = []
             for uid, losses in neuron_losses.items():
                 if len(losses) > 0:
-                    neuron_losses_mean.append( [uid, graph.I[uid].item(), (sum(losses)/len(losses)).item(), len(losses)] )
+                    # neuron_losses_mean.append( [uid, graph.I[uid].item(), (sum(losses)/len(losses)).item(), len(losses)] )
+                    neuron_losses_mean.append( [uid, graph.I[uid].item(), min(losses).item(), len(losses)] )
 
             table = wandb.Table(data=neuron_losses_mean, columns = ["uid", "incentive", "loss", "count"])
             wandb.log({"incentive_vs_loss" : wandb.plot.scatter(table, "incentive", "loss", title="incentive VS loss")})
