@@ -290,6 +290,7 @@ class GenesisTextDataset( Dataset ):
         """
         # --- Load text from path
         logger.success( f"Getting dataset: {file_meta['Name']}" )
+        print(f"Getting dataset: {file_meta['Name']}" )
         
         hashes = self.load_hash(file_meta)
 
