@@ -207,6 +207,13 @@ class Nucleus(nn.Module):
         losses = torch.tensor([self.cal_loss(inputs, r[0][:, :, :2], self.config.nucleus.validation_len) for r in response_success])
         print(list(zip(uids.tolist(), losses.tolist())))
         loss_min = min(losses)
+        
+        top_mix_loss = {}
+        for i in range(1, min(5, len(response_success))):        
+            top_mix_response = self.mix_response( [response_success[idx] for idx in losses.sort()[1][:i]], torch.ones(i) / i)
+            print(f'===== top_mix{i} ======\n')
+            loss_top_mix = self.cal_loss(inputs, top_mix_response, self.config.nucleus.validation_len, p = True)
+            top_mix_loss[f'loss/top_mix_{i}'] = loss_top_mix
 
         stats = {
             'loss/min': loss_min,
@@ -220,6 +227,7 @@ class Nucleus(nn.Module):
             'stat/batch_time': time.time() - start_time,
             'stat/qps': qps,
         }
+        stats = {**stats, **top_mix_loss}
         print(stats)
 
         if loss_routing > 10:
@@ -329,6 +337,15 @@ if config.use_wandb:
 
 avg_loss_history = []
 target_uids = graph.I.sort(descending = True)[1][:config.nucleus.n_queried]
+# target_uids = torch.tensor([
+#     3625, 3994, 3555, 3891, 3717, 3260, 3819, 3660, 3782, 3632, 3739, 3624, 3639, 3932, 3688, 3771, 3670, 3855, 
+#     3911, 3514, 3584, 3860, 3926, 3965, 3909, 3605, 3616, 3996, 3930, 3816, 3951, 3767, 3591, 3821, 3862, 3757, 
+#     3666, 3967, 3653, 3501, 82, 243, 380, 409, 146, 3519, 3722, 335, 151, 3742, 2963, 323, 4074, 489, 355, 23, 
+#     170, 2498, 3619, 221, 62, 211, 289, 5, 297, 370, 110, 94, 450, 166, 262, 11, 308, 284, 2520, 3961, 2555, 2664, 
+#     2708, 3500, 2954, 2542, 2607, 2688, 2630, 2666, 2689, 2868, 2945, 2899, 2597, 2712, 2942, 2685, 2804, 3528, 2547, 3799, 2918, 2609
+# ])
+target_uids = torch.tensor([3625, 3260, 3932, 3670, 3666, 3722, 151, 323, 170, 284, 2708])
+# target_uids = torch.tensor([ 3625, 
 with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
     step_chunks = list( chunks( list(range(config.n_steps)), config.chunk_size ) )
     for ci, chunk in enumerate( step_chunks ):
@@ -361,12 +378,6 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
                 stats[k] = sum(v)/len(v)
                 if hasattr(stats[k], 'item'):
                     stats[k] = stats[k].item()
-        
-        # losses = [l[0]['routing'].item() for l in chunk_results]
-        # losses_gate_baseline = [l[0]['gate_baseline'].item() for l in chunk_results]
-        # losses_model_baseline = [l[0]['model_baseline'].item() for l in chunk_results]
-        # losses_min_baseline = [l[0]['min_baseline'].item() for l in chunk_results]
-        # losses_best_combinded = [l[0]['best_combinded'].item() for l in chunk_results]
         
         successes = [ sum(l[1]) / len(l[1]) for l in chunk_results]
         # avg_loss_history.append( stats['loss/routing'] )
