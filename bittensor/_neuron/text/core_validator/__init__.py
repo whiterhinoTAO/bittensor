@@ -642,11 +642,17 @@ class neuron:
             for key in self.synapse_keys:
                 zkey = key + '!'  # zeroing key
                 stats.setdefault(zkey, 0.)  # initialize zkey val to zero to gradually increase with observations
+
+                if stats['updates!'] < 10:
+                    alpha = 0.1
+                else:
+                    alpha = 0.01
+
                 if key in _stats and not math.isnan(_stats[key]):
                     responsive_uids += [_uid]
-                    stats[zkey] = (1 - self.alpha) * stats[zkey] + self.alpha * _stats[key]
+                    stats[zkey] = (1 - alpha) * stats[zkey] + alpha * _stats[key]
                 else:
-                    stats[zkey] = (1 - self.alpha) * stats[zkey]  # + self.alpha * 0
+                    stats[zkey] = (1 - alpha) * stats[zkey]  # + self.alpha * 0
 
             # === EMA normal update ===
             # If synapse responsive push available values into EMA for normal update.
@@ -663,7 +669,7 @@ class neuron:
                 if math.isnan(_stats[key]):
                     continue
                 if key in stats:
-                    stats[key] = (1 - self.alpha) * stats[key] + self.alpha * _stats[key]  # update EMA
+                    stats[key] = (1 - alpha) * stats[key] + alpha * _stats[key]  # update EMA
                 else:
                     stats.setdefault(key, _stats[key])
 
