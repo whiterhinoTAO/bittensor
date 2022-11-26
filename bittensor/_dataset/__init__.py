@@ -21,11 +21,11 @@
 import argparse
 import os
 import copy
-
+from typing import Optional
 import bittensor
 from . import dataset_impl
-from . import dataset_mock
 
+logger = dataset_impl.logger
 class dataset:
     """ Factory class for the GenesisTextDataset class or the mocked GenesisTextDataset
     The GenesisTextDataset downloads text data from the bittensor mountain dataset. 
@@ -40,28 +40,32 @@ class dataset:
     def __new__(
             cls,
             config: 'bittensor.config' = None,
-            block_size: int = 1000,
-            batch_size: int = None,
-            num_workers: int = None,
-            dataset_name: list = ['ArXiv'],
-            max_datasets: int = None,
-            save_dataset: bool = False,
-            sequence_length: int = 128,
-            load_dataset: bool = False,
-            no_tokenizer: bool = None,
-            num_batches: int = None,
-            run_generator: bool = False,
-            cache_size: int = 5, 
-            num_folders: int = 10,
-            cache_calls_per_block: int = 100,
-            _mock:bool=None
+            sequence_length: Optional[int] = None,
+            block_size: Optional[int] = None,
+            block_size_bytes: Optional[int] = None,
+            max_hash_size: Optional[int] = None,
+            batch_size: Optional[int] = None,
+            num_workers: Optional[int] = None,
+            dataset_name: Optional[list] = None,
+            max_directories: Optional[int] = None,
+            max_datasets: Optional[int] = None,
+            save_dataset: Optional[bool] = False,
+            load_dataset: Optional[bool] = False,
+            no_tokenizer: Optional[bool] = None,
+            num_batches: Optional[int] = None,
+            buffer_size: Optional[int] = None, 
+            buffer_calls_per_update: Optional[int] = None
         ):
         r""" Create and init the GenesisTextDataset class, which handles dataloading from ipfs.
             Args:
                 config (:obj:`bittensor.Config`, `optional`): 
                     bittensor.dataset.config()
+                sequence_length (:obj:`int`, `optional`):
+                    Number of text items to pull for each example.
                 block_size (:obj:`int`, `optional`):
                     Number of text items to pull for each example.
+                block_size_bytes: 
+                    Number of text items to pull for each example in terms of bytes.
                 batch_size (:obj:`int`, `optional`):
                     Batch size.
                 num_workers (:obj:`int`, `optional`):
@@ -75,73 +79,67 @@ class dataset:
                     To return non-tokenized text (EXPERIMENTAL, DO NOT USE)
                 num_batches (:obj:`int`, `optional`):
                     The number of batches of data to prepare for the dataloader.
-                num_folders (int):
-                    The number of folders per dataset.
-                _mock (:obj:`bool`, `optional`):
-                    For testing, if true the dataset if filled with fake text data.  
+                buffer_size (:obj:`int`, `optional`):
+                    The size of the buffer of samples.
+                buffer_calls_per_update (:obj:`int`, `optional`):
+                    The number of batch calls per update.
         """   
+
         if config == None: 
             config = dataset.config()
+
+        if isinstance(sequence_length,int):
+            block_size = sequence_length
+        else:
+            logger.warning('WARNING: block_size will be depracted and replaced with sequence_length in future releases.')
+            
+
+
         config = copy.deepcopy( config )
+        config.dataset.block_size_bytes = block_size_bytes if block_size_bytes != None else config.dataset.block_size_bytes
+        # TODO replace block_size with sequence_length in future 
         config.dataset.block_size = block_size if block_size != None else config.dataset.block_size
+        config.dataset.sequence_length = config.dataset.block_size
         config.dataset.batch_size = batch_size if batch_size != None else config.dataset.batch_size
-        config.dataset.sequence_length = sequence_length if sequence_length != None else config.dataset.sequence_length
         config.dataset.num_workers = num_workers if num_workers != None else config.dataset.num_workers
-        config.dataset.dataset_name = dataset_name if dataset_name != [] else config.dataset.dataset_name
-        config.dataset.max_datasets = max_datasets if max_datasets != [] else config.dataset.max_datasets
+        config.dataset.dataset_name = dataset_name if dataset_name != None else config.dataset.dataset_name
+        config.dataset.max_datasets = max_datasets if max_datasets != None else config.dataset.max_datasets
         config.dataset.save_dataset = save_dataset if save_dataset != None else config.dataset.save_dataset
         config.dataset.load_dataset = load_dataset if load_dataset != None else config.dataset.load_dataset
-        config.dataset.run_generator = run_generator if run_generator != None else config.dataset.run_generator
         config.dataset.no_tokenizer = no_tokenizer if no_tokenizer != None else config.dataset.no_tokenizer
         config.dataset.num_batches = num_batches if num_batches != None else config.dataset.num_batches
-        config.dataset.num_folders = num_folders if num_folders != None else config.dataset.num_folders
+        config.dataset.max_directories = max_directories if max_directories != None else config.dataset.max_directories
+        config.dataset.buffer_size = buffer_size if buffer_size != None else config.dataset.buffer_size
+        config.dataset.buffer_calls_per_update = buffer_calls_per_update if buffer_calls_per_update != None else config.dataset.buffer_calls_per_update
+        config.dataset.max_hash_size = max_hash_size if max_hash_size != None else config.dataset.max_hash_size
 
-        config.dataset.cache_size = cache_size if cache_size != None else config.dataset.cache_size
-        config.dataset.cache_calls_per_block = cache_calls_per_block if cache_calls_per_block != None else config.dataset.cache_calls_per_block
-
-
-        config.dataset._mock = _mock if _mock != None else config.dataset._mock
         dataset.check_config( config )
-        if config.dataset._mock:
-            return dataset_mock.MockGenesisTextDataset(
-                block_size = config.dataset.block_size,
-                batch_size = config.dataset.batch_size,
-                num_workers = config.dataset.num_workers,
-                dataset_name = config.dataset.dataset_name,
-                data_dir = config.dataset.data_dir,
-                save_dataset = config.dataset.save_dataset,
-                max_datasets = config.dataset.max_datasets,
-                no_tokenizer = config.dataset.no_tokenizer,
-                num_batches = config.dataset.num_batches,
-                max_directories = config.dataset.max_directories
-            )
-        else:
 
-            return dataset_impl.GenesisTextDataset(
-                block_size = config.dataset.block_size,
-                batch_size = config.dataset.batch_size,
-                num_workers = config.dataset.num_workers,
-                datasets = config.dataset.dataset_name,
-                data_dir = config.dataset.data_dir,
-                save_dataset = config.dataset.save_dataset,
-                load_dataset = config.dataset.load_dataset,
-                max_datasets = config.dataset.max_datasets,
-                sequence_length = config.dataset.sequence_length,
-                no_tokenizer = config.dataset.no_tokenizer,
-                num_batches = config.dataset.num_batches,
-                run_generator = config.dataset.run_generator,
-                num_folders = config.dataset.num_folders,
-                max_directories = config.dataset.max_directories
-            )
-
-    @classmethod
-    def mock(cls):
-        return dataset( _mock = True, dataset_name = ['Books3'])
+        return dataset_impl.GenesisTextDataset(
+            block_size_bytes = config.dataset.block_size_bytes,
+            sequence_length = config.dataset.sequence_length,
+            batch_size = config.dataset.batch_size,
+            max_hash_size= config.dataset.max_hash_size,
+            num_workers = config.dataset.num_workers,
+            datasets = config.dataset.dataset_name,
+            data_dir = config.dataset.data_dir,
+            save_dataset = config.dataset.save_dataset,
+            load_dataset = config.dataset.load_dataset,
+            max_datasets = config.dataset.max_datasets,
+            no_tokenizer = config.dataset.no_tokenizer,
+            num_batches = config.dataset.num_batches,
+            max_directories = config.dataset.max_directories,
+            buffer_size=config.dataset.buffer_size,
+            buffer_calls_per_update=config.dataset.buffer_calls_per_update,
+        )
 
     @classmethod
     def config(cls) -> 'bittensor.Config':
-        """ Get config from the argument parser 
-            Return: bittensor.config object
+        """ 
+        Get config from the argument parser 
+            
+        Return: 
+            bittensor.config
         """
         parser = argparse.ArgumentParser()
         dataset.add_args( parser )
@@ -163,8 +161,11 @@ class dataset:
             parser.add_argument('--' + prefix_str + 'dataset.max_datasets',  type=int, help='Number of datasets to load', default = bittensor.defaults.dataset.max_datasets)
             parser.add_argument('--' + prefix_str + 'dataset.no_tokenizer', action='store_true', help='To return non-tokenized text (EXPERIMENTAL, DO NOT USE)',default=False)
             parser.add_argument('--' + prefix_str + 'dataset.num_batches', type=int, help='The number of data to download each time(measured by the number of batches).', default=bittensor.defaults.dataset.num_batches)
-            parser.add_argument('--' + prefix_str + 'dataset._mock', action='store_true', help='To turn on dataset mocking for testing purposes.', default=False)
             parser.add_argument('--' + prefix_str + 'dataset.max_directories', type=int, help='Maximum number of directories to consider when loading text from IPFS', default=bittensor.defaults.dataset.max_directories)
+            parser.add_argument('--' + prefix_str + 'dataset.block_size_bytes', type=int, help='Number of text bytes items to pull for each example..', default = bittensor.defaults.dataset.block_size_bytes)
+            parser.add_argument('--' + prefix_str + 'dataset.buffer_size', type=int, help='The number of samples stored in the buffer during sampling..', default = bittensor.defaults.dataset.buffer_size)
+            parser.add_argument('--' + prefix_str + 'dataset.buffer_calls_per_update', type=int, help='The number of calls per replacing 1 element in the buffer.', default = bittensor.defaults.dataset.buffer_calls_per_update)
+            parser.add_argument('--' + prefix_str + 'dataset.max_hash_size', type=int, help='The maximum size of the hash of a text file.', default = bittensor.defaults.dataset.max_hash_size)
 
         except argparse.ArgumentError:
             # re-parsing arguments.
@@ -193,6 +194,11 @@ class dataset:
         defaults.dataset.max_datasets = os.getenv('BT_DATASET_MAX_DATASETS') if os.getenv('BT_DATASET_MAX_DATASETS') != None else 3
         defaults.dataset.num_batches = os.getenv('BT_DATASET_NUM_BATCHES') if os.getenv('BT_DATASET_NUM_BATCHES') != None else 500
         defaults.dataset.max_directories = os.getenv('BT_DATASET_MAX_DIRECTORIES') if os.getenv('BT_DATASET_MAX_DIRECTORIES') != None else 250
+        defaults.dataset.buffer_size = os.getenv('BT_DATASET_BUFFER_SIZE') if os.getenv('BT_DATASET_BUFFER_SIZE') != None else 1000
+        defaults.dataset.buffer_calls_per_update = os.getenv('BT_DATASET_BUFFER_CALLS_PER_UPDATE') if os.getenv('BT_DATASET_BUFFER_CALLS_PER_UPDATE') != None else 100
+        defaults.dataset.max_hash_size = os.getenv('BT_DATASET_MAX_HASH_SIZE') if os.getenv('BT_DATASET_MAX_HASH_SIZE') != None else 100_000
+        defaults.dataset.block_size_bytes = os.getenv('BT_DATASET_BLOCK_SIZE_BYTES') if os.getenv('BT_DATASET_BLOCK_SIZE_BYTES') != None else 1500
+
 
     @classmethod
     def check_config( cls, config: 'bittensor.Config' ):

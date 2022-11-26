@@ -23,7 +23,7 @@ import nest_asyncio
 nest_asyncio.apply()
 
 # Bittensor code and protocol version.
-__version__ = '3.4.2'
+__version__ = '3.5.0'
 version_split = __version__.split(".")
 __version_as_int__ = (100 * int(version_split[0])) + (10 * int(version_split[1])) + (1 * int(version_split[2]))
 
@@ -45,6 +45,12 @@ def turn_console_off():
     __console__ = Console(file=StringIO(), stderr=False)
 
 
+# Dataset Variables
+
+__ipfs_url__ = 'http://global.ipfs.opentensor.ai/api/v0'
+__dataset_dir__ = 'http://global.ipfs.opentensor.ai/api/v0/cat' 
+__text_dir__ = 'http://global.ipfs.opentensor.ai/api/v0/object/get'
+__mountain_hash__ = 'QmSdDg6V9dgpdAFtActs75Qfc36qJtm9y8a7yrQ1rHm7ZX'
 
 # Vocabulary dimension.
 #__vocab_size__ = len( tokenizer ) + len( tokenizer.additional_special_tokens) + 100 # Plus 100 for eventual token size increase.

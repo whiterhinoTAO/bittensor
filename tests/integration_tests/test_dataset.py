@@ -21,79 +21,73 @@ from unittest.mock import MagicMock
 logging = bittensor.logging()
 
 def test_construct_text_corpus():
-    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, save_dataset = True, dataset_name = constant.dataset.dataset_name)
-    dataset.construct_text_corpus()
+    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name, 
+                                buffer_size=constant.dataset.buffer_size, max_hash_size=constant.dataset.max_hash_size)
     dataset.close()
 
 def test_change_data_size():
-    data_sizes = [(10,1000), (15, 2000),(30, 3000), (25,4000)]
-    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name, run_generator=False, no_tokenizer=False)
-    for data_size in data_sizes:
-        dataset.set_data_size(*data_size)
-        sample_dict = next(dataset)
-        for k,v in sample_dict.items():
-            v.shape[0] == data_size[0]
-        
-    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name, run_generator=False, no_tokenizer=True)
+    data_sizes = [dict(batch_size=10,sequence_length=64, block_size_bytes=1000, buffer_size=200),
+                        dict(batch_size=20,sequence_length=128, block_size_bytes=500, buffer_size=100) ]
 
+    dataset = bittensor.dataset( dataset_name = constant.dataset.dataset_name, no_tokenizer=False, 
+                                 buffer_size=constant.dataset.buffer_size, max_hash_size=constant.dataset.max_hash_size)
     for data_size in data_sizes:
-        raw_text_sample = next(dataset)
-        len(raw_text_sample)  == data_size[1]
-    
+        dataset.set_data_size(**data_size)
+        dataset.no_tokenizer = False
+        sample = next(dataset)
+        assert sample.shape[0] == data_size['batch_size']
+        assert sample.shape[1] == data_size['sequence_length']
+        assert dataset.block_size_bytes == data_size['block_size_bytes']
+        assert dataset.buffer_size == data_size['buffer_size'] == len(dataset.sample_buffer)
+        # dataset.no_tokenizer = True
+        # sample = next(dataset)
+        # assert len(sample)== data_size['batch_size']
+        # assert len(sample[0].split()) == data_size['sequence_length']
+
     dataset.close() 
 
 
-def test_text_dataset():
+
+
+def test_next_sample():
     batch_size = 10
-    block_size = 128
-    num_batches = 5
-    epoch_length = 5
+    sequence_length = 128
+    block_size = 500
+    max_hash_size=1000
 
+    
     dataset = bittensor.dataset (
-        _mock = True,
-        batch_size = batch_size, 
         block_size = block_size,
-        num_batches = num_batches
+        batch_size = batch_size,
+        sequence_length = sequence_length,
+         dataset_name = constant.dataset.dataset_name,
+         max_hash_size=constant.dataset.max_hash_size,
+         buffer_size =constant.dataset.buffer_size,
+        no_tokenizer=False
     )
-    
-    dataloader = dataset.dataloader(epoch_length)
 
-    assert len(dataloader) == epoch_length
-    assert len(dataloader) != len(dataset)
-    assert len(dataset[0]) == block_size
-    assert len(dataloader.dataset) == batch_size * epoch_length
-    
+    input = next(dataset)
+    assert input.shape[0] == batch_size
+    assert input.shape[1]  == sequence_length
+
+    dataset.no_tokenizer = True
+
+    input = next(dataset)
+    assert len(input) == batch_size
+    for i in range(len(input)):
+        assert len(input[i].split()) == sequence_length
     dataset.close()
 
-
-def test_next():
-    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name)
-    next(dataset)
-    next(dataset)
-    next(dataset)
-    dataset.close()
-
-def test_mock():
-    dataset = bittensor.dataset(_mock=True, dataset_name = constant.dataset.dataset_name)
-    next(dataset)
-    next(dataset)
-    next(dataset)
-    dataset.close()
-
-def test_mock_function():
-    dataset = bittensor.dataset.mock()
-    next(dataset)
-    next(dataset)
-    next(dataset)
-    dataset.close()
 
 def test_fail_IPFS_server():
-    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name)
+    dataset = bittensor.dataset(num_batches = constant.dataset.num_batches, dataset_name = constant.dataset.dataset_name,
+                             buffer_size=constant.dataset.buffer_size, max_hash_size=constant.dataset.max_hash_size)
     dataset.requests_retry_session = MagicMock(return_value = None)
     next(dataset)
     next(dataset)
     next(dataset)
     dataset.close()
+
 
 if __name__ == "__main__":
     test_change_data_size()
