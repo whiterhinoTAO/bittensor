@@ -136,6 +136,7 @@ from bittensor.utils import unbiased_topk as unbiased_topk
 from bittensor.utils.balance import Balance as Balance
 from bittensor._cli import cli as cli
 from bittensor._axon import axon as axon
+from bittensor._axon import axon_general as axon_general
 from bittensor._wallet import wallet as wallet
 from bittensor._keyfile import keyfile as keyfile
 from bittensor._receptor import receptor as receptor

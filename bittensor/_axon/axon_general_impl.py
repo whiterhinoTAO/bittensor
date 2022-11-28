@@ -53,7 +53,6 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         server: 'grpc._Server',
         module : AxonModule,
         timeout: int,
-        prometheus_level: str,
         priority_threadpool: 'bittensor.prioritythreadpool' = None,
     ):
         r""" Initializes a new Axon tensor processing endpoint.
@@ -67,8 +66,6 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
                     Grpc server endpoint.
                 module (:obj:list of `callable`, `optional`):
                     python class that is of type AxonModule.
-                prometheus_level (:obj:`str`, `required`):
-                    Prometheus logging level.
                 priority (:obj:`callable`, `optional`):
                     function to assign priority on requests.
                 priority_threadpool (:obj:`bittensor.prioritythreadpool`, `optional`):
@@ -80,19 +77,13 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         self.external_port = external_port
         self.wallet = wallet
         self.server = server
-        self.mdoule = module
+        self.module = module
         assert isinstance(self.module, AxonModule)
 
         self.timeout = timeout
         self.stats = self._init_stats()
         self.started = None
         
-        # -- Priority 
-        self.priority_threadpool= priority_threadpool
-
-         # == Prometheus
-        # We are running over various suffix values in the event that there are multiple axons in the same process.
-        # The first axon is created with a null suffix and subsequent values are ordered like so: axon_is_started, axon_is_started_1, axon_is_started_2 etc...
 
     def __str__(self) -> str:
         return "Axon({}, {}, {}, {})".format( self.ip, self.port, self.wallet.hotkey.ss58_address, "started" if self.started else "stopped")
@@ -127,9 +118,8 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         )
         return response
 
-
-
-    def check_if_should_return(self) -> bool:
+    @staticmethod
+    def check_if_should_return( synapse_codes:list) -> bool:
         '''
         Function which returns true if all codes are non success
 
@@ -239,17 +229,12 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
             try:
                 deserialized_forward_tensors [index] = synapse.deserialize_forward_request_tensor ( request.tensors [index] )
 
-            except ValueError as e:
-                synapse_codes [index] = bittensor.proto.ReturnCode.RequestShapeException
-                synapse_call_times [index] = clock.time() - start_time
-                synapse_messages [index] = 'Input shape exception with error:{}'.format(str(e))
-
             except Exception as e:
                 synapse_codes [index] = bittensor.proto.ReturnCode.RequestDeserializationException
                 synapse_call_times [index] = clock.time() - start_time
                 synapse_messages [index] = 'Input deserialization exception with error:{}'.format(str(e))
         # Check if the call can stop here.
-        if self.check_if_should_return():
+        if self.check_if_should_return(synapse_codes=synapse_codes):
             self.finalize_codes_stats_and_logs()
             return [], synapse_codes[0] , request.synapses
 
@@ -259,23 +244,13 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         # ===================================
         try:
             self.finalize_codes_stats_and_logs()
-            if self.priority != None:
-                priority = self.priority( request.hotkey, inputs_x = deserialized_forward_tensors, request_type = bittensor.proto.RequestType.FORWARD )
-                future = self.priority_threadpool.submit (
-                    self.module.__call__,
-                    inputs_x = deserialized_forward_tensors, 
-                    synapses = synapses,
-                    priority = priority,
-                    hotkey = request.hotkey
-                )
-                forward_response_tensors, forward_codes, forward_messages = future.result( timeout = synapse_timeout - (clock.time() - start_time) )
-            else:
-                
-                forward_response_tensors, forward_codes, forward_messages = self.module(
-                    inputs_x = deserialized_forward_tensors,
-                    synapses = synapses,
-                    hotkey= request.hotkey
-                )
+
+            forward_response_tensors, forward_codes, forward_messages = self.module(
+                inputs = deserialized_forward_tensors,
+                synapses = synapses,
+                hotkey= request.hotkey
+            )
+
             synapse_is_response = [ True for _ in synapses ]
             # ========================================
             # ==== Fill codes from forward calls ====
@@ -287,8 +262,6 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         # ==== Catch forward request timeouts ====
         # ========================================
         except concurrent.futures.TimeoutError:
-            if self.priority != None:
-                future.cancel()
             code = bittensor.proto.ReturnCode.Timeout
             call_time = clock.time() - start_time
             message = "Request reached timeout"
@@ -399,10 +372,6 @@ class AxonGeneral( bittensor.grpc.BittensorServicer ):
         self.server.start()
         logger.success("Axon Started:".ljust(20) + "<blue>{}</blue>", self.ip + ':' + str(self.port))
         self.started = True
-
-        # Switch prometheus ENUM.
-        if self.prometheus_level != bittensor.prometheus.level.OFF.name:
-            self.is_started.state('started')
 
         return self
 

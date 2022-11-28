@@ -324,6 +324,7 @@ class axon:
 
 
 from . import axon_general_impl as axon_general_impl
+from .axon_module_impl import AxonModule
 
 class axon_general:
     """ The factory class for bittensor.Axon object
@@ -342,17 +343,17 @@ class axon_general:
             cls,
             config: Optional['bittensor.config'] = None,
             wallet: Optional['bittensor.Wallet'] = None,
-            thread_pool: Optional['futures.ThreadPoolExecutor'] = None,
-            priority_threadpool: Optional['bittensor.prioritythreadpool'] = None,
             server: Optional['grpc._Server'] = None,
             port: Optional[int] = None,
             ip: Optional[str] = None,
+            module: 'AxonModule'= None,
             external_ip: Optional[str] = None,
             external_port: Optional[int] = None,
             max_workers: Optional[int] = None, 
             maximum_concurrent_rpcs: Optional[int] = None,
             blacklist: Optional['Callable'] = None,
             priority: Optional['Callable'] = None,
+            thread_pool: Optional[futures.ThreadPoolExecutor] = None,
             timeout: Optional[int] = None,
             compression:Optional[str] = None,
         ) -> 'bittensor.Axon':
@@ -425,6 +426,7 @@ class axon_general:
 
         if wallet == None:
             wallet = bittensor.wallet( config = config )
+
         if thread_pool == None:
             thread_pool = futures.ThreadPoolExecutor( max_workers = config.axon.max_workers )
         if server == None:
@@ -438,17 +440,18 @@ class axon_general:
         if priority != None and priority_threadpool == None:
             priority_threadpool = bittensor.prioritythreadpool(config=config)
 
-        axon_instance = axon_general_impl.Axon(
+
+        if module == None:
+            module = AxonModule()
+        axon_instance = axon_general_impl.AxonGeneral(
             wallet = wallet, 
             server = server,
+            module = module,
             ip = config.axon.ip,
             port = config.axon.port,
             external_ip=config.axon.external_ip, # don't use internal ip if it is None, we will try to find it later
             external_port=config.axon.external_port or config.axon.port, # default to internal port if external port is not set
             timeout = timeout,
-            priority = priority,
-            priority_threadpool = priority_threadpool,
-            prometheus_level = config.axon.prometheus.level
         )
         bittensor.grpc.add_BittensorServicer_to_server( axon_instance, server )
         full_address = str( config.axon.ip ) + ":" + str( config.axon.port )
@@ -540,17 +543,12 @@ class axon_general:
 
         defaults.axon.compression = 'NoCompression'
 
-        # Prometheus
-        defaults.axon.prometheus = bittensor.config()
-        defaults.axon.prometheus.level = os.getenv('BT_AXON_PROMETHEUS_LEVEL') if os.getenv('BT_AXON_PROMETHEUS_LEVEL') != None else bittensor.prometheus.level.DEBUG.name
-
     @classmethod   
     def check_config(cls, config: 'bittensor.Config' ):
         """ Check config for axon port and wallet
         """
         assert config.axon.port > 1024 and config.axon.port < 65535, 'port must be in range [1024, 65535]'
         assert config.axon.external_port is None or (config.axon.external_port > 1024 and config.axon.external_port < 65535), 'external port must be in range [1024, 65535]'
-        assert config.axon.prometheus.level in [l.name for l in list(bittensor.prometheus.level)], "axon.prometheus.level must be in: {}".format([l.name for l in list(bittensor.prometheus.level)])
         bittensor.wallet.check_config( config )
 
 class AuthInterceptor(grpc.ServerInterceptor):
