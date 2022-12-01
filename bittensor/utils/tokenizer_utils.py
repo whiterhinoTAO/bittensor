@@ -1001,7 +1001,6 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
     val_probs = torch.clamp(val_probs, 0, 1)  # [batch_size] ensure 0 <= total probability <= 1
     loss_val = - torch.log(val_probs + 1e-40)  # [batch_size] calculate cross entropy loss
 
-
     old_match_probs = match_probs.clone()
     match_probs = torch.clamp(match_probs, 0, 1)  # [batch_size] ensure 0 <= total probability <= 1
     loss = - torch.log(match_probs + 1e-40)  # [batch_size] calculate cross entropy loss
@@ -1029,7 +1028,6 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
             '\nmatch probs: ', old_match_probs,
             '\nloss ',loss
         )
-
     return loss_val, loss
 
 
