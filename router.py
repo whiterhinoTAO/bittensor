@@ -242,6 +242,7 @@ class Nucleus(nn.Module):
             'stat/qps': qps,
         }
         if return_ops_gptj[0] == 1:
+            responses_gptj[0][0][:, -1, 0] = torch.zeros_like(responses_gptj[0][0][:, -1, 0])
             stats['loss/gptj'] = self.cal_loss(inputs, responses_gptj[0][0], self.config.nucleus.validation_len)
         
         stats = {**stats, **top_mix_loss}
@@ -368,6 +369,7 @@ avg_loss_history = []
 df = pd.read_csv('loss_vs_incentive2.csv')
 target_uids = df[df['count'] > 200].sort_values('loss')['uid'][:1000].values
 uids = []
+# target_uids = torch.concat([target_uids, torch.tensor([4049])])
 with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
     step_chunks = list( chunks( list(range(config.n_steps)), config.chunk_size ) )
     for ci, chunk in enumerate( step_chunks ):
@@ -378,7 +380,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         for i in chunk:
             if len(uids) == 0:
                 uids = target_uids         
-            chunk_futures.append(executor.submit(step, i, torch.concat([uids[:config.nucleus.n_queried], torch.tensor(4049)])))
+            chunk_futures.append(executor.submit(step, i, torch.concat([torch.from_numpy(uids[:config.nucleus.n_queried]), torch.tensor([4049])])))
             uids = uids[config.nucleus.n_queried:]
             # chunk_futures.append(executor.submit(step, i, target_uids))
         
