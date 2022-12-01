@@ -242,7 +242,6 @@ class Nucleus(nn.Module):
             'stat/qps': qps,
         }
         if return_ops_gptj[0] == 1:
-            responses_gptj[0][0][:, -1, 0] = torch.zeros_like(responses_gptj[0][0][:, -1, 0])
             stats['loss/gptj'] = self.cal_loss(inputs, responses_gptj[0][0], self.config.nucleus.validation_len)
         
         stats = {**stats, **top_mix_loss}
