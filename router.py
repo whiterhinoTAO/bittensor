@@ -18,8 +18,9 @@ from bittensor._neuron.text.neuron_utilities import ThreadQueue, PositionalEncod
 from rich.traceback import install
 import pdb
 from bittensor._neuron.text.core_server.nucleus_impl import server
-from bittensor.utils.tokenizer_utils import phrase_cross_entropy, phrases_cross_entropy
+from bittensor.utils.tokenizer_utils import phrase_cross_entropy
 import numpy as np
+import pandas as pd
 
 import cProfile, pstats, io
 from pstats import SortKey
@@ -141,6 +142,11 @@ class Nucleus(nn.Module):
             mixed_response[:, :-1, 0] += w * response[:, :, 0]
 
         for batch in range(batch_size):
+            # mixed_batch_topk = mixed_response[batch, :, :][mixed_response[batch, :, 0].sort(descending=True)[1]][:topk, :]
+            # floor_prob = (1 - sum(mixed_batch_topk[:, 0])) / (bittensor.__vocab_size__ - topk)
+            # mixed_response[batch, :topk, :] = mixed_batch_topk
+            # mixed_response[batch, topk:, :] = torch.zeros_like(mixed_response[batch, topk:, :])
+            # mixed_response[batch, -1, :] = torch.tensor([[floor_prob, -1]])
             mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
 
         # return reduced_mixed_response
@@ -194,6 +200,14 @@ class Nucleus(nn.Module):
             if op == 1 and r[0][:, :, 0].sum() < 0:
                 return_ops[i] = 0
 
+        responses_gptj = responses[-1:]
+        return_ops_gptj = return_ops[-1:]
+        times_gptj = times[-1:]
+        
+        responses = responses[:-1]
+        return_ops = return_ops[:-1]
+        times = times[:-1]
+
         uid_success = [uid for uid, op in list(zip(uids, return_ops)) if op == 1]
         response_success = [r for r, op in list(zip(responses, return_ops)) if op == 1]
         time_success = [t for t, op in list(zip(times, return_ops)) if op == 1]
@@ -204,20 +218,21 @@ class Nucleus(nn.Module):
         # Compute loss.
         loss_routing = self.cal_loss(inputs, mixed_response, self.config.nucleus.validation_len)
         loss_routing_baseline = self.cal_loss(inputs, averaged_response, self.config.nucleus.validation_len)
-        # losses = torch.tensor([self.cal_loss(inputs, r, self.config.nucleus.validation_len) for r in mixed_ind_response])
-        # top_mix_loss = {}
-        # for i in range(1, min(11, len(response_success)), 2):        
-        #     top_mix_response = self.mix_response( [response_success[idx] for idx in losses.sort()[1][:i]], torch.ones(i) / i)
-        #     top_uid = [uid_success[idx] for idx in losses.sort()[1][:i]]
-        #     print(f'===== top_mix{i} ======\n', top_uid)
-        #     loss_top_mix = self.cal_loss(inputs, top_mix_response, self.config.nucleus.validation_len, p = False)
-        #     print('loss: ', loss_top_mix)
-        #     top_mix_loss[f'loss/top_mix_{i}'] = loss_top_mix
-
+        losses = torch.tensor([self.cal_loss(inputs, r[0], self.config.nucleus.validation_len) for r in response_success])
+        top_mix_loss = {}
+        for i in range(1, min(11, len(response_success)), 2):        
+            top_mix_response = self.mix_response( [response_success[idx] for idx in losses.sort()[1][:i]], torch.ones(i) / i)
+            top_uid = [uid_success[idx] for idx in losses.sort()[1][:i]]
+            print(f'===== top_mix{i} ======\n', top_uid)
+            loss_top_mix = self.cal_loss(inputs, top_mix_response, self.config.nucleus.validation_len, p = False)
+            print('loss: ', loss_top_mix)
+            top_mix_loss[f'loss/top_mix_{i}'] = loss_top_mix
+            
+        
         stats = {
-            # 'loss/min': loss_min,
-            # 'loss/count': len(losses),
-            # 'loss/average': sum(losses) / len(losses),
+            'loss/min': losses.min(),
+            'loss/count': len(losses),
+            'loss/average': sum(losses) / len(losses),
             'loss/routing': loss_routing,
             'loss/routing_baseline': loss_routing_baseline,
             # 'loss/model_baseline': loss_model_baseline,
@@ -226,7 +241,10 @@ class Nucleus(nn.Module):
             'stat/batch_time': time.time() - start_time,
             'stat/qps': qps,
         }
-        # stats = {**stats, **top_mix_loss}
+        if return_ops_gptj[0] == 1:
+            stats['loss/gptj'] = self.cal_loss(inputs, responses_gptj[0][0], self.config.nucleus.validation_len)
+        
+        stats = {**stats, **top_mix_loss}
         stats = {**stats}
         # print(stats)
         
@@ -315,7 +333,7 @@ if config.use_wandb:
     bittensor.wandb(config = config)
 
 avg_loss_history = []
-target_uids = graph.I.sort(descending = True)[1][:config.nucleus.n_queried]
+# target_uids = graph.I.sort(descending = True)[1][:config.nucleus.n_queried]
 # top 500
 # target_uids = torch.tensor ([
 #     3546, 3913, 2720, 288, 2716, 3857, 448, 3673, 3948, 3821, 3924, 3645, 3794, 2757, 2930, 3967, 3609, 3702, 3774, 3951, 3687, 3690, 3870, 3735, 3551, 3932, 286, 3692, 3770, 3940, 3566, 3710, 3795, 3705, 3750, 3955, 3723, 3585, 3665, 3753, 3976, 3950, 3530, 3874, 3738, 3670, 3882, 3630, 3600, 3668, 3536, 2277, 3651, 3871, 3984, 3972, 3939, 277, 3529, 358, 416, 385, 452, 287, 2955, 306, 376, 2476, 103, 315, 3985, 3595, 222, 3988, 203, 54, 490, 3803, 28, 152, 3621, 3649, 3779, 3822, 3880, 3904, 100, 3, 3925, 476, 50, 136, 3519, 3745, 3558, 3845, 3544, 3633, 3749, 3793, 339, 40, 3970, 2854, 3576, 3571, 3646, 3829, 149, 116, 354, 3943, 3689, 3695, 3899, 252, 3583, 3947, 3531, 3656, 372, 2524, 3737, 2904, 3503, 2938, 3553, 3619, 3941, 3961, 2876, 2687, 471, 2878, 2893, 2703, 2859, 460, 3811, 3847, 2690, 3775, 2776, 2533, 2544, 2846, 3722, 3568, 2853, 2578, 2655, 2669, 2787, 2914, 2646, 2569, 2592, 2644, 2969, 391, 2514, 2880, 2869, 4012, 2964, 485, 55, 2932, 209, 2552, 2760, 4029, 4044, 4054, 4055, 4053, 320, 237, 336, 402, 431, 478, 4049, 31, 43, 200, 261, 3708, 419, 4063, 183, 249, 3863, 233, 292, 470, 352, 3524, 267, 145, 427, 424, 107, 2953, 270, 9, 259, 3534, 243, 335, 380, 409, 3796, 468, 3730, 169, 245, 202, 47, 246, 3556, 213, 425, 1368, 3654, 16, 3746, 77, 82, 146, 3613, 477, 1, 39, 357, 48, 3995, 3797, 404, 3521, 109, 3962, 137, 42, 4003, 3715, 4030, 4045, 4089, 3592, 3833, 18, 2815, 3652, 2535, 96, 323, 4074, 4088, 255, 4086, 151, 3526, 1488, 3540, 3562, 3676, 3873, 3928, 3964, 3989, 3960, 3979, 4093, 3931, 3929, 3664, 710, 2931, 610, 329, 4047, 3608, 449, 2863, 346, 3703, 3622, 197, 218, 225, 389, 398, 454, 483, 2181, 3716, 2574, 497, 1487, 4014, 4020, 3545, 2411, 210, 4022, 4037, 10, 3505, 3515, 3523, 3574, 3581, 3663, 3755, 3761, 3843, 3987, 58, 171, 3956, 2917, 2618, 2820, 2987, 3854, 2894, 3629, 3552, 3518, 3563, 2528, 2689, 2833, 2868, 2934, 2945, 2954, 4090, 46, 97, 2935, 1553, 2712, 401, 3841, 2600, 2555, 3893, 3587, 262, 2183, 447, 3700, 3968, 3658, 2590, 2319, 2128, 3577, 2448, 410, 422, 3628, 3707, 3759, 3804, 2160, 2458, 457, 75, 3982, 3611, 3762, 3998, 248, 465, 3659, 2662, 236, 2678, 2809, 3579, 2530, 256, 399, 327, 3839, 353, 21, 83, 158, 2511, 2559, 2679, 2409, 3999, 3983, 2247, 365, 3648, 3496, 2056, 2255, 143, 2417, 2381, 122, 3756, 1408, 3599, 2091, 2027, 3885, 2354, 2266, 3927, 2132, 3573, 2192, 361, 3550, 3565, 3824, 3851, 2112, 2, 2114, 2149, 2225, 2379, 2300, 2406, 2011, 135, 2005, 2002, 2463, 3922, 3846, 2759, 2032, 3760, 3806, 2422, 1429, 2413, 2208, 3949, 3912, 2705, 2361, 2975, 32, 2968, 2976, 2012, 1477, 2304, 2507, 2585, 2614, 2653, 2949, 2735, 2000, 2059, 2761, 2563, 2832, 2176, 2352, 1999, 2069, 2209, 2307, 2161, 3783, 3729, 2632, 3643, 3831, 1213, 3709, 3666, 2324, 2495, 2755, 2503, 2505, 2602, 2622, 2638, 2728, 2769, 2852, 2908, 3527, 3525, 3744, 2736
@@ -347,11 +365,9 @@ target_uids = graph.I.sort(descending = True)[1][:config.nucleus.n_queried]
 # target_uids = torch.tensor([3625, 3260, 3932, 3670, 3666, 3722, 151, 323, 170, 284, 2708])
 # target_uids = torch.tensor([ 3625, 
 
-import pandas as pd 
-
 df = pd.read_csv('loss_vs_incentive2.csv')
-org_target_uids = df[df['count'] > 200].sort_values('loss')['uid'][:1000].values
-target_uids = []
+target_uids = df[df['count'] > 200].sort_values('loss')['uid'][:1000].values
+uids = []
 with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as executor:
     step_chunks = list( chunks( list(range(config.n_steps)), config.chunk_size ) )
     for ci, chunk in enumerate( step_chunks ):
@@ -360,11 +376,11 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=config.max_workers) as ex
         chunk_futures = []
         chunk_results = []
         for i in chunk:
-            if len(target_uids) == 0:
-                target_uids = org_target_uids         
-            uids = target_uids[:config.nucleus.n_queried]
-            chunk_futures.append(executor.submit(step, i, uids))
-            target_uids = target_uids[config.nucleus.n_queried:]
+            if len(uids) == 0:
+                uids = target_uids         
+            chunk_futures.append(executor.submit(step, i, torch.concat([uids[:config.nucleus.n_queried], torch.tensor(4049)])))
+            uids = uids[config.nucleus.n_queried:]
+            # chunk_futures.append(executor.submit(step, i, target_uids))
         
         for future in concurrent.futures.as_completed(chunk_futures):
             chunk_results.append( future.result() )
