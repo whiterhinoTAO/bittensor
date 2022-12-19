@@ -1292,7 +1292,7 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
         _loss1 = _losses[len(_losses)//2:].mean()
 
         _stats.update({'loss_val_nxt': _loss_val, 'losses_nxt': _losses, 'loss_nxt': _loss,
-                       'loss0_nxt': _loss, 'loss1_nxt': _loss,
+                       'loss0_nxt': _loss0, 'loss1_nxt': _loss1,
                        'synergy_nxt': 0, 'synergy_loss_diff_nxt': 0})
 
     def _synergy(first, second, target, ext):
