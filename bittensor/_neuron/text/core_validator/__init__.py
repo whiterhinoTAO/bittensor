@@ -496,7 +496,7 @@ class neuron:
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
-            data_sample = self.apply_randmask(next(self.dataset))
+            data_sample = next(self.dataset)
             loss, stats = self.nucleus(data_sample, self.metagraph, self.dendrite)
             self.prometheus_gauges.labels("loss").set( loss.item() )
 
