@@ -32,6 +32,7 @@ import math
 import random
 import pandas
 import traceback
+from scipy.stats import kendalltau
 from rich import print
 from rich.console import Console
 from rich.style import Style
@@ -72,6 +73,8 @@ neuron_stats_columns = [
     ['vLoss', 'loss_val', '{:.2f}', 'bright_cyan'],  # next token prediction loss for validation task
     ['nvLoss', 'loss_val_nxt', '{:.2f}', 'bright_cyan'],  # next token prediction loss for validation task [TextCausalLMNext]
     ['nLoss', 'loss_nxt', '{:.2f}', 'bright_cyan'],  # next token phrase prediction loss for phrase validation task [TextCausalLMNext]
+    ['nLoss0', 'loss0_nxt', '{:.2f}', 'bright_cyan'],  # next token phrase prediction loss for phrase validation task [TextCausalLMNext]
+    ['nLoss1', 'loss1_nxt', '{:.2f}', 'bright_cyan'],  # next token phrase prediction loss for phrase validation task [TextCausalLMNext]
     ['RLoss', 'routing_loss', '{:.3f}', 'grey30'],  # MSE between routing_score and conditioned loss
     ['nRLoss', 'routing_loss_nxt', '{:.3f}', 'grey30'],  # MSE between routing_score_nxt and conditioned loss [TextCausalLMNext]
     ['sShap', 'shapley_values', '{:.0f}', 'magenta'],  # Shapley value (=Base+Syn) over sequence
@@ -171,6 +174,7 @@ class neuron:
         self.optimizer = torch.optim.SGD(
             self.nucleus.parameters(), lr=self.config.neuron.learning_rate, momentum=self.config.neuron.momentum
         )
+        self.tokenizer = bittensor.tokenizer()
 
         # === Create thread queue ===
         self.loss = None
@@ -181,7 +185,7 @@ class neuron:
         self.neuron_hotkeys = []  # keep neuron hotkeys to compare and check for changes after metagraph.sync()
         self.neuron_changes = {}  # neuron hotkey changes dict of dicts of dicts: [uid] -> [block] -> {'new_hotkey': , 'old_hotkey': , 'old_stats':}
         self.alpha = 0.1  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
-
+        self.tau = 0  # Kendall's tau ranking comparison
 
         if self.config.neuron.validation_synapse == 'TextCausalLMNext':
             self.weight_key = 'shapley_values_nxt'  # stat key + ! to calculate neuron weights with
@@ -385,6 +389,40 @@ class neuron:
                     if not self.config.neuron.restart_on_failure:
                         break
 
+    def apply_randmask(self, inputs: torch.FloatTensor, mask_perc: float = 0.25):
+        vocab_size = self.tokenizer.vocab_size
+        batch_size, seq_len = inputs.shape
+        half = batch_size // 2
+        mask_n = int(seq_len * mask_perc)
+
+        all_special_ids = self.tokenizer.all_special_ids
+        special_id_mask = [(inputs[half:] == tid).float() for tid in all_special_ids]
+        special_id_mask = (sum(special_id_mask, 0) > 0).float()
+
+        randpos = [torch.randperm(seq_len) for _ in range(half)]
+        randpos = torch.stack(randpos)
+        pos_mask = torch.zeros_like(randpos).scatter_add_(1, randpos[:, mask_n], torch.ones_like(randpos[:, mask_n]))
+
+        randmask = torch.randint(-vocab_size, vocab_size, (half, seq_len))
+        randmask *= pos_mask
+        randmask *= special_id_mask
+        masked = (inputs[half:] + randmask) % (vocab_size - 1)  # last token is a special id, so skip last
+
+        new_special_id_mask = [(inputs[half:] == tid).float() for tid in all_special_ids]
+        new_special_id_mask = sum(new_special_id_mask, 0) > 0
+
+        remove_special_ids = new_special_id_mask & (special_id_mask == 0)
+        masked[remove_special_ids] = inputs[half:][remove_special_ids] + 0
+
+        new_inputs = inputs + 0
+        new_inputs[half:] = masked
+
+        logger.info(f"randmask: {randmask[0, :50]}")
+        logger.info(f"input         : {inputs[0, :50]}")
+        logger.info(f"input (masked): {new_inputs[half, :50]}")
+
+        return new_inputs
+
     def run_epoch( self ):
         r""" Runs a validator epoch. We apply batches until the epoch length is exhausted.
             Occasionally the validator nucleus is completely reset to ensure we dont converge to far.
@@ -456,7 +494,8 @@ class neuron:
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
-            loss, stats = self.nucleus( next(self.dataset) , self.metagraph, self.dendrite )
+            data_sample = self.apply_randmask(next(self.dataset))
+            loss, stats = self.nucleus(data_sample, self.metagraph, self.dendrite)
             self.prometheus_gauges.labels("loss").set( loss.item() )
 
             # === Backward ===
@@ -650,6 +689,26 @@ class neuron:
     def neuron_stats_update(self, neuron_stats: Dict[int, Dict[str, Any]]):
         r""" Updates self.neuron_stats with new individual dictionaries per uid.
         """
+        loss0 = []
+        loss1 = []
+        for uid, stats in neuron_stats.items():
+            if 'loss0_nxt' in stats and 'loss1_nxt' in stats:
+                loss0 += [stats['loss0_nxt']]
+                loss1 += [stats['loss1_nxt']]
+
+        ranks0 = torch.argsort(torch.tensor(loss0)).tolist()
+        ranks1 = torch.argsort(torch.tensor(loss1)).tolist()
+        tau, p_value = kendalltau(ranks0, ranks1)
+        self.tau += [tau]
+        tau_avg = torch.tensor(self.tau).mean()
+        tau_std = torch.tensor(self.tau).std()
+
+        logger.info(f"losses (normal)  : {loss0}")
+        logger.info(f"losses (randmask): {loss1}")
+        logger.info(f"ranks (normal)   : {ranks0}")
+        logger.info(f"ranks (randmask) : {ranks1}")
+        logger.info(f"Kendall's tau_avg={tau_avg}, tau_std={tau_std}, tau={tau}, p-val={p_value}")
+
         responsive_uids = []
         for _uid, _stats in neuron_stats.items():
             stats = self.neuron_stats.setdefault(_uid, {})
@@ -1227,7 +1286,11 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
         _loss_val = _losses_val.mean()
         _loss = _losses.mean()
 
+        _loss0 = _losses[:len(_losses)//2].mean()
+        _loss1 = _losses[len(_losses)//2:].mean()
+
         _stats.update({'loss_val_nxt': _loss_val, 'losses_nxt': _losses, 'loss_nxt': _loss,
+                       'loss0_nxt': _loss, 'loss1_nxt': _loss,
                        'synergy_nxt': 0, 'synergy_loss_diff_nxt': 0})
 
     def _synergy(first, second, target, ext):
@@ -1482,7 +1545,8 @@ def response_table(batch_predictions: List, stats: Dict, sort_col: str, console_
     batch_perm = torch.randperm(batch_size)  # avoid restricting observation to predictable subsets
 
     # === Column selection ===
-    columns = [c[:] for c in neuron_stats_columns if c[1] in ['uid', sort_col, 'loss_nxt', 'synergy_nxt']]
+    columns = [c[:] for c in neuron_stats_columns if c[1] in ['uid', sort_col, 'loss0_nxt', 'loss1_nxt',
+                                                              'loss_nxt', 'synergy_nxt']]
     col_keys = [c[1] for c in columns]
 
     # === Sort rows ===
