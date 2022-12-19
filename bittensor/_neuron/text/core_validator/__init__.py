@@ -401,7 +401,7 @@ class neuron:
 
         randpos = [torch.randperm(seq_len) for _ in range(half)]
         randpos = torch.stack(randpos)
-        pos_mask = torch.zeros_like(randpos).scatter_add_(1, randpos[:, mask_n], torch.ones_like(randpos[:, mask_n]))
+        pos_mask = torch.zeros_like(randpos).scatter_add_(1, randpos[:, :mask_n], torch.ones_like(randpos[:, :mask_n]))
 
         randmask = torch.randint(-vocab_size, vocab_size, (half, seq_len))
         randmask *= pos_mask
