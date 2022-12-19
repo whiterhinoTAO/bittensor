@@ -840,14 +840,14 @@ class nucleus( torch.nn.Module ):
 
         # Positional Encoding
         self.local_pos_encoder = PositionalEncoding( bittensor.__network_dim__, self.config.nucleus.dropout )
-
-        # Crosss entropy loss for NTP.    
-        self.loss_fct = torch.nn.CrossEntropyLoss()
     
         # SGMOE Gates: Instantiating the gates per expert.
         self.gates = torch.nn.Linear( bittensor.__network_dim__, self.max_n, bias=True ).to( self.device )
 
         self.sigmoid = torch.nn.Sigmoid()
+        
+        # Crosss entropy loss for NTP.    
+        self.loss_fct = torch.nn.CrossEntropyLoss()
 
         self.reset_weights()
 
@@ -1035,6 +1035,30 @@ class nucleus( torch.nn.Module ):
 
         return loss, neuron_stats
 
+def mix_response(self, response_success, normalized_topk_routing_scores):
+    batch_size = response_success[0][0].shape[0]
+    topk =  response_success[0][0].shape[1] - 1
+    mixed_response = torch.zeros(batch_size, bittensor.__vocab_size__ + 1  , 2)
+    all_logits = torch.tensor(list(range(bittensor.__vocab_size__)))
+    mixed_response[:, : -1, 1] = all_logits.repeat(batch_size, 1)
+
+    for r, w in list(zip(response_success, normalized_topk_routing_scores)):
+        response = torch.zeros(batch_size, bittensor.__vocab_size__ , 2)
+        response[:, :, 1] = all_logits.repeat(batch_size, 1)
+
+        for batch in range(batch_size):
+            r_batch = r[0][batch, : -1, :]
+            r_batch_sorted = r_batch[r_batch[:, 0].sort(descending = False)[1]]
+            index = r_batch_sorted[:, 1].long()
+            prob = r_batch_sorted[:, 0] 
+            response[batch, index, 0] = prob
+        mixed_response[:, :-1, 0] += w * response[:, :, 0]
+
+    for batch in range(batch_size):
+        mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
+
+    # return reduced_mixed_response
+    return mixed_response
 
 def scaling_law_loss_to_params(loss):
     r""" (OpenAI scaling laws) Kaplan, Jared, et al. "Scaling laws for neural language models." arXiv:2001.08361 (2020)
