@@ -407,7 +407,7 @@ class neuron:
 
         randmask = torch.randint(-vocab_size, vocab_size, (half, seq_len))
         randmask *= pos_mask
-        randmask *= special_id_mask
+        randmask *= 1 - special_id_mask
         masked = (inputs[:half] + randmask) % (vocab_size - 1)  # last token is a special id, so skip last
 
         new_special_id_mask = [(inputs[:half] == tid).int() for tid in all_special_ids]
