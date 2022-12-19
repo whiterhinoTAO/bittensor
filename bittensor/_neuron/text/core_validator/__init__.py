@@ -185,7 +185,7 @@ class neuron:
         self.neuron_hotkeys = []  # keep neuron hotkeys to compare and check for changes after metagraph.sync()
         self.neuron_changes = {}  # neuron hotkey changes dict of dicts of dicts: [uid] -> [block] -> {'new_hotkey': , 'old_hotkey': , 'old_stats':}
         self.alpha = 0.1  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
-        self.tau = 0  # Kendall's tau ranking comparison
+        self.tau = []  # Kendall's tau ranking comparison
 
         if self.config.neuron.validation_synapse == 'TextCausalLMNext':
             self.weight_key = 'shapley_values_nxt'  # stat key + ! to calculate neuron weights with
