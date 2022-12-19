@@ -396,8 +396,8 @@ class neuron:
         mask_n = int(seq_len * mask_perc)
 
         all_special_ids = self.tokenizer.all_special_ids
-        special_id_mask = [(inputs[half:] == tid).float() for tid in all_special_ids]
-        special_id_mask = (sum(special_id_mask, 0) > 0).float()
+        special_id_mask = [(inputs[half:] == tid).int() for tid in all_special_ids]
+        special_id_mask = (sum(special_id_mask, 0) > 0).int()
 
         randpos = [torch.randperm(seq_len) for _ in range(half)]
         randpos = torch.stack(randpos)
@@ -408,7 +408,7 @@ class neuron:
         randmask *= special_id_mask
         masked = (inputs[half:] + randmask) % (vocab_size - 1)  # last token is a special id, so skip last
 
-        new_special_id_mask = [(inputs[half:] == tid).float() for tid in all_special_ids]
+        new_special_id_mask = [(inputs[half:] == tid).int() for tid in all_special_ids]
         new_special_id_mask = sum(new_special_id_mask, 0) > 0
 
         remove_special_ids = new_special_id_mask & (special_id_mask == 0)
