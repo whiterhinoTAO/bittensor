@@ -426,9 +426,9 @@ class neuron:
 
         return new_inputs
 
-    def apply_randswap(self, inputs: torch.FloatTensor):
+    def apply_randswap(self, inputs: torch.FloatTensor, seq_len):
         swap_n = self.config.neuron.swaps_count
-        batch_size, seq_len = inputs.shape
+        batch_size, _ = inputs.shape
         half = batch_size // 2
         half_inputs = inputs[:half]
 
@@ -521,7 +521,7 @@ class neuron:
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
-            data_sample = self.apply_randswap(next(self.dataset))
+            data_sample = self.apply_randswap(next(self.dataset), sequence_length-1)
             loss, stats = self.nucleus(data_sample, self.metagraph, self.dendrite)
             self.prometheus_gauges.labels("loss").set( loss.item() )
 
