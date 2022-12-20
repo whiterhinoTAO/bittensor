@@ -1560,7 +1560,7 @@ def format_predictions(uids: torch.Tensor, query_responses: List[List[torch.Floa
 
 
 def response_table(batch_predictions: List, stats: Dict, sort_col: str, console_width: int,
-                   task_repeat: int = 4, tasks_per_server: int = 3):
+                   task_repeat: int = 4, tasks_per_server: int = 6):
     r""" Prints the query response table: top prediction probabilities and texts for batch tasks.
     """
     # === Batch permutation ===
@@ -1568,6 +1568,7 @@ def response_table(batch_predictions: List, stats: Dict, sort_col: str, console_
     if batch_size == 0:
         return
     batch_perm = torch.randperm(batch_size)  # avoid restricting observation to predictable subsets
+    batch_perm = torch.arange(batch_size)
 
     # === Column selection ===
     columns = [c[:] for c in neuron_stats_columns if c[1] in ['uid', sort_col, 'loss0_nxt', 'loss1_nxt',
