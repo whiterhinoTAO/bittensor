@@ -1531,8 +1531,8 @@ def format_predictions(uids: torch.Tensor, query_responses: List[List[torch.Floa
         context = inputs[batch_item][:-validation_len]
         answer = inputs[batch_item][-validation_len:]
 
-        context = repr(std_tokenizer.decode(context))[1:-1][-30:]  # strip '' and truncate
-        answer = repr(std_tokenizer.decode(answer))[1:-1][:15]  # strip '' and truncate
+        context = repr(std_tokenizer.decode(context))[1:-1][-50:]  # strip '' and truncate
+        answer = repr(std_tokenizer.decode(answer))[1:-1][:20]  # strip '' and truncate
 
         task = f"[reverse]{context}[/reverse][bold]{answer}[/bold]"
 
@@ -1549,7 +1549,7 @@ def format_predictions(uids: torch.Tensor, query_responses: List[List[torch.Floa
                 for i in range(number_of_predictions):
                     phrase = topk_tokens[i]
                     phrase = phrase[phrase >= 0]  # strip negative ignore_index = -100
-                    phrase_str = repr(std_tokenizer.decode(phrase))[:25]  # decode, escape and truncate
+                    phrase_str = repr(std_tokenizer.decode(phrase))[:15]  # decode, escape and truncate
                     prob = f'{topk_probs[i]:.3f}'.lstrip('0').replace('1.000', '1.00')
                     topk_predictions += f"[green]{prob}[/green]: {phrase_str} "
 
