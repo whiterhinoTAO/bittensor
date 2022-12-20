@@ -1560,7 +1560,7 @@ def format_predictions(uids: torch.Tensor, query_responses: List[List[torch.Floa
 
 
 def response_table(batch_predictions: List, stats: Dict, sort_col: str, console_width: int,
-                   task_repeat: int = 4, tasks_per_server: int = 6):
+                   task_repeat: int = 4, tasks_per_server: int = 3):
     r""" Prints the query response table: top prediction probabilities and texts for batch tasks.
     """
     # === Batch permutation ===
@@ -1604,12 +1604,13 @@ def response_table(batch_predictions: List, stats: Dict, sort_col: str, console_
         # === Row addition ===
         row = [txt.format(stats[uid][key]) for _, key, txt, _ in columns]
         for j in range(tasks_per_server):
-            batch_item = ((i // task_repeat) * tasks_per_server + j) % batch_size  # repeat task over servers, do not exceed batch_size
-            task, predictions = batch_predictions[batch_perm[batch_item]]
-            row += [predictions[uid]]
+            batch_item = ((i // task_repeat) * tasks_per_server + j) % (batch_size//2)  # repeat task over servers, do not exceed batch_size
+            for k in range(2):
+                task, predictions = batch_predictions[batch_perm[batch_item*(k+1)]]
+                row += [predictions[uid]]
 
-            if i % task_repeat == 0:
-                table.add_column(task, header_style='not bold', style='', justify='left')
+                if i % task_repeat == 0:
+                    table.add_column(task, header_style='not bold', style='', justify='left')
 
         table.add_row(*row)
 
