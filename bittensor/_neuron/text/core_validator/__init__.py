@@ -425,6 +425,29 @@ class neuron:
 
         return new_inputs
 
+    def apply_randswap(self, inputs: torch.FloatTensor, swap_perc: float = 0.05):
+        batch_size, seq_len = inputs.shape
+        half = batch_size // 2
+        half_inputs = inputs[:half]
+        swap_n = int(seq_len * swap_perc)
+
+        randpos = [torch.randperm(seq_len) for _ in range(half)]
+        randpos = torch.stack(randpos)  # [batch_size//2, seq_len]
+        swappos = randpos[:, :2*swap_n]  # [batch_size//2, 2*swap_n]
+        logger.info(f"swappos: {swappos[0]}")
+
+        vals = half_inputs.gather(1, swappos[:, 0::2])
+        vals1 = half_inputs.gather(1, swappos[:, 1::2])
+        swapped = half_inputs.scatter(1, swappos[:, 0::2], vals1)
+        swapped = swapped.scatter(1, swappos[:, 1::2], vals)
+        logger.info(f"swapped: {swapped[0]}")
+
+        new_inputs = inputs + 0
+        new_inputs[half:] = swapped
+
+        return new_inputs
+
+
     def run_epoch( self ):
         r""" Runs a validator epoch. We apply batches until the epoch length is exhausted.
             Occasionally the validator nucleus is completely reset to ensure we dont converge to far.
@@ -496,7 +519,7 @@ class neuron:
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
-            data_sample = self.apply_randmask(next(self.dataset))
+            data_sample = self.apply_randswap(next(self.dataset))
             loss, stats = self.nucleus(data_sample, self.metagraph, self.dendrite)
             self.prometheus_gauges.labels("loss").set( loss.item() )
 
