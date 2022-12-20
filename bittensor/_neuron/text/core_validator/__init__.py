@@ -440,7 +440,8 @@ class neuron:
         vals1 = half_inputs.gather(1, swappos[:, 1::2])
         swapped = half_inputs.scatter(1, swappos[:, 0::2], vals1)
         swapped = swapped.scatter(1, swappos[:, 1::2], vals)
-        logger.info(f"swapped: {swapped[0]}")
+        logger.info(f"orig: {half_inputs[0, :50]}")
+        logger.info(f"swapped: {swapped[0, :50]}")
 
         new_inputs = inputs + 0
         new_inputs[half:] = swapped
@@ -1560,7 +1561,7 @@ def format_predictions(uids: torch.Tensor, query_responses: List[List[torch.Floa
 
 
 def response_table(batch_predictions: List, stats: Dict, sort_col: str, console_width: int,
-                   task_repeat: int = 4, tasks_per_server: int = 3):
+                   task_repeat: int = 4, tasks_per_server: int = 6):
     r""" Prints the query response table: top prediction probabilities and texts for batch tasks.
     """
     # === Batch permutation ===
@@ -1606,11 +1607,11 @@ def response_table(batch_predictions: List, stats: Dict, sort_col: str, console_
         for j in range(tasks_per_server):
             batch_item = ((i // task_repeat) * tasks_per_server + j) % (batch_size//2)  # repeat task over servers, do not exceed batch_size
             for k in range(2):
-                task, predictions = batch_predictions[batch_perm[batch_item*(k+1)]]
+                task, predictions = batch_predictions[batch_perm[batch_item + batch_size//2]]
                 row += [predictions[uid]]
 
                 if i % task_repeat == 0:
-                    table.add_column(f'{batch_item*(k+1)}: '+task, header_style='not bold', style='', justify='left')
+                    table.add_column(f'{batch_item + batch_size//2}: '+task, header_style='not bold', style='', justify='left')
 
         table.add_row(*row)
 
