@@ -243,6 +243,7 @@ class neuron:
         parser.add_argument('--neuron._mock', action='store_true', help='To turn on neuron mocking for testing purposes.', default=False )
         parser.add_argument('--neuron.wait_for_finalization', action='store_true', help='''when setting weights the miner waits for trnasaction finalization.''', default=False)
         parser.add_argument('--neuron.forward_num', type=int, help='''How much forward request before a backward call.''', default=3)
+        parser.add_argument('--neuron.swaps_count', type=int, help='''Swaps count.''', default=10)
         parser.add_argument('--neuron.validation_synapse', type=str, help='''Synapse used for validation.''', default='TextCausalLMNext', choices = ['TextCausalLMNext', 'TextCausalLM'])
         parser.add_argument('--neuron.exclude_quantile', type=float, help='Exclude the lowest quantile from weight setting. (default value: -1, pulling from subtensor directly)', default=-1)
 
@@ -425,11 +426,11 @@ class neuron:
 
         return new_inputs
 
-    def apply_randswap(self, inputs: torch.FloatTensor, swap_perc: float = 0.05):
+    def apply_randswap(self, inputs: torch.FloatTensor):
+        swap_n = self.config.neuron.swaps_count
         batch_size, seq_len = inputs.shape
         half = batch_size // 2
         half_inputs = inputs[:half]
-        swap_n = int(seq_len * swap_perc)
 
         randpos = [torch.randperm(seq_len) for _ in range(half)]
         randpos = torch.stack(randpos)  # [batch_size//2, seq_len]
