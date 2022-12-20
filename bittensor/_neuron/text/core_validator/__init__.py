@@ -1610,7 +1610,7 @@ def response_table(batch_predictions: List, stats: Dict, sort_col: str, console_
                 row += [predictions[uid]]
 
                 if i % task_repeat == 0:
-                    table.add_column(task, header_style='not bold', style='', justify='left')
+                    table.add_column(f'{batch_item*(k+1)}: '+task, header_style='not bold', style='', justify='left')
 
         table.add_row(*row)
 
