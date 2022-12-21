@@ -551,14 +551,28 @@ class neuron:
 
             # === Logs ===
             if self.config.using_wandb:
+                columns = ['uid', 'updates!', 'shapley_values_nxt!', 'updates_shapley_values_nxt', 
+                'response_time_nxt', 'routing_score', 'loss_val_nxt', 'loss_nxt', 'est_params_nxt', 
+                'base_params_nxt', 'synergy_nxt', 'synergy_loss_diff_nxt', 'routing_score_target_nxt', 
+                'routing_loss_nxt', 'shapley_values_nxt'
+                ]
+                neuron_table = wandb.Table(columns = columns)
                 for uid, vals in self.neuron_stats.items():
+                    neuron_row = []
+                    val_keys = vals.keys()
+                    for col in columns:
+                        if col in val_keys:
+                            neuron_row.append(vals[col])
+                        else:
+                            neuron_row.append(-1)
+                    neuron_table.add_data(*neuron_row)
+                
                     for key in vals:  # detailed neuron evaluation fields, e.g. loss, shapley_values, synergy
                         wandb.log({f'stats/{key}_{uid}': vals[key]}, step=current_block, commit=False)
 
                 wandb.log({'epoch/epoch': self.epoch, 'epoch/epoch_steps': epoch_steps,
                            'epoch/global_steps': self.global_step, 'epoch/loss': loss.item(),
-                           'epoch/time': step_time}, step=current_block, commit=True)
-
+                           'epoch/time': step_time, 'neuron_table': neuron_table}, step=current_block, commit=True)
             # Do the backward request after the a queue of forward requests got finished.  
             if epoch_steps % self.config.neuron.forward_num == 1:
                 start_time = time.time()
