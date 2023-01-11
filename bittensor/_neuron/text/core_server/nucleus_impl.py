@@ -440,12 +440,14 @@ class server(torch.nn.Module):
         tokens = self.token_remap(token_batch, std_tokenizer)
 
         def _forward(_model_output=model_output):
-            import pdb
-            pdb.set_trace()
+            
             if _model_output is None:
-                _model_output = self.pre_model(input_ids=tokens['input_ids'],
-                                               attention_mask=tokens['attention_mask'],
-                                               output_hidden_states=True)
+
+                import pdb
+                pdb.set_trace()                
+                print(tokens['input_ids'])
+                print()
+                _model_output = self.pre_model(input_ids=tokens['input_ids'],attention_mask=tokens['attention_mask'],output_hidden_states=True)
                 self.model_output_check(_model_output)
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
             last_logits = _model_output.logits[:, -1, :]  # [batch_size] server prediction of continuation, right-aligned
