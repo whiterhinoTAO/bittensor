@@ -436,12 +436,12 @@ class server(torch.nn.Module):
         if std_tokenizer is None:
             std_tokenizer = self.std_tokenizer
         
-        import pdb
-        pdb.set_trace()
-        
+
         tokens = self.token_remap(token_batch, std_tokenizer)
 
         def _forward(_model_output=model_output):
+            import pdb
+            pdb.set_trace()
             if _model_output is None:
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                attention_mask=tokens['attention_mask'],
