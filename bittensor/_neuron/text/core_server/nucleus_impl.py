@@ -63,7 +63,7 @@ class server(torch.nn.Module):
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            if self.config.auto_device_map:
+            if self.config.neuron.auto_device_map:
                 self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, device_map="auto", load_in_8bit = self.config.neuron.eight_bit)
             else:
                 self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name)
