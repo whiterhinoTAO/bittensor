@@ -328,8 +328,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
             finalize_codes_stats_and_logs()
             if self.priority != None:
                 priority = self.priority( request.hotkey, inputs_x = deserialized_forward_tensors, request_type = bittensor.proto.RequestType.FORWARD )
-                import pdb
-                pdb.set_trace()
+
                 future = self.priority_threadpool.submit (
                     self.forward_callback,
                     inputs_x = deserialized_forward_tensors, 

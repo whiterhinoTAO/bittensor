@@ -552,6 +552,8 @@ class neuron:
         return message, model_output, logits
 
     def forward_casual_lm_next(self,inputs_x: torch.FloatTensor, synapse, model_output=None):
+        import pdb
+        pdb.set_trace()
         with self.mutex:
             message, model_output, topk_token_phrases = self.model.encode_forward_causallmnext(inputs_x.to(self.model.device),
                                                                                         topk=synapse.topk,
