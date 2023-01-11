@@ -435,7 +435,10 @@ class server(torch.nn.Module):
         
         if std_tokenizer is None:
             std_tokenizer = self.std_tokenizer
-
+        
+        import pdb
+        pdb.set_trace()
+        
         tokens = self.token_remap(token_batch, std_tokenizer)
 
         def _forward(_model_output=model_output):
