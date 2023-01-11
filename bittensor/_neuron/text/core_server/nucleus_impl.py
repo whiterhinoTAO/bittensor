@@ -63,7 +63,7 @@ class server(torch.nn.Module):
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name)
+            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name, load_in_8bit = self.config.neuron.eight_bit)
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
@@ -560,6 +560,7 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.finetune.all', action='store_true', help='Finetune your whole model instead of only on the last (few) layers', default=False)
         parser.add_argument('--neuron.finetune.num_layers', type=int, help='The number of layers to finetune on your model.', default=1)
         parser.add_argument('--neuron.finetune.layer_name', type=str, help='Specify since which layer to finetune. eg. encoder.layer.11', default=None)
+        parser.add_argument('--neuron.eight_bit',  action='store_true', help='(experimental) leverages the mixed 8 bit tensor cores', default=False)
         
         # Miner arguements
         parser.add_argument('--neuron.name', type=str, help='Trials for this miner go in miner.root / (wallet_cold - wallet_hot) / miner.name ', default='core_server')
