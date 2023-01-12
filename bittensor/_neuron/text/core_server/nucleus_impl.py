@@ -443,8 +443,6 @@ class server(torch.nn.Module):
             
             if _model_output is None:
                 with torch.no_grad():
-                    import pdb
-                    pdb.set_trace()
                     _model_output = self.pre_model(input_ids=tokens['input_ids'].cuda(),output_hidden_states=True)
                     self.model_output_check(_model_output)
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
