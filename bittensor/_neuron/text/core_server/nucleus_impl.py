@@ -442,7 +442,7 @@ class server(torch.nn.Module):
         def _forward(_model_output=model_output):
             
             if _model_output is None:
-                with torch.no_grad() and torch.use_deterministic_algorithms(False):
+                with torch.no_grad():
                     _model_output = self.pre_model(input_ids=tokens['input_ids'].cuda(),output_hidden_states=True)
                     self.model_output_check(_model_output)
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
