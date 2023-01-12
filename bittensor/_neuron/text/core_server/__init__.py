@@ -23,6 +23,8 @@ Example:
 """
 
 import bittensor
+import deepspeed
+import torch
 import os
 
 from .nucleus_impl import server
@@ -129,7 +131,14 @@ class neuron:
             subtensor = bittensor.subtensor(config = config) if subtensor == None else subtensor
             self.config.neuron.netuid = subtensor.get_subnets()[0]
         
-        self.model = server(config = self.config)
+        model = server(config = self.config)
+        ds_engine = deepspeed.init_inference(model,
+                                        mp_size=self.config.neuron.world_size,
+                                        dtype=torch.half,
+                                        replace_method='auto',
+                                        replace_with_kernel_inject=True)
+
+        self.model = ds_engine.module
 
     def run(self):
         serve(

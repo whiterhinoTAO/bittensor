@@ -578,6 +578,10 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.num_remote_loss', type=int, help='Number of past remote loss to keep in stat.', default=20)
         parser.add_argument('--neuron.netuid', type=int , help='Subnet uid on finney', default=None)
 
+        # Deepspeed Arguements
+        parser.add_argument('--neuron.deepspeed', action='store_true', help='If True, use deepspeed', default=False)
+        parser.add_argument('--neuron.world_size', type=int, help='world size', default=1)
+
         # Synapse Arguements
         parser.add_argument('--neuron.lasthidden', action='store_false', help='To turn off last hidden synapse', default=True)
         parser.add_argument('--neuron.causallm', action='store_false', help='To turn off causallm synapse', default=True)
