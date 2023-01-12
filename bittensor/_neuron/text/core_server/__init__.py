@@ -22,6 +22,8 @@ Example:
     $ neurons.text.core_server.neuron().run()
 """
 
+import deepspeed
+import torch
 import bittensor
 import os
 
@@ -112,7 +114,21 @@ class neuron:
             port = config.prometheus.port if config.axon.port == bittensor.defaults.axon.port else config.axon.port - 1000
         )
 
-        self.model = server(config = config)
+        # self.model = server(config = config)
+        model = server(config = config)
+
+        # Init deepspeed.
+
+        world_size = int(os.getenv('WORLD_SIZE', '1'))
+
+        ds_engine = deepspeed.init_inference(model,
+                                        mp_size=world_size,
+                                        dtype=torch.half,
+                                        replace_method='auto',
+                                        replace_with_kernel_inject=True)
+
+        self.model = ds_engine.module
+        
         self.config = config
         self.config.to_prometheus()
 
