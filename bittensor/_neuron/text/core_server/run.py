@@ -50,7 +50,7 @@ def serve(
     config.to_defaults()
     model= model.to(model.device)
 
-    config.neuron.netuid = config.netuid
+    # config.neuron.netuid = config.netuid
 
     # Create Subtensor connection
     subtensor = bittensor.subtensor(config = config) if subtensor == None else subtensor

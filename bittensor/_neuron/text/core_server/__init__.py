@@ -132,13 +132,17 @@ class neuron:
             self.config.neuron.netuid = subtensor.get_subnets()[0]
         
         model = server(config = self.config)
-        ds_engine = deepspeed.init_inference(model,
-                                        mp_size=self.config.neuron.world_size,
-                                        dtype=torch.half,
-                                        replace_method='auto',
-                                        replace_with_kernel_inject=True)
 
-        self.model = ds_engine.module
+        if self.config.neuron.deepspeed:
+            ds_engine = deepspeed.init_inference(model,
+                                            mp_size=self.config.neuron.world_size,
+                                            dtype=torch.half,
+                                            replace_method='auto',
+                                            replace_with_kernel_inject=True)
+
+            self.model = ds_engine.module
+        else:
+            self.model = model
 
     def run(self):
         serve(
