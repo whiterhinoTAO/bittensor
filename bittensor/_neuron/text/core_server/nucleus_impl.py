@@ -429,8 +429,8 @@ class server(torch.nn.Module):
                       [prob_floor_b=1, ignore_index, ..., ignore_index]],
                      [...]]
         """
-        transformers.set_seed(0)
-        transformers.enable_full_determinism(0)
+        # transformers.set_seed(0)
+        # transformers.enable_full_determinism(0)
         
         if std_tokenizer is None:
             std_tokenizer = self.std_tokenizer
@@ -561,6 +561,7 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.finetune.all', action='store_true', help='Finetune your whole model instead of only on the last (few) layers', default=False)
         parser.add_argument('--neuron.finetune.num_layers', type=int, help='The number of layers to finetune on your model.', default=1)
         parser.add_argument('--neuron.finetune.layer_name', type=str, help='Specify since which layer to finetune. eg. encoder.layer.11', default=None)
+        parser.add_argument('--neuron.prune_training_data', action='store_true', help='''If true, prune the training data.''', default=False)
         
         # Miner arguements
         parser.add_argument('--neuron.name', type=str, help='Trials for this miner go in miner.root / (wallet_cold - wallet_hot) / miner.name ', default='core_server')
