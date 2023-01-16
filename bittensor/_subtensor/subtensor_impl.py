@@ -541,8 +541,8 @@ class Subtensor:
         result = self.query_map_paratensor( 'NetworkConnect', block, [netuid] )
         if result.records:
             requirements = {}
-            for tuple in result.records:
-                requirements[str(tuple[0].value)] = tuple[1].value
+            for con_req in result.records:
+                requirements[str(con_req[0].value)] = tuple[1].value
         else:
             return {}
 
