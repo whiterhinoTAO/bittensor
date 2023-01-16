@@ -542,7 +542,9 @@ class Subtensor:
         if result.records:
             requirements = {}
             for con_req in result.records:
-                requirements[str(con_req[0].value)] = tuple[1].value
+                print (con_req)
+                requirements[str(con_req[0].value)] = con_req[1].value
+            return requirements
         else:
             return {}
 
