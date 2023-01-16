@@ -141,10 +141,23 @@ def register_extrinsic (
                         # process if registration successful, try again if pow is still valid
                         response.process_events()
                         if not response.is_success:
-                            if 'key is already registered' in response.error_message:
-                                # Error meant that the key is already registered.
-                                bittensor.__console__.print(f":white_heavy_check_mark: [green]Already Registered on [bold]subnet:{netuid}[/bold][/green]")
-                                return True
+                            if response.error_message.get('name') is not None:
+                                if response.error_message['name'] == 'AlreadyRegistered':
+                                    # Error meant that the key is already registered.
+                                    bittensor.__console__.print(f":white_heavy_check_mark: [green]Already Registered on [bold]subnet:{netuid}[/bold][/green]")
+                                    return True
+
+                                elif response.error_message['name'] == 'DidNotPassConnectedNetworkRequirement':
+                                    # Error means the subnet requires a connection requirement that is not met.
+                                    con_req = subtensor.get_subnet_connection_requirements( netuid = netuid )
+                                    bittensor.__console__.print(f":cross_mark: [red]You need to pass the connection requirement to register: {con_req}[/red]")
+                                    return False
+
+                                elif response.error_message['name'] == 'InvalidWorkBlock':
+                                    # Error means the work block is invalid, try again.
+                                    bittensor.__console__.print(f":cross_mark: [red]Invalid Work.[/red]")
+                                    continue
+
 
                             bittensor.__console__.print(":cross_mark: [red]Failed[/red]: error:{}".format(response.error_message))
                             time.sleep(0.5)
