@@ -690,6 +690,7 @@ class neuron:
 
                 if 'logits_excess_nxt' in stats:
                     # penalize by logits divergence excess
+                    print('self.config.nucleus.logits_divergence', self.config.nucleus.logits_divergence)
                     extra_stats['shapley_values_nxt'] /= 1 + self.config.nucleus.logits_divergence * stats['logits_excess_nxt']
 
             # === EMA zeroing update ===
