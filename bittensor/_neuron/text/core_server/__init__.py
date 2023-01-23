@@ -162,15 +162,15 @@ class neuron:
 
 
     def run(self):
-        if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
-            serve(
-                self.config,
-                self.model_engine,
-                subtensor = self.subtensor,
-                wallet = self.wallet,
-                axon = self.axon,
-                metagraph = self.metagraph,
-            )
+        # if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+        serve(
+            self.config,
+            self.model_engine,
+            subtensor = self.subtensor,
+            wallet = self.wallet,
+            axon = self.axon,
+            metagraph = self.metagraph,
+        )
 
 
     def simple_args(self):
