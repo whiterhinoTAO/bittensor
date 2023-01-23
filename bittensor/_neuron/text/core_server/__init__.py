@@ -135,9 +135,11 @@ class neuron:
         self.wallet = wallet
         self.axon = axon
         self.metagraph = metagraph
+        world_size = int(os.getenv('WORLD_SIZE', '1'))
+
 
         ds_engine = deepspeed.init_inference(self.model,
-                                 mp_size=torch.cuda.device_count(),
+                                 mp_size=world_size,
                                  dtype=torch.half,
                                  replace_method='auto',
                                  replace_with_kernel_inject=True)
