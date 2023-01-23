@@ -367,6 +367,8 @@ class server(torch.nn.Module):
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                 #attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
+
+                logger.info("model_output: {}".format(_model_output))
             pre_logits = _model_output.logits  # [batch_size, sequence_len, self.tokenizer.vocab_len]
 
             probs_std = translate_logits_to_probs_std(pre_logits,
