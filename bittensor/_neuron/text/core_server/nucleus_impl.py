@@ -525,7 +525,7 @@ class server(torch.nn.Module):
         # deepspeed arguments
         parser.add_argument('--deepspeed', action='store_true', help='If set, use deepspeed for training.')
         parser.add_argument('--deepspeed.deepspeed_config', type=str, help='If set, defaults are overridden by passed file.', default='~/.bittensor/bittensor/_neuron/text/core_server/ds_config.json')
-        parser.add_argument('--deepspeed.local_rank', type=int, default=-1, help='Local rank of the process.', default=0)
+        parser.add_argument('--deepspeed.local_rank', type=int, default=-1, help='Local rank of the process.')
         
         # ML model arguements
         parser.add_argument('--neuron.learning_rate', type=float, help='Training initial learning rate.', default=0.01)
