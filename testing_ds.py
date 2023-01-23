@@ -15,8 +15,8 @@ tokenizer = AutoTokenizer.from_pretrained("gpt2-large")
 ds_engine = deepspeed.init_inference(model,
                          mp_size=world_size,
                          dtype=torch.float,
-                         replace_method='auto',
-                         replace_with_kernel_inject=True
+                        #  replace_method='auto',
+                        #  replace_with_kernel_inject=True
                          )
 
 model_engine = ds_engine.module
