@@ -144,7 +144,7 @@ class neuron:
                                  replace_method='auto',
                                  replace_with_kernel_inject=True)
 
-        self.model_engine = ds_engine.model
+        self.model_engine = ds_engine.module
 
         # ds_args = config.deepspeed
         # deepspeed.init_distributed()
