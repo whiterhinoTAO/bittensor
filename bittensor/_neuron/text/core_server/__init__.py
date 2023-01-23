@@ -141,8 +141,9 @@ class neuron:
         ds_engine = deepspeed.init_inference(self.model,
                                  mp_size=world_size,
                                  dtype=torch.half,
-                                 replace_method='auto',
-                                 replace_with_kernel_inject=True)
+                                #  replace_method='auto',
+                                #  replace_with_kernel_inject=True
+                                 )
 
         self.model_engine = ds_engine.module
 
@@ -161,15 +162,15 @@ class neuron:
 
 
     def run(self):
-        # if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
-        serve(
-            self.config,
-            self.model_engine,
-            subtensor = self.subtensor,
-            wallet = self.wallet,
-            axon = self.axon,
-            metagraph = self.metagraph,
-        )
+        if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+            serve(
+                self.config,
+                self.model_engine,
+                subtensor = self.subtensor,
+                wallet = self.wallet,
+                axon = self.axon,
+                metagraph = self.metagraph,
+            )
 
 
     def simple_args(self):
