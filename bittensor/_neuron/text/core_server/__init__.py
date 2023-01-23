@@ -140,7 +140,7 @@ class neuron:
 
         ds_engine = deepspeed.init_inference(self.model,
                                  mp_size=world_size,
-                                 dtype=torch.half,
+                                 dtype=torch.int8,
                                  replace_method='auto',
                                  replace_with_kernel_inject=True)
 
