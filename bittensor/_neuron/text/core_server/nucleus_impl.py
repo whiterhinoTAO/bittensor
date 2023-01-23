@@ -523,7 +523,7 @@ class server(torch.nn.Module):
         parser.add_argument('--config', type=str, help='If set, defaults are overridden by passed file.')
 
         # deepspeed arguments
-        parser.add_argument('--deepspeed.deepspeed_config', type=str, help='If set, defaults are overridden by passed file.', default='~/.bittensor/bittensor/_neuron/text/core_server/ds_config.json')
+        parser.add_argument('--deepspeed.deepspeed_config', type=str, help='If set, defaults are overridden by passed file.', default='~/.bittensor/bittensor/bittensor/_neuron/text/core_server/ds_config.json')
         parser.add_argument('--deepspeed.local_rank', type=int, default=-1, help='Local rank of the process.')
         
         # ML model arguements
