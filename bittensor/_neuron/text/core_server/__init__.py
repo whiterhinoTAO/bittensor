@@ -136,25 +136,32 @@ class neuron:
         self.axon = axon
         self.metagraph = metagraph
 
-        ds_args = config.deepspeed
-        deepspeed.init_distributed()
+        ds_engine = deepspeed.init_inference(self.model,
+                                 mp_size=2,
+                                 dtype=torch.half,
+                                 replace_method='auto',
+                                 replace_with_kernel_inject=True)
 
-        self.net = PipelineModule(layers=[self.model], num_stages=1)
-        self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
-            args = ds_args,
-            model = self.model,
-            # model = self.net,
-            model_parameters = self.model.parameters(),
-            # training_data = self.dataset
-        )
-        self.device = torch.device('cuda', ds_args.local_rank)
+        self.model_engine = ds_engine.model
+
+        # ds_args = config.deepspeed
+        # deepspeed.init_distributed()
+
+        # self.net = PipelineModule(layers=[self.model], num_stages=1)
+        # self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
+        #     args = ds_args,
+        #     model = self.model,
+        #     # model = self.net,
+        #     model_parameters = self.model.parameters(),
+        #     # training_data = self.dataset
+        # )
+        # self.device = torch.device('cuda', ds_args.local_rank)
 
 
     def run(self):
         serve(
             self.config,
             self.model_engine,
-            device = self.device,
             subtensor = self.subtensor,
             wallet = self.wallet,
             axon = self.axon,
