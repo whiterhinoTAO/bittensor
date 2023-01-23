@@ -137,7 +137,7 @@ class neuron:
         self.metagraph = metagraph
 
         ds_engine = deepspeed.init_inference(self.model,
-                                 mp_size=2,
+                                 mp_size=torch.cuda.device_count(),
                                  dtype=torch.half,
                                  replace_method='auto',
                                  replace_with_kernel_inject=True)
