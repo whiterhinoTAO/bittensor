@@ -13,7 +13,7 @@ device = torch.device("cuda", local_rank)
 
 def simple_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config_file', type=str, help='DS config file.', default='~/.bittensor/bittensor/_neuron/text/core_server/ds_config.json')
+    parser.add_argument('--config_file', type=str, help='DS config file.', default='~/.bittensor/bittensor/bittensor/_neuron/text/core_server/ds_config.json')
     parser.add_argument('--local_rank', type=int, help='local rank', default=0)
     args = parser.parse_args()
     args.deepspeed_config = args.config_file
