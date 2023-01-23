@@ -21,9 +21,9 @@ ds_engine = deepspeed.init_inference(model,
 
 model_engine = ds_engine.module
 
-# if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
 
-input_ids = tokenizer.encode("Hello, my dog is cute", return_tensors='pt').to(device)
-outputs = model_engine.generate(input_ids, max_length=128, do_sample=True)
-print(outputs)
-import code; code.interact(local=dict(globals(), **locals()))
+    input_ids = tokenizer.encode("Hello, my dog is cute", return_tensors='pt').to(device)
+    outputs = model_engine.generate(input_ids, max_length=128, do_sample=True)
+    print(outputs)
+    import code; code.interact(local=dict(globals(), **locals()))
