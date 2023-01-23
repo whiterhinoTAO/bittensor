@@ -44,9 +44,9 @@ model_engine, optimizer, _, _ = deepspeed.initialize(
 
 # model_engine = ds_engine.module
 
-if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
 
-    input_ids = tokenizer.encode("Hello, my dog is cute", return_tensors='pt').to(device)
-    outputs = model_engine.generate(input_ids, max_length=128, do_sample=True)
-    print(outputs)
+input_ids = tokenizer.encode("Hello, my dog is cute", return_tensors='pt').to(device)
+outputs = model_engine.generate(input_ids, max_length=128, do_sample=True)
+
+if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
     import code; code.interact(local=dict(globals(), **locals()))
