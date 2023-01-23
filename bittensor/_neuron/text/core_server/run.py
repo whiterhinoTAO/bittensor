@@ -147,13 +147,14 @@ def serve(
         return message, model_output, logits
 
     def forward_casual_lm_next(inputs_x: torch.FloatTensor, synapse, model_output=None):
-        with mutex:
-            message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x,
-                                                                                        topk=synapse.topk,
-                                                                                        model_output=model_output)
-        # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
-        #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
-        return message, model_output, topk_token_phrases
+        if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+            with mutex:
+                message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x,
+                                                                                            topk=synapse.topk,
+                                                                                            model_output=model_output)
+            # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
+            #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
+            return message, model_output, topk_token_phrases
 
     def optimizer_step():
         optimizer.step()
