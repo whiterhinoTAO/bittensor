@@ -25,6 +25,15 @@ Example:
 import bittensor
 import os
 
+import torch
+
+import argparse 
+import json
+
+import deepspeed
+from deepspeed.pipe import PipelineModule
+
+
 from .nucleus_impl import server
 from .run import serve
 
@@ -121,10 +130,25 @@ class neuron:
         self.axon = axon
         self.metagraph = metagraph
 
+        ds_args = self.simple_args()
+        deepspeed.init_distributed()
+
+        self.net = PipelineModule(layers=[self.model], num_stages=1)
+        self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
+            args = ds_args,
+            model = self.model,
+            # model = self.net,
+            model_parameters = self.model.parameters(),
+            # training_data = self.dataset
+        )
+        self.device = torch.device('cuda', ds_args.local_rank)
+
+
     def run(self):
         serve(
             self.config,
-            self.model,
+            self.model_engine,
+            device = self.device,
             subtensor = self.subtensor,
             wallet = self.wallet,
             axon = self.axon,
