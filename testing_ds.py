@@ -9,7 +9,7 @@ local_rank = int(os.getenv('LOCAL_RANK', '0'))
 device = torch.device("cuda", local_rank)
 
 
-model = AutoModelForCausalLM.from_pretrained("gpt2")
+model = AutoModelForCausalLM.from_pretrained("gpt2-large")
 tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
 ds_engine = deepspeed.init_inference(model,
