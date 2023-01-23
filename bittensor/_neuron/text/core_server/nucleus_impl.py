@@ -7,6 +7,9 @@ import torch.nn.functional as F
 from types import SimpleNamespace
 from typing import Tuple, Optional
 
+import deepspeed
+
+import os
 import transformers
 from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM
 from torch.nn.utils.rnn import pad_sequence
@@ -57,13 +60,18 @@ class server(torch.nn.Module):
         if config == None: config = server.config()
         self.config = config;print(config)
         self.std_tokenizer = bittensor.tokenizer()
-        self.device = config.neuron.device
+        # self.device = config.neuron.device
 
+        world_size = int(os.getenv('WORLD_SIZE', '1'))
+        local_rank = int(os.getenv('LOCAL_RANK', '0'))
+        self.device = torch.device("cuda", local_rank)
+
+        
         #setting up pretrained model
         self.model_name = model_name if model_name != None else config.neuron.model_name
         self.pretrained = pretrained if pretrained != None else config.neuron.pretrained
         if self.pretrained == True:
-            self.pre_model = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name)
+            self.pre_model_ds = model if model != None else AutoModelForCausalLM.from_pretrained(self.model_name)
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
@@ -74,28 +82,37 @@ class server(torch.nn.Module):
         elif self.pretrained == False:
             model_config = AutoConfig.from_pretrained(self.model_name)
             model_config.vocab_size= bittensor.__vocab_size__
-            self.pre_model = model if model != None else AutoModel.from_config(model_config)
+            self.pre_model_ds = model if model != None else AutoModel.from_config(model_config)
             self.tokenizer = bittensor.tokenizer()
 
         # Define PAD Token = EOS Token (GPT2 generate convention, when PAD Token is None)
         # https://github.com/huggingface/transformers/blob/49c8c67fb815a277405f84dea4a66353e19fb347/tests/models/gpt2/test_modeling_gpt2.py#L532
-        if self.pre_model.config.pad_token_id is None and self.pre_model.config.eos_token_id is not None:
-            self.pre_model.config.pad_token_id = self.pre_model.config.eos_token_id
+        if self.pre_model_ds.config.pad_token_id is None and self.pre_model_ds.config.eos_token_id is not None:
+            self.pre_model_ds.config.pad_token_id = self.pre_model_ds.config.eos_token_id
 
         self.tokenizer = prep_tokenizer(self.tokenizer, self.std_tokenizer)
         self.to_translation_map = get_translation_map(self.tokenizer, self.std_tokenizer)
         self.from_translation_map = get_translation_map(self.std_tokenizer, self.tokenizer)
         self.split_map_cache = {}
 
-        if self.config.neuron.local_train or self.config.neuron.remote_train:
-            self.pre_model.train()
-            self.set_fine_tuning_params()
+        # if self.config.neuron.local_train or self.config.neuron.remote_train:
+        #     self.pre_model.train()
+        #     self.set_fine_tuning_params()
 
-        else:
-            self.pre_model.eval()
+        # else:
+        #     self.pre_model.eval()
 
-        if self.config.neuron.autocast and self.device[:4] == 'cuda':
-            self.pre_model.half()
+        # if self.config.neuron.autocast and self.device[:4] == 'cuda':
+        #     self.pre_model.half()
+
+        ds_engine = deepspeed.init_inference(self.pre_model_ds,
+                                 mp_size=world_size,
+                                 dtype=torch.half,
+                                #  replace_method='auto',
+                                #  replace_with_kernel_inject=True
+                                 )
+
+        self.pre_model = ds_engine.module
 
         #parameters of the models
         self.final_dim =  bittensor.__network_dim__
@@ -368,7 +385,6 @@ class server(torch.nn.Module):
                                                 #attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
 
-                logger.info("model_output: {}".format(_model_output))
             pre_logits = _model_output.logits  # [batch_size, sequence_len, self.tokenizer.vocab_len]
 
             probs_std = translate_logits_to_probs_std(pre_logits,

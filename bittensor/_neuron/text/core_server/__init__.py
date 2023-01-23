@@ -135,17 +135,18 @@ class neuron:
         self.wallet = wallet
         self.axon = axon
         self.metagraph = metagraph
-        world_size = int(os.getenv('WORLD_SIZE', '1'))
+        # world_size = int(os.getenv('WORLD_SIZE', '1'))
+        # local_rank = int(os.getenv('LOCAL_RANK', '0'))
+        # self.device = torch.device("cuda", local_rank)
 
+        # ds_engine = deepspeed.init_inference(self.model,
+        #                          mp_size=world_size,
+        #                          dtype=torch.half,
+        #                         #  replace_method='auto',
+        #                         #  replace_with_kernel_inject=True
+        #                          )
 
-        ds_engine = deepspeed.init_inference(self.model,
-                                 mp_size=world_size,
-                                 dtype=torch.half,
-                                #  replace_method='auto',
-                                #  replace_with_kernel_inject=True
-                                 )
-
-        self.model_engine = ds_engine.module
+        # self.model_engine = ds_engine.module
 
         # ds_args = config.deepspeed
         # deepspeed.init_distributed()
@@ -165,7 +166,7 @@ class neuron:
         # if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
         serve(
             self.config,
-            self.model_engine,
+            self.model,
             subtensor = self.subtensor,
             wallet = self.wallet,
             axon = self.axon,
