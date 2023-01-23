@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from types import SimpleNamespace
 from typing import Tuple, Optional
 
+import deepspeed
+
 import transformers
 from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM
 from torch.nn.utils.rnn import pad_sequence
@@ -57,7 +59,7 @@ class server(torch.nn.Module):
         if config == None: config = server.config()
         self.config = config;print(config)
         self.std_tokenizer = bittensor.tokenizer()
-        self.device = config.neuron.device
+        # self.device = config.neuron.device
 
         #setting up pretrained model
         self.model_name = model_name if model_name != None else config.neuron.model_name
@@ -87,15 +89,29 @@ class server(torch.nn.Module):
         self.from_translation_map = get_translation_map(self.std_tokenizer, self.tokenizer)
         self.split_map_cache = {}
 
-        if self.config.neuron.local_train or self.config.neuron.remote_train:
-            self.pre_model.train()
-            self.set_fine_tuning_params()
+        # if self.config.neuron.local_train or self.config.neuron.remote_train:
+        #     self.pre_model.train()
+        #     self.set_fine_tuning_params()
 
-        else:
-            self.pre_model.eval()
+        # else:
+        #     self.pre_model.eval()
 
-        if self.config.neuron.autocast and self.device[:4] == 'cuda':
-            self.pre_model.half()
+        # if self.config.neuron.autocast and self.device[:4] == 'cuda':
+        #     self.pre_model.half()
+
+        ds_args = config.deepspeed
+        deepspeed.init_distributed()
+
+        # self.net = PipelineModule(layers=[self.model], num_stages=1)
+        self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
+            args = ds_args,
+            model = self.pre_model,
+            # model = self.net,
+            model_parameters = self.pre_model.parameters(),
+            # training_data = self.dataset
+        )
+        self.pre_model = self.model_engine.module
+        self.device = self.model_engine.device
 
         #parameters of the models
         self.final_dim =  bittensor.__network_dim__
