@@ -13,6 +13,10 @@ from torch.nn.utils.rnn import pad_sequence
 from bittensor.utils.tokenizer_utils import prep_tokenizer, get_translation_map, translate_logits_to_probs_std, \
     translate_special_token_text, pad_offsets, topk_token_phrases, compact_topk_token_phrases
 
+from types import SimpleNamespace
+import deepspeed
+import json
+from deepspeed.pipe import PipelineModule
 from loguru import logger; logger = logger.opt(colors=True)
 
 class server(torch.nn.Module):
@@ -124,7 +128,13 @@ class server(torch.nn.Module):
 
         # -- keeps track of gradients applied
         self.backward_gradients_count = 0 
-        self.remote_losses = [] 
+        self.remote_losses = []
+
+        if self.config.neuron.use_deepspeed:
+            self.pre_model, _ = self.to_deepspeed(self.pre_model)
+            
+            if self.device[:4] == 'cuda':
+                self.device = torch.device("cuda", self.config.local_rank)
 
     def set_fine_tuning_params(self) -> Tuple[bool, str]:
         r''' Set to tune only the parameter of the last layer
@@ -307,13 +317,13 @@ class server(torch.nn.Module):
 
         if model_output == None:
             if self.config.neuron.remote_train:
-                model_output = self.pre_model(input_ids=tokens['input_ids'],
-                                                attention_mask=tokens['attention_mask'],
+                model_output = self.pre_model(input_ids=tokens['input_ids'].to(self.device),
+                                                attention_mask=tokens['attention_mask'].to(self.device),
                                                 output_hidden_states=True)
             else:
                 with torch.no_grad():
-                    model_output = self.pre_model(input_ids=tokens['input_ids'],
-                                                    attention_mask=tokens['attention_mask'],
+                    model_output = self.pre_model(input_ids=tokens['input_ids'].to(self.device),
+                                                    attention_mask=tokens['attention_mask'].to(self.device),
                                                     output_hidden_states=True)
 
         pre_hidden = model_output.hidden_states[-1]
@@ -364,7 +374,7 @@ class server(torch.nn.Module):
         def _forward(_model_output=model_output):
             if _model_output is None:
                 # transformer models like gerpt2 typically perform worse with left-side attention mask, so turning it off
-                _model_output = self.pre_model(input_ids=tokens['input_ids'],
+                _model_output = self.pre_model(input_ids=tokens['input_ids'].to(self.device),
                                                 #attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
             pre_logits = _model_output.logits  # [batch_size, sequence_len, self.tokenizer.vocab_len]
@@ -436,8 +446,9 @@ class server(torch.nn.Module):
 
         def _forward(_model_output=model_output):
             if _model_output is None:
-                _model_output = self.pre_model(input_ids=tokens['input_ids'],
-                                               attention_mask=tokens['attention_mask'],
+                print(self.device, next(self.pre_model.parameters()).device)
+                _model_output = self.pre_model(input_ids=tokens['input_ids'].to(self.device),
+                                               attention_mask=tokens['attention_mask'].to(self.device),
                                                output_hidden_states=True)
 
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
@@ -516,7 +527,24 @@ class server(torch.nn.Module):
 
         except Exception as e:
             logger.warning('No saved model found with error: {}', e)
+    
+    def to_deepspeed(self, model):
+        print("in to_deepspeed")
+        deepspeed.init_distributed()
+        ds_args = SimpleNamespace(
+            config = json.load(open(self.config.deepspeed_config, 'r', encoding='utf-8')),
+            local_rank = self.config.local_rank,
+            deepspeed_config = self.config.deepspeed_config
+        )
 
+        model_engine, optimizer, _, _ = deepspeed.initialize(
+            args = ds_args,
+            model = model,
+            model_parameters = model.parameters(),
+        )
+
+        return model_engine, optimizer
+    
     @staticmethod
     def config ():
         parser = argparse.ArgumentParser()
@@ -563,7 +591,10 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.causallm_stake',  type = float, help='the amount of stake to run causallm synapse',default=0)
         parser.add_argument('--neuron.causallmnext_stake', type=float, help='the amount of stake to run causallmnext synapse', default=0)
         parser.add_argument('--neuron.seq2seq_stake',  type = float, help='the amount of stake to run seq2seq synapse',default=0)
-
+        
+        parser.add_argument('--neuron.use_deepspeed', action='store_true', help='Use deepspeed or not', default=False)
+        parser.add_argument('--deepspeed_config', type=str, help='Path to deepspeed config file.')
+        parser.add_argument('--local_rank', type=int, help='deepspeed local rank.')
 
         bittensor.wallet.add_args( parser )
         bittensor.axon.add_args( parser )
