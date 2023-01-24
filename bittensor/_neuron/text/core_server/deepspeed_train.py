@@ -44,7 +44,6 @@ class DeepSpeedTrain:
                 args = ds_args,
                 model = model,
                 model_parameters = model.parameters(),
-                training_data = self.dataset
             )
         
         # =================
@@ -82,8 +81,8 @@ class DeepSpeedTrain:
                 print( f"{self.device}, step: {stats['steps']}, ema_loss: {stats['ema_loss']}, best_loss: {stats['best_loss']}")
                 print(stats['ema_loss'], stats['best_loss'], (stats['ema_loss'] < stats['best_loss']))
                 torch.save(stats, 'deepspeed_train.pt')
-                if self.device == 'cuda:0' and (stats['ema_loss'] < stats['best_loss']):
-                    self.model_engine.save_checkpoint(self.path, stats['ema_loss'], client_sd = stats['steps'])
+                if self.device == torch.device("cuda", 0) and (stats['ema_loss'] < stats['best_loss']):
+                    self.model_engine.save_checkpoint(self.path, stats['ema_loss'])
                     print(f"Saved mode: loss {stats['best_loss']} -> {stats['ema_loss']}")
                     stats['best_loss'] = stats['ema_loss']
 
