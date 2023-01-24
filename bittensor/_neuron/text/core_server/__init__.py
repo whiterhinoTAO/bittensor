@@ -148,18 +148,18 @@ class neuron:
 
         # self.model_engine = ds_engine.module
 
-        ds_args = config.deepspeed
-        deepspeed.init_distributed()
+        # ds_args = config.deepspeed
+        # deepspeed.init_distributed()
 
-        # self.net = PipelineModule(layers=[self.model], num_stages=1)
-        self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
-            args = ds_args,
-            model = self.model,
-            # model = self.net,
-            model_parameters = self.model.parameters(),
-            # training_data = self.dataset
-        )
-        self.device = torch.device('cuda', ds_args.local_rank)
+        # # self.net = PipelineModule(layers=[self.model], num_stages=1)
+        # self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
+        #     args = ds_args,
+        #     model = self.model,
+        #     # model = self.net,
+        #     model_parameters = self.model.parameters(),
+        #     # training_data = self.dataset
+        # )
+        # self.device = torch.device('cuda', ds_args.local_rank)
 
 
     def run(self):

@@ -97,7 +97,7 @@ class server(torch.nn.Module):
         #     self.pre_model.eval()
 
         # if self.config.neuron.autocast and self.device[:4] == 'cuda':
-        #     self.pre_model.half()
+        self.pre_model.half()
 
         ds_args = config.deepspeed
         deepspeed.init_distributed()
