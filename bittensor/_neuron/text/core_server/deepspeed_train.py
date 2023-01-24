@@ -12,6 +12,7 @@ from transformers import AutoTokenizer
 import numpy as np
 from deepspeed.pipe import PipelineModule
 from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM
+import time 
 
 logger = logger.opt(colors=True)
 
@@ -19,34 +20,73 @@ class DeepSpeedTrain:
     def __init__(self):
         self.dataset = bittensor.dataset(max_directories = 10)
         next(self.dataset)
-        self.model = server(
-            model_name = 'EleutherAI/gpt-neo-2.7B'
-        )
-        
-        # =================
+        self.use_net = False
         ds_args = self.simple_args()
         deepspeed.init_distributed()
         print(ds_args)
-        self.net = PipelineModule(layers=[self.model], num_stages=1)
-        self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
-            args = ds_args,
-            model = self.model,
-            # model = self.net,
-            model_parameters = self.model.parameters(),
-            training_data = self.dataset
-        )
+        if self.use_net:
+            model = AutoModelForCausalLM.from_pretrained('EleutherAI/gpt-neo-2.7B')
+            net = PipelineModule(layers=[model], num_stages=1)
+            self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
+                args = ds_args,
+                model = net,
+                model_parameters = [p for p in model.parameters() if p.requires_grad],
+                training_data = self.dataset
+            )
+        else:
+            model = server(
+                model_name = 'EleutherAI/gpt-neo-2.7B'
+            )
+            # model = AutoModelForCausalLM.from_pretrained('EleutherAI/gpt-neo-2.7B')
+            # model.pre_model.train()
+            # model.set_fine_tuning_params
+            self.model_engine, self.optimizer, _, _ = deepspeed.initialize(
+                args = ds_args,
+                model = model,
+                model_parameters = model.parameters(),
+                training_data = self.dataset
+            )
+        
+        # =================
         self.device = torch.device('cuda', ds_args.local_rank)
+        self.ema_decay = 0.97
+        self.path = os.path.expanduser('~/.bittensor/bittensor')
 
     def run(self):
         print('\n\nstart run\n\n')
-        count = 0
-        while count < 120:
-            with torch.no_grad():
-                loss, _ = self.model_engine(next(self.dataset).to(self.device))
-                print('model device', next(self.model.parameters()).device)
-                print(count, self.device, loss)
-                count += 1
-        
+        stats = {
+            'losses': [],
+            'times': [],
+            'steps': 0,
+            'ema_loss': None,
+            'best_loss': float('inf')
+        }
+        while True:
+            start_time = time.time()
+            if self.use_net:
+                loss = self.model_engine.train_batch()
+            else:
+                self.model_engine.train()
+                loss, decoded_targe = self.model_engine(next(self.dataset).to(self.device))
+                self.model_engine.backward(loss)
+                self.model_engine.step()
+
+            if stats['ema_loss'] == None:
+                stats['ema_loss'] = loss.detach().item()
+            stats['ema_loss'] = self.ema_decay * stats['ema_loss'] + (1- self.ema_decay) * loss.detach().item() 
+            stats['losses'].append(loss.detach().item())
+            stats['times'].append (time.time() - start_time)
+            stats['steps'] += 1
+
+            if stats['steps'] % 100 == 0:
+                print( f"{self.device}, step: {stats['steps']}, ema_loss: {stats['ema_loss']}, best_loss: {stats['best_loss']}")
+                print(stats['ema_loss'], stats['best_loss'], (stats['ema_loss'] < stats['best_loss']))
+                torch.save(stats, 'deepspeed_train.pt')
+                if self.device == 'cuda:0' and (stats['ema_loss'] < stats['best_loss']):
+                    self.model_engine.save_checkpoint(self.path, stats['ema_loss'], client_sd = stats['steps'])
+                    print(f"Saved mode: loss {stats['best_loss']} -> {stats['ema_loss']}")
+                    stats['best_loss'] = stats['ema_loss']
+
     def simple_args(self):
         parser = argparse.ArgumentParser()
         parser.add_argument('--config_file', type=str, help='DS config file.')
