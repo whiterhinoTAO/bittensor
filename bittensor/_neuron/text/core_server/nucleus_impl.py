@@ -13,6 +13,9 @@ from torch.nn.utils.rnn import pad_sequence
 from bittensor.utils.tokenizer_utils import prep_tokenizer, get_translation_map, translate_logits_to_probs_std, \
     translate_special_token_text, pad_offsets, topk_token_phrases, compact_topk_token_phrases
 
+import tiktoken
+
+
 from loguru import logger; logger = logger.opt(colors=True)
 
 class server(torch.nn.Module):
@@ -67,10 +70,12 @@ class server(torch.nn.Module):
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
-                    self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                    #self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                    self.tokenizer = tiktoken.get_encoding("gpt2")
                 except ValueError:  # when fast not available as in https://github.com/huggingface/tokenizers/pull/1005
-                    self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
-
+                    #self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
+                    self.tokenizer = tiktoken.get_encoding("gpt2")
+                    
         elif self.pretrained == False:
             model_config = AutoConfig.from_pretrained(self.model_name)
             model_config.vocab_size= bittensor.__vocab_size__
