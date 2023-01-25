@@ -30,7 +30,7 @@ from datetime import datetime,timedelta
 from loguru import logger; logger = logger.opt(colors=True)
 from torch.nn.utils.rnn import pad_sequence
 
-from transformers import StoppingCriteriaList
+from transformers import StoppingCriteriaList, StoppingCriteria
 
 import wandb
 import pandas
@@ -40,6 +40,27 @@ from prometheus_client import Counter, Gauge, Histogram, Summary, Info, Collecto
 import torch
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
+from typing import List, Dict, Tuple, Optional, Union
+
+
+class ChatStoppingCriteria(StoppingCriteria):
+    '''
+    This class can be used to stop the text generation whenever the
+    generated tokens match one of the given tokens.
+    Args:
+        tokens_ids: list[list[int]]
+            List of sequence of tokens in the vocabulary
+
+    '''
+
+    def __init__(self, stop_tokens: List[str]):
+        self.stop_tokens = stop_tokens
+    
+    def __call__(self, input_ids: torch.LongTensor, score: torch.FloatTensor, **kwargs) -> bool:
+        return self.stop_tokens in input_ids[0, :].tolist()
+
+
+
 
 def serve( 
         config, 
@@ -120,7 +141,11 @@ def serve(
         tokens = model.token_remap(inputs_x)
         stop_words = ['Human:', 'Humans:', 'human:', 'humans:']
         stop_word_ids = [model.tokenizer.encode(stop_word, return_tensors="pt").to(config.neuron.device) for stop_word in stop_words]
-        stopping_criteria = StoppingCriteriaList(stop_word_ids)
+        stopping_criteria = StoppingCriteriaList([
+            ChatStoppingCriteria(
+                stop_word_ids
+            )
+        ])
         output = model.pre_model.generate(
             input_ids=tokens['input_ids'],
             attention_mask=tokens['attention_mask'],
