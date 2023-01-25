@@ -101,7 +101,6 @@ class server(torch.nn.Module):
         if self.config.neuron.autocast and self.device[:4] == 'cuda':
             self.pre_model.half()
 
-        self.pipeline = pipeline('text-generation', model=self.pre_model, tokenizer=self.tokenizer)
 
         #parameters of the models
         self.final_dim =  bittensor.__network_dim__

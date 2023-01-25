@@ -146,7 +146,7 @@ def serve(
         #         stop_word_ids
         #     )
         # ])
-        output = model.pipeline(
+        output = model.pre_model.generate(
             input_ids=tokens['input_ids'],
             attention_mask=tokens['attention_mask'],
             max_length=max(tokens['input_ids'].shape[1] + 1, synapse.num_to_generate),
