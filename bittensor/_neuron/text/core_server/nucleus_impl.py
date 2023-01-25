@@ -70,12 +70,10 @@ class server(torch.nn.Module):
             self.tokenizer = tokenizer
             if tokenizer is None:
                 try:
-                    #self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-                    self.tokenizer = tiktoken.get_encoding("gpt2")
+                    self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
                 except ValueError:  # when fast not available as in https://github.com/huggingface/tokenizers/pull/1005
-                    #self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
-                    self.tokenizer = tiktoken.get_encoding("gpt2")
-                    
+                    self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
+
         elif self.pretrained == False:
             model_config = AutoConfig.from_pretrained(self.model_name)
             model_config.vocab_size= bittensor.__vocab_size__
