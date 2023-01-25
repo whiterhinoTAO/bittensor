@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Tuple, Optional
 
 import transformers
-from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM
+from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM, pipeline
 from torch.nn.utils.rnn import pad_sequence
 from bittensor.utils.tokenizer_utils import prep_tokenizer, get_translation_map, translate_logits_to_probs_std, \
     translate_special_token_text, pad_offsets, topk_token_phrases, compact_topk_token_phrases
@@ -74,6 +74,7 @@ class server(torch.nn.Module):
                 except ValueError:  # when fast not available as in https://github.com/huggingface/tokenizers/pull/1005
                     self.tokenizer = AutoTokenizer.from_pretrained(self.model_name, use_fast=False)
 
+
         elif self.pretrained == False:
             model_config = AutoConfig.from_pretrained(self.model_name)
             model_config.vocab_size= bittensor.__vocab_size__
@@ -99,6 +100,8 @@ class server(torch.nn.Module):
 
         if self.config.neuron.autocast and self.device[:4] == 'cuda':
             self.pre_model.half()
+
+        self.pipeline = pipeline('text-generation', model=self.pre_model, tokenizer=self.tokenizer, device=self.device)
 
         #parameters of the models
         self.final_dim =  bittensor.__network_dim__
