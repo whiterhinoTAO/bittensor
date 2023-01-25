@@ -30,6 +30,8 @@ from datetime import datetime,timedelta
 from loguru import logger; logger = logger.opt(colors=True)
 from torch.nn.utils.rnn import pad_sequence
 
+from transformers import StoppingCriteriaList
+
 import wandb
 import pandas
 # Prometheus
@@ -48,8 +50,7 @@ def serve(
         metagraph = None,
     ):
     config.to_defaults()
-    model= model.to(model.device)
-
+    
     # Create Subtensor connection
     subtensor = bittensor.subtensor(config = config) if subtensor == None else subtensor
 
@@ -115,7 +116,10 @@ def serve(
         return priority
 
     def forward_generate( inputs_x:torch.FloatTensor, synapse, model_output = None):
-        tokens = model.token_remap(inputs_x.to(model.device))
+        tokens = model.token_remap(inputs_x)
+        stop_words = ['Human:', 'Humans:', 'human:', 'humans:']
+        stop_word_ids = [model.tokenizer.encode(stop_word)['input_ids'] for stop_word in stop_words]
+        stopping_criteria = StoppingCriteriaList(stop_word_ids)
         output = model.pre_model.generate(
             input_ids=tokens['input_ids'],
             attention_mask=tokens['attention_mask'],
@@ -131,6 +135,7 @@ def serve(
             length_penalty = synapse.length_penalty,
             max_time = synapse.max_time,
             num_beam_groups = synapse.num_beam_groups,
+            stopping_criteria = stopping_criteria,
         )
         raw_texts = [model.tokenizer.decode(out) for out in output]
         tokens = [model.std_tokenizer.encode(raw_text, return_tensors="pt")[:,:synapse.num_to_generate].view(-1) for raw_text in raw_texts]
@@ -139,17 +144,17 @@ def serve(
 
     def forward_hidden_state(inputs_x:torch.FloatTensor, synapse, model_output = None):
         with mutex:
-            message, model_output, hidden = model.encode_forward(inputs_x.to(model.device), model_output=model_output)
+            message, model_output, hidden = model.encode_forward(inputs_x, model_output=model_output)
         return message, model_output, hidden
 
     def forward_casual_lm(inputs_x:torch.FloatTensor, synapse, model_output = None):
         with mutex:
-            message, model_output, logits = model.encode_forward_causallm(inputs_x.to(model.device), model_output=model_output)
+            message, model_output, logits = model.encode_forward_causallm(inputs_x, model_output=model_output)
         return message, model_output, logits
 
     def forward_casual_lm_next(inputs_x: torch.FloatTensor, synapse, model_output=None):
         with mutex:
-            message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x.to(model.device),
+            message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x,
                                                                                         topk=synapse.topk,
                                                                                         model_output=model_output)
         # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
@@ -373,7 +378,7 @@ def serve(
                 if current_block != subtensor.get_current_block() and axon.priority_threadpool.is_empty:
                     with mutex:
                         logger.info(f'local training\titeration: {iteration}\tstart')
-                        loss, _ = model( next(dataset).to(model.device) )
+                        loss, _ = model( next(dataset) )
                         if iteration > 0 : 
                             losses += loss
                         else:
