@@ -118,7 +118,7 @@ def serve(
     def forward_generate( inputs_x:torch.FloatTensor, synapse, model_output = None):
         tokens = model.token_remap(inputs_x)
         stop_words = ['Human:', 'Humans:', 'human:', 'humans:']
-        stop_word_ids = [model.tokenizer.encode(stop_word, return_tensors="pt").to(config.device) for stop_word in stop_words]
+        stop_word_ids = [model.tokenizer.encode(stop_word, return_tensors="pt").to(config.neuron.device) for stop_word in stop_words]
         stopping_criteria = StoppingCriteriaList(stop_word_ids)
         output = model.pre_model.generate(
             input_ids=tokens['input_ids'],
