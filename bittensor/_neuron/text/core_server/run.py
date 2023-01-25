@@ -139,13 +139,13 @@ def serve(
 
     def forward_generate( inputs_x:torch.FloatTensor, synapse, model_output = None):
         tokens = model.token_remap(inputs_x)
-        stop_words = ['Human:', 'Humans:', 'human:', 'humans:']
-        stop_word_ids = [model.tokenizer.encode(stop_word, return_tensors="pt").to(config.neuron.device) for stop_word in stop_words]
-        stopping_criteria = StoppingCriteriaList([
-            ChatStoppingCriteria(
-                stop_word_ids
-            )
-        ])
+        # stop_words = ['Human:', 'Humans:', 'human:', 'humans:']
+        # stop_word_ids = [model.tokenizer.encode(stop_word, return_tensors="pt").to(config.neuron.device) for stop_word in stop_words]
+        # stopping_criteria = StoppingCriteriaList([
+        #     ChatStoppingCriteria(
+        #         stop_word_ids
+        #     )
+        # ])
         output = model.pre_model.generate(
             input_ids=tokens['input_ids'],
             attention_mask=tokens['attention_mask'],
@@ -161,7 +161,7 @@ def serve(
             length_penalty = synapse.length_penalty,
             max_time = synapse.max_time,
             num_beam_groups = synapse.num_beam_groups,
-            stopping_criteria = stopping_criteria,
+            # stopping_criteria = stopping_criteria,
         )
         raw_texts = [model.tokenizer.decode(out) for out in output]
         tokens = [model.std_tokenizer.encode(raw_text, return_tensors="pt")[:,:synapse.num_to_generate].view(-1) for raw_text in raw_texts]
