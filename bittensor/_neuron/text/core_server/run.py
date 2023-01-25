@@ -50,7 +50,8 @@ def serve(
         metagraph = None,
     ):
     config.to_defaults()
-    
+    model= model.to(model.device)
+
     # Create Subtensor connection
     subtensor = bittensor.subtensor(config = config) if subtensor == None else subtensor
 
@@ -142,19 +143,20 @@ def serve(
         bittensor_output = pad_sequence(tokens, batch_first=True)
         return None, model_output, bittensor_output
 
+
     def forward_hidden_state(inputs_x:torch.FloatTensor, synapse, model_output = None):
         with mutex:
-            message, model_output, hidden = model.encode_forward(inputs_x.to(config.neuron.device), model_output=model_output)
+            message, model_output, hidden = model.encode_forward(inputs_x.to(model.device), model_output=model_output)
         return message, model_output, hidden
 
     def forward_casual_lm(inputs_x:torch.FloatTensor, synapse, model_output = None):
         with mutex:
-            message, model_output, logits = model.encode_forward_causallm(inputs_x.to(config.neuron.device), model_output=model_output)
+            message, model_output, logits = model.encode_forward_causallm(inputs_x.to(model.device), model_output=model_output)
         return message, model_output, logits
 
     def forward_casual_lm_next(inputs_x: torch.FloatTensor, synapse, model_output=None):
         with mutex:
-            message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x.to(config.neuron.device), 
+            message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x.to(model.device),
                                                                                         topk=synapse.topk,
                                                                                         model_output=model_output)
         # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
@@ -378,7 +380,7 @@ def serve(
                 if current_block != subtensor.get_current_block() and axon.priority_threadpool.is_empty:
                     with mutex:
                         logger.info(f'local training\titeration: {iteration}\tstart')
-                        loss, _ = model( next(dataset) )
+                        loss, _ = model( next(dataset).to(model.device) )
                         if iteration > 0 : 
                             losses += loss
                         else:
