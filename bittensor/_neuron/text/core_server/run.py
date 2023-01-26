@@ -50,40 +50,44 @@ def serve(
     config.to_defaults()
     
     # Create Subtensor connection
-    if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
-        subtensor = bittensor.subtensor(config = config) if subtensor == None else subtensor
+    #if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+    subtensor = bittensor.subtensor(config = config) if subtensor == None else subtensor
 
-        # Load/Create our bittensor wallet.
-        if wallet == None:
-            wallet = bittensor.wallet( config = config ).create().reregister(subtensor=subtensor) 
-        else:
-            wallet.reregister(subtensor=subtensor)
+    # Load/Create our bittensor wallet.
+    if wallet == None:
+        wallet = bittensor.wallet( config = config ).create().reregister(subtensor=subtensor) 
+    else:
+        wallet.reregister(subtensor=subtensor)
 
-        # Load/Sync/Save our metagraph.
-        if metagraph == None:
-            metagraph = bittensor.metagraph ( 
-                subtensor = subtensor
-            )
-        
-        metagraph.load().sync().save()
+    # Load/Sync/Save our metagraph.
+    if metagraph == None:
+        metagraph = bittensor.metagraph ( 
+            subtensor = subtensor
+        )
+    
+    metagraph.load().sync().save()
 
-        mutex = Lock()
+    mutex = Lock()
 
-        # --- Setup prometheus summaries.
-        # These will not be posted if the user passes --prometheus.level OFF
-        registry = CollectorRegistry()
-        prometheus_counters = Counter('neuron_counters', 'Counter sumamries for the running server-miner.', ['neuron_counters_name'], registry=registry)
-        prometheus_guages = Gauge('neuron_guages', 'Guage sumamries for the running server-miner.', ['neuron_guages_name'], registry=registry)
-        prometheus_info = Info('neuron_info', "Info sumamries for the running server-miner.", registry=registry)
-        prometheus_guages.labels( 'model_size_params' ).set( sum(p.numel() for p in model.parameters()) )
-        prometheus_guages.labels( 'model_size_bytes' ).set( sum(p.element_size() * p.nelement() for p in model.parameters()) )
-        prometheus_info.info ({
-            'type': "core_server",
-            'uid': str(metagraph.hotkeys.index( wallet.hotkey.ss58_address )),
-            'network': config.subtensor.network,
-            'coldkey': str(wallet.coldkeypub.ss58_address),
-            'hotkey': str(wallet.hotkey.ss58_address),
-        })
+    # --- Setup prometheus summaries.
+    # These will not be posted if the user passes --prometheus.level OFF
+    registry = CollectorRegistry()
+    prometheus_counters = Counter('neuron_counters', 'Counter sumamries for the running server-miner.', ['neuron_counters_name'], registry=registry)
+    prometheus_guages = Gauge('neuron_guages', 'Guage sumamries for the running server-miner.', ['neuron_guages_name'], registry=registry)
+    prometheus_info = Info('neuron_info', "Info sumamries for the running server-miner.", registry=registry)
+    prometheus_guages.labels( 'model_size_params' ).set( sum(p.numel() for p in model.parameters()) )
+    prometheus_guages.labels( 'model_size_bytes' ).set( sum(p.element_size() * p.nelement() for p in model.parameters()) )
+    prometheus_info.info ({
+        'type': "core_server",
+        'uid': str(metagraph.hotkeys.index( wallet.hotkey.ss58_address )),
+        'network': config.subtensor.network,
+        'coldkey': str(wallet.coldkeypub.ss58_address),
+        'hotkey': str(wallet.hotkey.ss58_address),
+    })
+
+    timecheck_dicts = {bittensor.proto.RequestType.FORWARD:{}, bittensor.proto.RequestType.BACKWARD:{}}
+    n_topk_peer_weights = subtensor.min_allowed_weights
+
 
     # Create our optimizer.
     optimizer = torch.optim.SGD(
@@ -91,9 +95,6 @@ def serve(
         lr = config.neuron.learning_rate,
         momentum = config.neuron.momentum,
     )
-
-    timecheck_dicts = {bittensor.proto.RequestType.FORWARD:{}, bittensor.proto.RequestType.BACKWARD:{}}
-    n_topk_peer_weights = subtensor.min_allowed_weights
 
     def priority(pubkey:str, request_type:bittensor.proto.RequestType, inputs_x) -> float:
         r"""Calculates the priority on requests based on stake and size of input
