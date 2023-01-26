@@ -48,7 +48,7 @@ def serve(
         metagraph = None,
     ):
     config.to_defaults()
-    model= model.to(model.device)
+    # model = model.to(model.device)
 
     # Create Subtensor connection
     subtensor = bittensor.subtensor(config = config) if subtensor == None else subtensor
@@ -61,18 +61,13 @@ def serve(
 
     # Load/Sync/Save our metagraph.
     if metagraph == None:
-        metagraph = bittensor.metagraph ( 
+        metagraph = bittensor.metagraph (
             subtensor = subtensor
         )
     
     metagraph.load().sync().save()
 
-    # Create our optimizer.
-    optimizer = torch.optim.SGD(
-        [ {"params": model.parameters()} ],
-        lr = config.neuron.learning_rate,
-        momentum = config.neuron.momentum,
-    )
+
     mutex = Lock()
 
     # --- Setup prometheus summaries.
@@ -157,8 +152,8 @@ def serve(
         return message, model_output, topk_token_phrases
 
     def optimizer_step():
-        optimizer.step()
-        optimizer.zero_grad()
+        model.optimizer.step()
+        model.optimizer.zero_grad()
 
     def blacklist(pubkey:str, request_type:bittensor.proto.RequestType) -> bool:
         r"""Axon security blacklisting, used to blacklist message from low stake members
@@ -304,6 +299,7 @@ def serve(
                             model.remote_losses.append(model_output.loss)
                             model.remote_losses = model.remote_losses[-config.neuron.num_remote_loss:] if len(model.remote_losses) > config.neuron.num_remote_loss else model.remote_losses
                         model.backward_gradients_count += inputs_x[index].size(0)
+                        print('remote backward')
                         response_tensors.append(None)
                         response_codes.append(bittensor.proto.ReturnCode.Success)
                         response_messages.append('Success')
@@ -385,7 +381,12 @@ def serve(
                     time.sleep(1)
             
             if iteration != 0:
-                (losses/iteration).backward()
+                if config.neuron.use_deepspeed:
+                    losses.register_hook(lambda grad: print('losses grad: ', grad))
+                    model.pre_model.backward(losses/iteration)
+                    model.pre_model.step()
+                else:
+                    (losses/iteration).backward()
         
         else:
             while end_block >= current_block:
@@ -393,18 +394,18 @@ def serve(
                 current_block = subtensor.get_current_block()
 
         # --- Update parameters
-        if (config.neuron.local_train and iteration > 0) or (config.neuron.remote_train and model.backward_gradients_count > 0):
+        if not config.neuron.use_deepspeed and ((config.neuron.local_train and iteration > 0) or (config.neuron.remote_train and model.backward_gradients_count > 0)):
             # Custom learning rate
             if model.backward_gradients_count > 0:
-                optimizer.param_groups[0]['lr'] =  0.1/(model.backward_gradients_count)
+                model.optimizer.param_groups[0]['lr'] =  0.001/(model.backward_gradients_count)
             else:
-                optimizer.param_groups[0]['lr'] =  0.1
+                model.optimizer.param_groups[0]['lr'] =  0.001
 
             logger.info('Optmization Started')
             with mutex:
                 clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
-                optimizer.zero_grad()
+                model.optimizer.step()
+                model.optimizer.zero_grad()
             logger.info('Optimization Successful: Model updated')
 
             if (config.neuron.local_train and iteration > 0):

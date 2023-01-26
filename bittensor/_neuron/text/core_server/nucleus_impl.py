@@ -131,10 +131,16 @@ class server(torch.nn.Module):
         self.remote_losses = []
 
         if self.config.neuron.use_deepspeed:
-            self.pre_model, _ = self.to_deepspeed(self.pre_model)
+            self.pre_model, self.optimizer = self.to_deepspeed(self.pre_model)
             
             if self.device[:4] == 'cuda':
                 self.device = torch.device("cuda", self.config.local_rank)
+        else:
+            self.optimizer = torch.optim.SGD(
+                [ {"params": self.pre_model.parameters()} ],
+                lr = config.neuron.learning_rate,
+                momentum = config.neuron.momentum,
+            )
 
     def set_fine_tuning_params(self) -> Tuple[bool, str]:
         r''' Set to tune only the parameter of the last layer
@@ -251,7 +257,7 @@ class server(torch.nn.Module):
         shift_logits = decoded_targets[..., :-1, :].contiguous()
         shift_labels = inputs[..., 1:].contiguous()
         loss = self.loss_fct( shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1) )
-
+        print(f"local trian on {self.device}")
         return loss, decoded_targets
 
     def local_forward(self, token_batch, tokenizer=None, encode_len=bittensor.__network_dim__, model_output = None):
@@ -436,8 +442,8 @@ class server(torch.nn.Module):
                       [prob_floor_b=1, ignore_index, ..., ignore_index]],
                      [...]]
         """
-        transformers.set_seed(0)
-        transformers.enable_full_determinism(0)
+        # transformers.set_seed(0)
+        # transformers.enable_full_determinism(0)
         
         if std_tokenizer is None:
             std_tokenizer = self.std_tokenizer
@@ -465,6 +471,7 @@ class server(torch.nn.Module):
             return message, _model_output, topk_tensor
 
         if self.config.neuron.remote_train:
+            print(f"remote trian on {self.device}")
             return _forward()  # track gradients for training
 
         with torch.no_grad():
