@@ -144,11 +144,11 @@ def serve(
 
     def forward_casual_lm_next(inputs_x: torch.FloatTensor, synapse, model_output=None):
         with mutex:
-            message, model_output, topk_token_phrases = model.encode_forward_causallmnext(inputs_x.to(model.device),
-                                                                                        topk=synapse.topk,
-                                                                                        model_output=model_output)
-        # topk_token_phrases: [sum_b(sum_k(len(phrase_k) + 1)_b)] contains topk token phrases and probabilities
-        #   Compacted 1-D tensor >= batch_size * (2 * topk + 1)
+            message, model_output, topk_token_phrases = model.encode_forward_causallmnext(
+                inputs_x.to(model.device),
+                topk=synapse.topk,
+                model_output=model_output
+            )
         return message, model_output, topk_token_phrases
 
     def optimizer_step():
@@ -365,28 +365,52 @@ def serve(
         end_block = current_block + config.neuron.blocks_per_epoch
         if config.neuron.local_train:
             # --- Training step.
-            while end_block >= current_block:
-                if current_block != subtensor.get_current_block() and axon.priority_threadpool.is_empty:
+            # while end_block >= current_block:
+            while iteration < 5:
+                if axon.priority_threadpool.is_empty: # current_block != subtensor.get_current_block() and
                     with mutex:
-                        logger.info(f'local training\titeration: {iteration}\tstart')
+                        logger.info(f'local training\titeration: {iteration}\tstart {model.device}')
                         loss, _ = model( next(dataset).to(model.device) )
+                        
+                        # loss = loss.detach().item()
+
                         if iteration > 0 : 
-                            losses += loss
+                            losses += loss # .detach().item()
                         else:
-                            losses = loss
+                            losses = loss # .detach().item()
                         iteration += 1
                         current_block = subtensor.get_current_block()
-                        logger.info(f'local training\titeration: {iteration}\tloss: {loss}')
+                        logger.info(f'local training\titeration: {iteration}\tloss: {loss} {model.device}')
                 else:
                     time.sleep(1)
+                    print('local forward waiting...')
             
             if iteration != 0:
+                while not axon.priority_threadpool.is_empty:
+                    time.sleep(1) 
+                    print('local backward waiting...')
+                # with mutex: 
                 if config.neuron.use_deepspeed:
-                    losses.register_hook(lambda grad: print('losses grad: ', grad))
+                    logger.info( f"start backward opt ... {model.device} {axon.priority_threadpool.is_empty}")
                     model.pre_model.backward(losses/iteration)
+                    logger.info( f"mid backward opt ... {model.device}")
                     model.pre_model.step()
+                    logger.info( f"done backward opt ... {model.device}")
                 else:
                     (losses/iteration).backward()
+
+                torch.cuda.empty_cache()
+                losses = losses.detach().item()
+
+                # if config.neuron.use_deepspeed:
+                #     # model.pre_model.step()
+                #     pass
+                #     # losses.register_hook(lambda grad: print('losses grad: ', grad))
+                #     # model.pre_model.backward(losses/iteration)
+                #     # model.pre_model.step()
+                # else:
+                #     pass
+                #     # (losses/iteration).backward()
         
         else:
             while end_block >= current_block:
@@ -409,8 +433,8 @@ def serve(
             logger.info('Optimization Successful: Model updated')
 
             if (config.neuron.local_train and iteration > 0):
-                local_data = {'local/loss': losses.detach().item() / iteration}
-
+                # local_data = {'local/loss': losses.detach().item() / iteration}
+                local_data = {'local/loss': losses / iteration}
                 if local_data['local/loss'] < model.best_loss:
                     model.best_loss = local_data['local/loss']
                     model.save(config.neuron.full_path)

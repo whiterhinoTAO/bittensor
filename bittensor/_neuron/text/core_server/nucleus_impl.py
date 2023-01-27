@@ -136,6 +136,7 @@ class server(torch.nn.Module):
             if self.device[:4] == 'cuda':
                 self.device = torch.device("cuda", self.config.local_rank)
         else:
+            self = self.to(self.device)
             self.optimizer = torch.optim.SGD(
                 [ {"params": self.pre_model.parameters()} ],
                 lr = config.neuron.learning_rate,
