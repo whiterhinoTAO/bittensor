@@ -4,7 +4,7 @@
     "optimizer": {
       "type": "Adam",
       "params": {
-        "lr": 0.005
+        "lr": 0.001
       }
     },
     "fp16": {
