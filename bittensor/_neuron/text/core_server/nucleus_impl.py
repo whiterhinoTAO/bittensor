@@ -540,9 +540,9 @@ class server(torch.nn.Module):
         print("in to_deepspeed")
         deepspeed.init_distributed()
         ds_args = SimpleNamespace(
-            config = json.load(open(self.config.deepspeed_config, 'r', encoding='utf-8')),
+            config = json.load(open(self.config.neuron.deepspeed_config, 'r', encoding='utf-8')),
             local_rank = self.config.local_rank,
-            deepspeed_config = self.config.deepspeed_config
+            deepspeed_config = self.config.neuron.deepspeed_config
         )
 
         model_engine, optimizer, _, _ = deepspeed.initialize(
@@ -601,7 +601,7 @@ class server(torch.nn.Module):
         parser.add_argument('--neuron.seq2seq_stake',  type = float, help='the amount of stake to run seq2seq synapse',default=0)
         
         parser.add_argument('--neuron.use_deepspeed', action='store_true', help='Use deepspeed or not', default=False)
-        parser.add_argument('--deepspeed_config', type=str, help='Path to deepspeed config file.')
+        parser.add_argument('--neuron.deepspeed_config', type=str, help='Path to deepspeed config file.')
         parser.add_argument('--local_rank', type=int, help='deepspeed local rank.')
 
         bittensor.wallet.add_args( parser )
