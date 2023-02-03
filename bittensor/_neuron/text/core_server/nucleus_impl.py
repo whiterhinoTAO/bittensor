@@ -457,6 +457,7 @@ class server(torch.nn.Module):
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
+                print(torch.cuda.mem_get_info(0))
                 self.model_output_check(_model_output)
                 print(torch.cuda.mem_get_info(0))
 
@@ -472,7 +473,7 @@ class server(torch.nn.Module):
             # Select topk tokenizer logits and retokenize with std_tokenizer,
             # then compact new token phrases and probabilities into 1-D tensor
             topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
-            torch.cuda.mem_get_info(0)
+            print(torch.cuda.mem_get_info(0))
 
             return message, _model_output, topk_tensor.to('cpu')
 
