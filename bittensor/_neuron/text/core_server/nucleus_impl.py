@@ -464,6 +464,7 @@ class server(torch.nn.Module):
             original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
 
             message = f'Loss: {original_loss:.2f}'
+            print(torch.cuda.mem_get_info(0))
 
             _model_output.loss = original_loss
 
