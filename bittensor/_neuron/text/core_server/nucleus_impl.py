@@ -466,7 +466,7 @@ class server(torch.nn.Module):
             _model_output.loss = original_loss
 
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
-            last_logits = _model_output.logits[:, -1, :].detach().item().to('cpu')  # [batch_size] server prediction of continuation, right-aligned
+            last_logits = _model_output.logits[:, -1, :].detach().to('cpu')  # [batch_size] server prediction of continuation, right-aligned
             
             # Select topk tokenizer logits and retokenize with std_tokenizer,
             # then compact new token phrases and probabilities into 1-D tensor
