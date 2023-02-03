@@ -472,7 +472,7 @@ class server(torch.nn.Module):
             # then compact new token phrases and probabilities into 1-D tensor
             topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
 
-            return message, _model_output.to('cpu'), topk_tensor.to('cpu')
+            return message, _model_output, topk_tensor.to('cpu')
 
         if self.config.neuron.remote_train:
             return _forward()  # track gradients for training
