@@ -458,7 +458,7 @@ class server(torch.nn.Module):
                                                attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
                 print(torch.cuda.mem_get_info(0))
-                self.model_output_check(_model_output)
+                #self.model_output_check(_model_output)
                 print(torch.cuda.mem_get_info(0))
 
             original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
