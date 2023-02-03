@@ -461,22 +461,22 @@ class server(torch.nn.Module):
                 #self.model_output_check(_model_output)
                 print(torch.cuda.mem_get_info(0))
 
-            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
+            #original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
 
-            message = f'Loss: {original_loss:.2f}'
+            message = f'Loss:'
             print(torch.cuda.mem_get_info(0))
 
-            _model_output.loss = original_loss
+            #_model_output.loss = original_loss
 
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
-            last_logits = _model_output.logits[:, -1, :].detach().to('cpu')  # [batch_size] server prediction of continuation, right-aligned
+            #last_logits = _model_output.logits[:, -1, :].detach().to('cpu')  # [batch_size] server prediction of continuation, right-aligned
             
             # Select topk tokenizer logits and retokenize with std_tokenizer,
             # then compact new token phrases and probabilities into 1-D tensor
-            topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
+            #topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
             print(torch.cuda.mem_get_info(0))
 
-            return message, _model_output, topk_tensor.to('cpu')
+            return message, _model_output
 
         if self.config.neuron.remote_train:
             return _forward()  # track gradients for training
