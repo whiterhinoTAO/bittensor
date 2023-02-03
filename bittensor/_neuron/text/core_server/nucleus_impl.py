@@ -458,6 +458,7 @@ class server(torch.nn.Module):
                                                attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
                 self.model_output_check(_model_output)
+                print(torch.cuda.mem_get_info(0))
 
             original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
 
@@ -471,6 +472,7 @@ class server(torch.nn.Module):
             # Select topk tokenizer logits and retokenize with std_tokenizer,
             # then compact new token phrases and probabilities into 1-D tensor
             topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
+            torch.cuda.mem_get_info(0)
 
             return message, _model_output, topk_tensor.to('cpu')
 
