@@ -483,7 +483,15 @@ class server(torch.nn.Module):
 
         with torch.no_grad():
             tokens = self.token_remap(token_batch, std_tokenizer)
-            return _forward()  # no gradients
+
+            message, _model_output = _forward()
+            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
+            print(torch.cuda.mem_get_info(0))
+            last_logits = _model_output.logits[:, -1, :].detach().to('cpu')
+            print(torch.cuda.mem_get_info(0))
+            topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)
+            print(torch.cuda.mem_get_info(0))
+            return message, _model_output, topk_tensor# no gradients
 
     def model_output_check(self, model_output: transformers.modeling_outputs.CausalLMOutputWithPast):
         """
