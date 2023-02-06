@@ -452,7 +452,7 @@ class server(torch.nn.Module):
         if std_tokenizer is None:
             std_tokenizer = self.std_tokenizer
 
-        def _forward(_model_output=model_output):
+        def _forward(tokens, _model_output=model_output):
             if _model_output is None:
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                attention_mask=tokens['attention_mask'],
@@ -484,8 +484,8 @@ class server(torch.nn.Module):
         with torch.no_grad():
             tokens = self.token_remap(token_batch, std_tokenizer)
 
-            message, _model_output = _forward()
-            original_loss = self.get_loss_fct(_model_output.logits.detach(), tokens['input_ids'].detach()).detach().item()
+            message, _model_output = _forward(tokens)
+            original_loss = self.get_loss_fct(_model_output.logits.to('cpu'), tokens['input_ids'].to('cpu')).detach().item()
             print(torch.cuda.mem_get_info(0))
             last_logits = _model_output.logits[:, -1, :].detach().to('cpu')
             print(torch.cuda.mem_get_info(0))
