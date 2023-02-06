@@ -485,10 +485,10 @@ class server(torch.nn.Module):
             tokens = self.token_remap(token_batch, std_tokenizer)
 
             message, _model_output = _forward(tokens)
+            _model_output.logits = _model_output.logits.to('cpu')
+            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids'].to('cpu')).detach().item()
             print(torch.cuda.mem_get_info(0))
-            original_loss = self.get_loss_fct(_model_output.logits.to('cpu'), tokens['input_ids'].to('cpu')).detach().item()
-            print(torch.cuda.mem_get_info(0))
-            last_logits = _model_output.logits[:, -1, :].detach().to('cpu')
+            last_logits = _model_output.logits[:, -1, :].detach()
             print(torch.cuda.mem_get_info(0))
             topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)
             print(torch.cuda.mem_get_info(0))
