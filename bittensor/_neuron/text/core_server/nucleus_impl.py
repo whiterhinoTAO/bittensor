@@ -485,6 +485,7 @@ class server(torch.nn.Module):
             tokens = self.token_remap(token_batch, std_tokenizer)
 
             message, _model_output = _forward(tokens)
+            print(torch.cuda.mem_get_info(0))
             original_loss = self.get_loss_fct(_model_output.logits.to('cpu'), tokens['input_ids'].to('cpu')).detach().item()
             print(torch.cuda.mem_get_info(0))
             last_logits = _model_output.logits[:, -1, :].detach().to('cpu')
