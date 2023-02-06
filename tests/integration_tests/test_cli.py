@@ -22,64 +22,46 @@ from types import SimpleNamespace
 from typing import Dict
 from unittest.mock import ANY, MagicMock, call, patch
 import pytest
+from copy import deepcopy
 
 import bittensor
 import substrateinterface
-from bittensor._subtensor.subtensor_mock import mock_subtensor
+from bittensor._subtensor.subtensor_mock import mock_subtensor, Mock_Subtensor
 from bittensor.utils.balance import Balance
 from substrateinterface.base import Keypair
 from tests.helpers import CLOSE_IN_VALUE
 
 
-class TestCli(unittest.TestCase):
+class TestCliNoNetwork(unittest.TestCase):
+    _patched_subtensor = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._patched_subtensor = patch('bittensor._subtensor.subtensor_mock.mock_subtensor.mock', new=MagicMock(
+            return_value=MagicMock(
+                get_subnets=MagicMock(return_value=[1]), # Mock subnet 1 ONLY.
+            )
+        ))
+        cls._patched_subtensor.start()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._patched_subtensor.stop()
 
     def setUp(self):
-        class success():
-            def __init__(self):
-                self.is_success = True
-                self.value = 1
-            def process_events(self):
-                return True
-
-        self.config = TestCli.construct_config()
-        # Mocked objects
-        self.mock_neuron = TestCli._neuron_dict_to_namespace(
-            dict({
-                "version":1,
-                "ip":0,
-                "port":0,
-                "ip_type":0,
-                "uid":1,
-                "modality":0,
-                "hotkey":'some_hotkey',
-                "coldkey":'some_coldkey',
-                "active":0,
-                "last_update":0,
-                "priority":0,
-                "stake":1000000000000.0,
-                "rank":0.0,
-                "trust":0.0,
-                "consensus":0.0,
-                "incentive":0.0,
-                "dividends":0.0,
-                "emission":0.0,
-                "bonds":[],
-                "weights":[],
-                "is_null":False
-            })
-        )
-        bittensor.Subtensor.register = MagicMock(return_value = True) 
-        bittensor.Subtensor.neuron_for_pubkey = MagicMock(return_value=self.mock_neuron)
-        bittensor.Subtensor.neuron_for_uid = MagicMock(return_value=self.mock_neuron)
-        substrateinterface.SubstrateInterface.submit_extrinsic = MagicMock(return_value = success()) 
-        substrateinterface.SubstrateInterface.query = MagicMock(return_value=success())
-        substrateinterface.SubstrateInterface.get_block_hash = MagicMock(return_value='0x')
-        bittensor.Subtensor.get_balance = MagicMock(return_value = Balance.from_tao(0))
+        self._config = TestCliNoNetwork.construct_config()
+    
+    @property
+    def config(self):
+        copy_ = deepcopy(self._config)
+        return copy_
 
     @staticmethod
     def construct_config():
         defaults = bittensor.Config()
+        defaults.netuid = 1
         bittensor.subtensor.add_defaults( defaults )
+        defaults.subtensor.network = 'mock'
         bittensor.dendrite.add_defaults( defaults )
         bittensor.axon.add_defaults( defaults )
         bittensor.wallet.add_defaults( defaults )
@@ -87,23 +69,246 @@ class TestCli(unittest.TestCase):
         
         return defaults
 
+    def test_check_configs(self):
+        commands = ["run", "transfer", "register", "unstake", 
+        "stake", "overview", "new_coldkey", "new_hotkey", 
+        "regen_coldkey", "regen_hotkey", "metagraph", "weights", 
+        "set_weights", "inspect"]
+        config = self.config
+        config.no_prompt = True
+        config.model = "core_server"
+        config.dest = "no_prompt"
+        config.amount = 1
+        config.mnemonic = "this is a mnemonic"
+        config.seed = None
+        config.uids = [1,2,3]
+        config.weights = [0.25, 0.25, 0.25, 0.25]
+        config.no_version_checking = True
+
+        cli = bittensor.cli
+        
+        for cmd in commands:
+            config.command = cmd
+            cli.check_config(config)
+
+    def test_new_coldkey( self ):
+        config = self.config
+        config.wallet.name = "new_coldkey_testwallet"
+
+        config.command = "new_coldkey"
+        config.amount = 1
+        config.dest = "no_prompt"
+        config.model = "core_server"
+        config.n_words = 12
+        config.use_password = False
+        config.no_prompt = True
+        config.overwrite_coldkey = True
+        config.no_version_checking = False
+
+        cli = bittensor.cli(config)
+        cli.run()
+
+    def test_new_hotkey( self ):
+        config = self.config
+        config.wallet.name = "new_hotkey_testwallet"
+        config.command = "new_hotkey"
+        config.amount = 1
+        config.dest = "no_prompt"
+        config.model = "core_server"
+        config.n_words = 12
+        config.use_password = False
+        config.no_prompt = True
+        config.overwrite_hotkey = True
+        config.no_version_checking = False
+
+        cli = bittensor.cli(config)
+        cli.run()
+
+    def test_regen_coldkey( self ):
+        config = self.config
+        config.wallet.name = "regen_coldkey_testwallet"
+        config.command = "regen_coldkey"
+        config.amount = 1
+        config.dest = "no_prompt"
+        config.model = "core_server"
+        config.mnemonic = "faculty decade seven jelly gospel axis next radio grain radio remain gentle"
+        config.seed = None
+        config.n_words = 12
+        config.use_password = False
+        config.no_prompt = True
+        config.overwrite_coldkey = True
+        config.no_version_checking = False
+
+        cli = bittensor.cli(config)
+        cli.run()
+
+    def test_regen_coldkeypub( self ):
+        config = self.config
+        config.wallet.name = "regen_coldkeypub_testwallet"
+        config.command = "regen_coldkeypub"
+        config.ss58_address = "5DD26kC2kxajmwfbbZmVmxhrY9VeeyR1Gpzy9i8wxLUg6zxm"
+        config.public_key = None
+        config.use_password = False
+        config.no_prompt = True
+        config.overwrite_coldkeypub = True
+        config.no_version_checking = False
+
+        cli = bittensor.cli(config)
+        cli.run()
+
+    def test_regen_hotkey( self ):
+        config = self.config
+        config.wallet.name = "regen_hotkey_testwallet"
+        config.command = "regen_hotkey"
+        config.amount = 1
+        config.model = "core_server"
+        config.mnemonic = "faculty decade seven jelly gospel axis next radio grain radio remain gentle"
+        config.seed = None
+        config.n_words = 12
+        config.use_password = False
+        config.no_prompt = True
+        config.overwrite_hotkey = True
+        config.no_version_checking = False
+
+        cli = bittensor.cli(config)
+        cli.run()
+
+    def test_list( self ):
+        # Mock IO for wallet
+        with patch('bittensor.wallet', side_effect=[MagicMock(
+            coldkeypub_file=MagicMock(
+                exists_on_device=MagicMock(
+                    return_value=True # Wallet exists
+                ),
+                is_encrypted=MagicMock(
+                    return_value=False # Wallet is not encrypted
+                ),
+            ),
+            coldkeypub=MagicMock(
+                ss58_address=bittensor.Keypair.create_from_mnemonic(
+                        bittensor.Keypair.generate_mnemonic()
+                ).ss58_address
+            )
+        ),
+        MagicMock(
+            hotkey_file=MagicMock(
+                exists_on_device=MagicMock(
+                    return_value=True # Wallet exists
+                ),
+                is_encrypted=MagicMock(
+                    return_value=False # Wallet is not encrypted
+                ),
+            ),
+            hotkey=MagicMock(
+                ss58_address=bittensor.Keypair.create_from_mnemonic(
+                        bittensor.Keypair.generate_mnemonic()
+                ).ss58_address
+            )
+        )]):
+            config = self.config
+            config.wallet.path = 'tmp/walletpath'
+            config.wallet.name = 'mock_wallet'
+            config.no_prompt = True
+            config.command = "list"
+            config.no_version_checking = False
+
+            cli = bittensor.cli(config)
+            with patch('os.walk', side_effect=[iter(
+                    [('/tmp/walletpath', ['mock_wallet'], [])] # 1 wallet dir
+            ),
+            iter(
+                [('/tmp/walletpath/mock_wallet/hotkeys', [], ['hk0'])] # 1 hotkey file
+            )]):
+                cli.run()
+
+    def test_list_no_wallet( self ):
+        # Mock IO for wallet
+        with patch('bittensor.Wallet.coldkeypub_file', MagicMock(
+            exists_on_device=MagicMock(
+                return_value=False # Wallet doesn't exist
+            )
+        )):
+            config = self.config
+            config.wallet.path = '/tmp/test_cli_test_list_no_wallet'
+            config.no_prompt = True
+            config.command = "list"
+            config.no_version_checking = False
+
+            cli = bittensor.cli(config)
+            # This shouldn't raise an error anymore
+            cli.run()
+
+    def test_btcli_help(self):
+        """
+        Verify the correct help text is output when the --help flag is passed
+        """
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            with patch('argparse.ArgumentParser._print_message', return_value=None) as mock_print_message:
+                args = [
+                    '--help'
+                ]
+                bittensor.cli(args=args).run()
+
+        # Should try to print help
+        mock_print_message.assert_called_once()
+
+        call_args = mock_print_message.call_args
+        args, _ = call_args
+        help_out = args[0]
+
+        # Expected help output even if parser isn't working well
+        ## py3.6-3.9 or py3.10+
+        assert 'optional arguments' in help_out or 'options' in help_out
+        # Expected help output if all commands are listed
+        assert 'positional arguments' in help_out
+        # Verify that cli is printing the help message for 
+        assert 'overview' in help_out
+        assert 'run' in help_out
+
+class TestCliWithNetwork(unittest.TestCase):
+    _subtensor_mock: Mock_Subtensor = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        # Start a mock instance of subtensor.
+        cls._subtensor_mock = bittensor.subtensor( network = 'mock' )
+
+        # create a mock subnet
+        created_subnet, err = cls._subtensor_mock.sudo_add_network( netuid = 1, tempo = 99, modality = 0 )
+        assert err == None
+
+        # Make registration difficulty 0. Instant registration.
+        set_diff, err = cls._subtensor_mock.sudo_set_difficulty( netuid = 1, difficulty = 0 )
+        assert err == None
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        # Kill the mock instance of subtensor.
+        cls._subtensor_mock.optionally_kill_owned_mock_instance()
+
+    def setUp(self):
+        self._config = TestCliWithNetwork.construct_config()
+    
+    @property
+    def config(self):
+        copy_ = deepcopy(self._config)
+        return copy_
+
     @staticmethod
-    def _neuron_dict_to_namespace(neuron_dict) -> SimpleNamespace:
-            if neuron_dict['hotkey'] == '5C4hrfjw9DjXZTzV3MwzrrAr9P1MJhSrvWGWqi1eSuyUpnhM':
-                return bittensor.subtensor._null_neuron()
-            else:
-                RAOPERTAO = 1000000000
-                U64MAX = 18446744073709551615
-                neuron = SimpleNamespace( **neuron_dict )
-                neuron.stake = neuron.stake / RAOPERTAO
-                neuron.rank = neuron.rank / U64MAX
-                neuron.trust = neuron.trust / U64MAX
-                neuron.consensus = neuron.consensus / U64MAX
-                neuron.incentive = neuron.incentive / U64MAX
-                neuron.dividends = neuron.dividends / U64MAX
-                neuron.emission = neuron.emission / RAOPERTAO
-                neuron.is_null = False
-                return neuron
+    def construct_config():
+        defaults = bittensor.Config()
+        defaults.netuid = 1
+        bittensor.subtensor.add_defaults( defaults )
+        # Always use mock subtensor.
+        defaults.subtensor.network = 'mock'
+        # Skip version checking.
+        defaults.no_version_checking = True
+        bittensor.dendrite.add_defaults( defaults )
+        bittensor.axon.add_defaults( defaults )
+        bittensor.wallet.add_defaults( defaults )
+        bittensor.dataset.add_defaults( defaults )
+        
+        return defaults
 
     @staticmethod
     def generate_wallet(coldkey : 'Keypair' = None, hotkey: 'Keypair' = None):
@@ -120,28 +325,6 @@ class TestCli(unittest.TestCase):
 
         return wallet
 
-    def test_check_configs(self):
-        commands = ["run", "transfer", "register", "unstake", 
-        "stake", "overview", "new_coldkey", "new_hotkey", 
-        "regen_coldkey", "regen_hotkey", "metagraph", "weights", 
-        "set_weights", "inspect"]
-        config = self.config
-        config.no_prompt = True
-        config.model = "core_server"
-        config.dest = "no_prompt"
-        config.amount = 1
-        config.mnemonic = "this is a mnemonic"
-        config.seed = None
-        config.uids = [1,2,3]
-        config.weights = [0.25, 0.25, 0.25, 0.25]
-        config.no_version_checking = False
-
-        cli = bittensor.cli
-        
-        for cmd in commands:
-            config.command = cmd
-            cli.check_config(config)
-
     def test_overview( self ):
         # Mock IO for wallet
         with patch('bittensor.Wallet.coldkeypub_file', MagicMock(
@@ -149,8 +332,6 @@ class TestCli(unittest.TestCase):
                 return_value=True # Wallet exists
             )
         )):
-            bittensor.subtensor.register = MagicMock(return_value = True)  
-            
             config = self.config
             config.wallet.path = '/tmp/test_cli_test_overview'
             config.wallet.name = 'mock_wallet'
@@ -189,44 +370,6 @@ class TestCli(unittest.TestCase):
 
             cli = bittensor.cli(config)
             cli.run()
-
-    def test_overview_with_cache( self ):
-        config = self.config
-        config.command = "overview"
-        config.no_cache = False # Use neuron cache
-        config.no_prompt = True
-        config.all = False
-        config.no_version_checking = False
-
-        cli = bittensor.cli(config)
-        cli.run()
-
-    def test_overview_with_cache_cache_fails( self ):
-        config = self.config
-        config.command = "overview"
-        config.no_cache = False # Use neuron cache
-        config.no_prompt = True
-        config.all = False
-        config.no_version_checking = False
-
-        with patch('bittensor.Metagraph.retrieve_cached_neurons') as mock_retrieve_cached_neurons:
-            # Mock the cache retrieval to fail
-            mock_retrieve_cached_neurons.side_effect = Exception("Cache failed")
-
-            # Should not raise an exception
-            cli = bittensor.cli(config)
-            cli.run()
-
-    def test_overview_without_no_cache_confg( self ):        
-        config = self.config
-        config.command = "overview"
-        # Don't specify no_cache in config
-        config.no_prompt = True
-        config.all = False
-        config.no_version_checking = False
-
-        cli = bittensor.cli(config)
-        cli.run()
 
     def test_overview_with_hotkeys_config( self ):        
         config = self.config
@@ -1256,18 +1399,25 @@ class TestCli(unittest.TestCase):
                 # We should stake what we have in the balance
                 mock_add_stake.assert_not_called()
                 
-
     def test_register( self ):
         config = self.config
         config.command = "register"
         config.subtensor.register.num_processes = 1
         config.subtensor.register.update_interval = 50_000
         config.no_prompt = True
-        config.no_version_checking = False
 
-        with patch('bittensor.Subtensor.register', return_value=True):
+        mock_wallet = self.generate_wallet()
+        
+        with patch('bittensor.wallet', return_value=mock_wallet) as mock_create_wallet:
             cli = bittensor.cli(config)
             cli.run()
+            mock_create_wallet.assert_called_once()
+            
+            subtensor = bittensor.subtensor(config)
+            registered = subtensor.is_hotkey_registered_on_subnet( hotkey_ss58 = mock_wallet.hotkey.ss58_address, netuid = 1 )
+
+            self.assertTrue( registered )
+
             
     def test_stake( self ):
         config = self.config
@@ -1277,98 +1427,32 @@ class TestCli(unittest.TestCase):
         config.stake_all = False
         config.wallet._mock = True
         config.use_password = False
-        config.no_version_checking = False
-
         config.model = "core_server"
 
-        cli = bittensor.cli(config)
-        cli.run()
 
-    def test_new_coldkey( self ):
-        
-        config = self.config
-        config.wallet.name = "new_coldkey_testwallet"
+        subtensor = bittensor.subtensor(config)
 
-        config.command = "new_coldkey"
-        config.amount = 1
-        config.dest = "no_prompt"
-        config.model = "core_server"
-        config.n_words = 12
-        config.use_password = False
-        config.no_prompt = True
-        config.overwrite_coldkey = True
-        config.no_version_checking = False
 
-        cli = bittensor.cli(config)
-        cli.run()
+        mock_wallet = self.generate_wallet()
+        with patch('bittensor.wallet', return_value=mock_wallet) as mock_create_wallet:
+            
+            old_stake = subtensor.get_stake_for_coldkey_and_hotkey(
+                hotkey_ss58 = mock_wallet.hotkey.ss58_address,
+                coldkey_ss58 = mock_wallet.coldkey.ss58_address,
+            )
 
-    def test_new_hotkey( self ):
-        
-        #subtensor.register(wallet=wallet)    
-        config = self.config
-        config.wallet.name = "new_hotkey_testwallet"
-        config.command = "new_hotkey"
-        config.amount = 1
-        config.dest = "no_prompt"
-        config.model = "core_server"
-        config.n_words = 12
-        config.use_password = False
-        config.no_prompt = True
-        config.overwrite_hotkey = True
-        config.no_version_checking = False
+            cli = bittensor.cli(config)
+            cli.run()
+            mock_create_wallet.assert_called_once()
+            
+            new_stake = subtensor.get_stake_for_coldkey_and_hotkey(
+                hotkey_ss58 = mock_wallet.hotkey.ss58_address,
+                coldkey_ss58 = mock_wallet.coldkey.ss58_address,
+            )
 
-        cli = bittensor.cli(config)
-        cli.run()
-
-    def test_regen_coldkey( self ):
-        config = self.config
-        config.wallet.name = "regen_coldkey_testwallet"
-        config.command = "regen_coldkey"
-        config.amount = 1
-        config.dest = "no_prompt"
-        config.model = "core_server"
-        config.mnemonic = "faculty decade seven jelly gospel axis next radio grain radio remain gentle"
-        config.seed = None
-        config.n_words = 12
-        config.use_password = False
-        config.no_prompt = True
-        config.overwrite_coldkey = True
-        config.no_version_checking = False
-
-        cli = bittensor.cli(config)
-        cli.run()
-
-    def test_regen_coldkeypub( self ):
-        config = self.config
-        config.wallet.name = "regen_coldkeypub_testwallet"
-        config.command = "regen_coldkeypub"
-        config.ss58_address = "5DD26kC2kxajmwfbbZmVmxhrY9VeeyR1Gpzy9i8wxLUg6zxm"
-        config.public_key = None
-        config.use_password = False
-        config.no_prompt = True
-        config.overwrite_coldkeypub = True
-        config.no_version_checking = False
-
-        cli = bittensor.cli(config)
-        cli.run()
-
-    def test_regen_hotkey( self ):
-        config = self.config
-        config.wallet.name = "regen_hotkey_testwallet"
-        config.command = "regen_hotkey"
-        config.amount = 1
-        config.model = "core_server"
-        config.mnemonic = "faculty decade seven jelly gospel axis next radio grain radio remain gentle"
-        config.seed = None
-        config.n_words = 12
-        config.use_password = False
-        config.no_prompt = True
-        config.overwrite_hotkey = True
-        config.no_version_checking = False
-
-        cli = bittensor.cli(config)
-        cli.run()
-
+            self.assertGreater( new_stake, old_stake )
+            
+   
     def test_metagraph( self ):    
         config = self.config
         config.wallet.name = "metagraph_testwallet"
@@ -1431,99 +1515,6 @@ class TestCli(unittest.TestCase):
         cli.config.command = "list"
         cli.config = config
         cli.run()
-
-    def test_list( self ):
-        # Mock IO for wallet
-        with patch('bittensor.wallet', side_effect=[MagicMock(
-            coldkeypub_file=MagicMock(
-                exists_on_device=MagicMock(
-                    return_value=True # Wallet exists
-                ),
-                is_encrypted=MagicMock(
-                    return_value=False # Wallet is not encrypted
-                ),
-            ),
-            coldkeypub=MagicMock(
-                ss58_address=bittensor.Keypair.create_from_mnemonic(
-                        bittensor.Keypair.generate_mnemonic()
-                ).ss58_address
-            )
-        ),
-        MagicMock(
-            hotkey_file=MagicMock(
-                exists_on_device=MagicMock(
-                    return_value=True # Wallet exists
-                ),
-                is_encrypted=MagicMock(
-                    return_value=False # Wallet is not encrypted
-                ),
-            ),
-            hotkey=MagicMock(
-                ss58_address=bittensor.Keypair.create_from_mnemonic(
-                        bittensor.Keypair.generate_mnemonic()
-                ).ss58_address
-            )
-        )]):
-            config = self.config
-            config.wallet.path = 'tmp/walletpath'
-            config.wallet.name = 'mock_wallet'
-            config.no_prompt = True
-            config.command = "list"
-            config.no_version_checking = False
-
-            cli = bittensor.cli(config)
-            with patch('os.walk', side_effect=[iter(
-                    [('/tmp/walletpath', ['mock_wallet'], [])] # 1 wallet dir
-            ),
-            iter(
-                [('/tmp/walletpath/mock_wallet/hotkeys', [], ['hk0'])] # 1 hotkey file
-            )]):
-                cli.run()
-
-    def test_list_no_wallet( self ):
-        # Mock IO for wallet
-        with patch('bittensor.Wallet.coldkeypub_file', MagicMock(
-            exists_on_device=MagicMock(
-                return_value=False # Wallet doesn't exist
-            )
-        )):
-            config = self.config
-            config.wallet.path = '/tmp/test_cli_test_list_no_wallet'
-            config.no_prompt = True
-            config.command = "list"
-            config.no_version_checking = False
-
-            cli = bittensor.cli(config)
-            # This shouldn't raise an error anymore
-            cli.run()
-
-    def test_btcli_help(self):
-        """
-        Verify the correct help text is output when the --help flag is passed
-        """
-        with pytest.raises(SystemExit) as pytest_wrapped_e:
-            with patch('argparse.ArgumentParser._print_message', return_value=None) as mock_print_message:
-                args = [
-                    '--help'
-                ]
-                bittensor.cli(args=args).run()
-
-        # Should try to print help
-        mock_print_message.assert_called_once()
-
-        call_args = mock_print_message.call_args
-        args, _ = call_args
-        help_out = args[0]
-
-        # Expected help output even if parser isn't working well
-        ## py3.6-3.9 or py3.10+
-        assert 'optional arguments' in help_out or 'options' in help_out
-        # Expected help output if all commands are listed
-        assert 'positional arguments' in help_out
-        # Verify that cli is printing the help message for 
-        assert 'overview' in help_out
-        assert 'run' in help_out
-
 
     def test_register_cuda_use_cuda_flag(self):
             class ExitEarlyException(Exception):
