@@ -214,3 +214,7 @@ replicate.yaml
 
 # Notebooks
 *.ipynb
+
+# zombienet binaries
+bin/chain/Linux/*
+bin/chain/OSX/*
