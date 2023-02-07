@@ -454,6 +454,8 @@ class server(torch.nn.Module):
 
         def _forward(tokens,training = False, _model_output=model_output):
             if _model_output is None:
+                import pdb;
+                pdb.set_trace()
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
@@ -482,8 +484,7 @@ class server(torch.nn.Module):
         if self.config.neuron.remote_train:
             tokens = self.token_remap(token_batch, std_tokenizer)
             return _forward(tokens, training=True)  # track gradients for training
-        import pdb;
-        pdb.set_trace()
+
         with torch.no_grad():
             tokens = self.token_remap(token_batch, std_tokenizer)
             return _forward(tokens)# no gradients
