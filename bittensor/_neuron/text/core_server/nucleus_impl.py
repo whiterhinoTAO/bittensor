@@ -454,8 +454,6 @@ class server(torch.nn.Module):
 
         def _forward(tokens,training = False, _model_output=model_output):
             if _model_output is None:
-                import pdb;
-                pdb.set_trace()
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
