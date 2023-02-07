@@ -459,7 +459,7 @@ class neuron:
             return response_tensors, response_codes, response_messages
 
         # --- calling attached synapses ---
-        with self.mutex and torch.enable_grad() and torch.autograd.set_detect_anomaly(True):
+        with self.mutex and torch.enable_grad():
             for index, synapse in enumerate(synapses):
                 try:
                     if synapse.synapse_type in self.axon.synapse_callbacks and self.axon.synapse_callbacks[synapse.synapse_type] != None:
