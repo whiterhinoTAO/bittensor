@@ -459,20 +459,22 @@ class server(torch.nn.Module):
                                                output_hidden_states=True)
 
                 _model_output.logits = _model_output.logits.to('cpu')
+                print(torch.cuda.mem_get_info(0))
                 self.model_output_check(_model_output)
 
-            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
-
+            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids'].to('cpu')).detach().item()
+            print(torch.cuda.mem_get_info(0))
             message = f'Loss:{original_loss}'
 
             _model_output.loss = original_loss
-
+            print(torch.cuda.mem_get_info(0))
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
             last_logits = _model_output.logits[:, -1, :].detach()  # [batch_size] server prediction of continuation, right-aligned
             
             # Select topk tokenizer logits and retokenize with std_tokenizer,
             # then compact new token phrases and probabilities into 1-D tensor
             topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
+            print(torch.cuda.mem_get_info(0))
 
             return message, _model_output, topk_tensor
 
