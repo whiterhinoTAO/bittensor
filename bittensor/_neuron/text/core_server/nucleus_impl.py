@@ -457,42 +457,32 @@ class server(torch.nn.Module):
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
-                print(torch.cuda.mem_get_info(0))
-                #self.model_output_check(_model_output)
-                print(torch.cuda.mem_get_info(0))
 
-            #original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
+                _model_output.logits = _model_output.logits.to('cpu')
+                self.model_output_check(_model_output)
 
-            message = f'Loss:'
-            print(torch.cuda.mem_get_info(0))
+            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
 
-            #_model_output.loss = original_loss
+            message = f'Loss:{original_loss}'
+
+            _model_output.loss = original_loss
 
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
-            #last_logits = _model_output.logits[:, -1, :].detach().to('cpu')  # [batch_size] server prediction of continuation, right-aligned
+            last_logits = _model_output.logits[:, -1, :].detach()  # [batch_size] server prediction of continuation, right-aligned
             
             # Select topk tokenizer logits and retokenize with std_tokenizer,
             # then compact new token phrases and probabilities into 1-D tensor
-            #topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
-            print(torch.cuda.mem_get_info(0))
+            topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
 
-            return message, _model_output
+            return message, _model_output, topk_tensor
 
         if self.config.neuron.remote_train:
+            tokens = self.token_remap(token_batch, std_tokenizer)
             return _forward()  # track gradients for training
 
         with torch.no_grad():
             tokens = self.token_remap(token_batch, std_tokenizer)
-
-            message, _model_output = _forward(tokens)
-            _model_output.logits = _model_output.logits.to('cpu')
-            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids'].to('cpu')).detach().item()
-            print(torch.cuda.mem_get_info(0))
-            last_logits = _model_output.logits[:, -1, :].detach()
-            print(torch.cuda.mem_get_info(0))
-            topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)
-            print(torch.cuda.mem_get_info(0))
-            return message, _model_output, topk_tensor# no gradients
+            return _forward(tokens)# no gradients
 
     def model_output_check(self, model_output: transformers.modeling_outputs.CausalLMOutputWithPast):
         """
