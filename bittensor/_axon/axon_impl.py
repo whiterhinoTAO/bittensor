@@ -343,6 +343,7 @@ class Axon( bittensor.grpc.BittensorServicer ):
                 synapses = synapses,
                 hotkey= request.hotkey
             )
+            print(forward_codes, forward_messages)
         synapse_is_response = [ True for _ in synapses ]
         # ========================================
         # ==== Fill codes from forward calls ====
