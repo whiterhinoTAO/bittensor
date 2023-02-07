@@ -219,7 +219,7 @@ class neuron:
         self.metagraph.load().sync(netuid = self.config.netuid)
 
         # Create our axon server and subscribe it to the network.
-        self.axon.start().serve(subtensor=self.subtensor)
+        self.axon.start()
 
         # Training Data
         if self.config.neuron.local_train:
