@@ -213,31 +213,10 @@ class neuron:
     def run(
             self,
         ):
-        self.config.to_defaults()
 
         # Load/Create our bittensor wallet.
         self.wallet.reregister(subtensor=self.subtensor, netuid = self.config.netuid)
-
-
-        self.metagraph.load().sync(netuid = self.config.netuid).save()
-
-        # Create our optimizer.
-        optimizer = torch.optim.SGD(
-            [ {"params": self.model.parameters()} ],
-            lr = self.config.neuron.learning_rate,
-            momentum = self.config.neuron.momentum,
-        )
-
-        self.prometheus_guages.labels( 'model_size_params' ).set( sum(p.numel() for p in self.model.parameters()) )
-        self.prometheus_guages.labels( 'model_size_bytes' ).set( sum(p.element_size() * p.nelement() for p in self.model.parameters()) )
-        self.prometheus_info.info ({
-            'type': "core_server",
-            'uid': str(self.metagraph.hotkeys.index( self.wallet.hotkey.ss58_address )),
-            'netuid': self.config.netuid,
-            'network': self.config.subtensor.network,
-            'coldkey': str(self.wallet.coldkeypub.ss58_address),
-            'hotkey': str(self.wallet.hotkey.ss58_address),
-        })
+        self.metagraph.load().sync(netuid = self.config.netuid)
 
         # Create our axon server and subscribe it to the network.
         self.axon.start().serve(subtensor=self.subtensor)
