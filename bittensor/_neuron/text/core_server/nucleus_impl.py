@@ -461,7 +461,7 @@ class server(torch.nn.Module):
                     _model_output.logits = _model_output.logits.to('cpu')
                 self.model_output_check(_model_output)
 
-            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids']).detach().item()
+            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids'].to('cpu')).detach().item()
 
             message = f'Loss:{original_loss}'
 
