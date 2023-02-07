@@ -452,13 +452,14 @@ class server(torch.nn.Module):
         if std_tokenizer is None:
             std_tokenizer = self.std_tokenizer
 
-        def _forward(tokens, _model_output=model_output):
+        def _forward(tokens,training = False, _model_output=model_output):
             if _model_output is None:
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
 
-                _model_output.logits = _model_output.logits.to('cpu')
+                if not training:
+                    _model_output.logits = _model_output.logits.to('cpu')
                 print(torch.cuda.mem_get_info(0))
                 self.model_output_check(_model_output)
 
@@ -480,8 +481,9 @@ class server(torch.nn.Module):
 
         if self.config.neuron.remote_train:
             tokens = self.token_remap(token_batch, std_tokenizer)
-            return _forward()  # track gradients for training
-
+            return _forward(tokens, training=True)  # track gradients for training
+        import pdb;
+        pdb.set_trace()
         with torch.no_grad():
             tokens = self.token_remap(token_batch, std_tokenizer)
             return _forward(tokens)# no gradients
