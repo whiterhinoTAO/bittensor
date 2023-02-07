@@ -454,6 +454,7 @@ class server(torch.nn.Module):
 
         def _forward(tokens,training = False, _model_output=model_output):
             if _model_output is None:
+                print(tokens['input_ids'].device, tokens['attention_mask'].device)
                 _model_output = self.pre_model(input_ids=tokens['input_ids'],
                                                attention_mask=tokens['attention_mask'],
                                                output_hidden_states=True)
