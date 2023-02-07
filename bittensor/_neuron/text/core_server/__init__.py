@@ -220,18 +220,12 @@ class neuron:
 
         # Create our axon server and subscribe it to the network.
         self.axon.start().serve(subtensor=self.subtensor)
-        self.axon.attach_backward_callback(self.backward_callback)
-
 
         # Training Data
         if self.config.neuron.local_train:
             self.dataset = bittensor.dataset(config=self.config)
             self.dataset.set_data_size(10, 64)
             data = next(self.dataset)
-
-        # load our old model
-        if not self.config.neuron.restart :
-            self.model.load(self.config.neuron.full_path)
 
         if self.config.wandb.api_key != 'default':
             # --- Init Wandb.
