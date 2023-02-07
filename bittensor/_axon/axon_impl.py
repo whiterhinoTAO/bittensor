@@ -324,58 +324,32 @@ class Axon( bittensor.grpc.BittensorServicer ):
         # ===================================
         # ==== Make forward calls. =========
         # ===================================
-        try:
-            finalize_codes_stats_and_logs()
-            if self.priority != None:
-                priority = self.priority( request.hotkey, inputs_x = deserialized_forward_tensors, request_type = bittensor.proto.RequestType.FORWARD )
-                future = self.priority_threadpool.submit (
-                    self.forward_callback,
-                    inputs_x = deserialized_forward_tensors, 
-                    synapses = synapses,
-                    priority = priority,
-                    hotkey = request.hotkey
-                )
-                forward_response_tensors, forward_codes, forward_messages = future.result( timeout = synapse_timeout - (clock.time() - start_time) )
-            else:
-                
-                forward_response_tensors, forward_codes, forward_messages = self.forward_callback(
-                    inputs_x = deserialized_forward_tensors,
-                    synapses = synapses,
-                    hotkey= request.hotkey
-                )
-            synapse_is_response = [ True for _ in synapses ]
-            # ========================================
-            # ==== Fill codes from forward calls ====
-            # ========================================
-            for index, synapse in enumerate(synapses):
-                synapse_codes [ index ] = forward_codes [ index ]
-                synapse_messages [index] = forward_messages [ index ]
-        # ========================================
-        # ==== Catch forward request timeouts ====
-        # ========================================
-        except concurrent.futures.TimeoutError:
-            if self.priority != None:
-                future.cancel()
-            code = bittensor.proto.ReturnCode.Timeout
-            call_time = clock.time() - start_time
-            message = "Request reached timeout"
-            synapse_codes = [code for _ in synapses ]
-            synapse_call_times = [call_time for _ in synapses ]
-            synapse_messages = [ message for _ in synapses ]
-            finalize_codes_stats_and_logs()
-            return [], bittensor.proto.ReturnCode.Timeout, request.synapses
 
-        # ==================================
-        # ==== Catch unknown exceptions ====
-        # ==================================
-        except Exception as e:
-            code = bittensor.proto.ReturnCode.UnknownException
-            call_time = clock.time() - start_time
-            synapse_codes = [code for _ in synapses ]
-            synapse_call_times = [call_time for _ in synapses ]
-            synapse_messages = [ 'Exception on Server' for _ in synapses ]
-            finalize_codes_stats_and_logs(message = str(e))
-            return [], bittensor.proto.ReturnCode.UnknownException, request.synapses
+        finalize_codes_stats_and_logs()
+        if self.priority != None:
+            priority = self.priority( request.hotkey, inputs_x = deserialized_forward_tensors, request_type = bittensor.proto.RequestType.FORWARD )
+            future = self.priority_threadpool.submit (
+                self.forward_callback,
+                inputs_x = deserialized_forward_tensors, 
+                synapses = synapses,
+                priority = priority,
+                hotkey = request.hotkey
+            )
+            forward_response_tensors, forward_codes, forward_messages = future.result( timeout = synapse_timeout - (clock.time() - start_time) )
+        else:
+            
+            forward_response_tensors, forward_codes, forward_messages = self.forward_callback(
+                inputs_x = deserialized_forward_tensors,
+                synapses = synapses,
+                hotkey= request.hotkey
+            )
+        synapse_is_response = [ True for _ in synapses ]
+        # ========================================
+        # ==== Fill codes from forward calls ====
+        # ========================================
+        for index, synapse in enumerate(synapses):
+            synapse_codes [ index ] = forward_codes [ index ]
+            synapse_messages [index] = forward_messages [ index ]
 
         # =================================================
         # ==== Encode/serialize responses and synapses ====
