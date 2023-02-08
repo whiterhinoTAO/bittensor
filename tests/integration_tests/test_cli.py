@@ -1602,6 +1602,19 @@ class TestCLIWithNetworkUsingArgs(unittest.TestCase):
 
                 assert len(args) == 0 and len(kwargs) == 0 # should not have any args; indicates that "All" synapses are being used
 
+    def test_list_delegates(self):
+        cli = bittensor.cli(args=[
+            'list_delegates',
+            '--subtensor.network', 'mock', # Mock network
+        ])
+        cli.run()
+
+    def test_list_subnets(self):
+        cli = bittensor.cli(args=[
+            'list_subnets',
+            '--subtensor.network', 'mock', # Mock network
+        ])
+        cli.run()
 
 if __name__ == '__main__':
     unittest.main()
