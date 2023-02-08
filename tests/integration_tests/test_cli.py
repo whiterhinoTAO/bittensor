@@ -1599,7 +1599,8 @@ class TestCLIWithNetworkUsingArgs(unittest.TestCase):
                 assert mock_neuron.call_count == 1
                 args, kwargs = mock_neuron.call_args
 
-                assert len(args) == 0 and len(kwargs) == 0 # should not have any args; indicates that "All" synapses are being used
+                self.assertEqual(len(args), 0) # Should not have any args; indicates that "All" synapses are being used
+                self.assertEqual(len(kwargs), 1) # should have one kwarg; netuid
 
     def test_list_delegates(self):
         cli = bittensor.cli(args=[
