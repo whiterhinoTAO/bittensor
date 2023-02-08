@@ -1623,24 +1623,35 @@ class TestCLIWithNetworkUsingArgs(unittest.TestCase):
         delegate_wallet = generate_wallet()
 
         # register the wallet
-        registered = _subtensor_mock.register(mock_wallet, netuid = 1, wait_for_finalization=True)
-        self.assertTrue(registered)
-        self.assertTrue(_subtensor_mock.is_hotkey_registered_on_subnet(mock_wallet.hotkey.ss58_address, netuid = 1 ))
+        _, err = _subtensor_mock.sudo_register(
+            netuid = 1,
+            hotkey = mock_wallet.hotkey.ss58_address,
+            coldkey = mock_wallet.coldkey.ss58_address,
+        )
+        self.assertEqual(err, None)
 
-        # register the delegate wallet
-        registered = _subtensor_mock.register(delegate_wallet, netuid = 1, wait_for_finalization=True)
-        self.assertTrue(registered)
-        self.assertTrue(_subtensor_mock.is_hotkey_registered_on_subnet(delegate_wallet.hotkey.ss58_address, netuid = 1 ))
+        # register the delegate
+        _, err = _subtensor_mock.sudo_register(
+            netuid = 1,
+            hotkey = delegate_wallet.hotkey.ss58_address,
+            coldkey = delegate_wallet.coldkey.ss58_address,
+        )
+        self.assertEqual(err, None)
 
         # make the delegate a delegate
         _subtensor_mock.nominate(delegate_wallet, wait_for_finalization=True)
         self.assertTrue(_subtensor_mock.is_hotkey_delegate( delegate_wallet.hotkey.ss58_address ))
 
         # Give the wallet some TAO
-        _subtensor_mock.sudo_force_set_balance(
+        _, err = _subtensor_mock.sudo_force_set_balance(
             ss58_address=mock_wallet.coldkey.ss58_address,
             balance = bittensor.Balance.from_tao( 20.0 )
         )
+        self.assertEqual(err, None)
+
+        # Check balance
+        old_balance = _subtensor_mock.get_balance( mock_wallet.coldkey.ss58_address )
+        self.assertEqual(old_balance.tao, 20.0)
 
         # Check delegate stake
         old_delegate_stake = _subtensor_mock.get_total_stake_for_hotkey(delegate_wallet.hotkey.ss58_address)
@@ -1648,13 +1659,15 @@ class TestCLIWithNetworkUsingArgs(unittest.TestCase):
         # Check wallet stake
         old_wallet_stake = _subtensor_mock.get_total_stake_for_coldkey(mock_wallet.coldkey.ss58_address)
 
-        with patch('bittensor.Wallet.__new__', return_value=mock_wallet): # Mock wallet creation. SHOULD NOT BE REGISTERED
+        with patch('bittensor._wallet.wallet_mock.Wallet_mock', return_value=mock_wallet): # Mock wallet creation. SHOULD NOT BE REGISTERED
             cli = bittensor.cli(args=[
                 'delegate',
                 '--subtensor.network', 'mock', # Mock network
                 '--wallet.name', 'mock',
+                '--wallet._mock', 'True',
                 '--delegate_ss58key', delegate_wallet.hotkey.ss58_address,
                 '--amount', '10.0', # Delegate 10 TAO
+                '--no_prompt',
             ])
             cli.run()
 
@@ -1665,10 +1678,14 @@ class TestCLIWithNetworkUsingArgs(unittest.TestCase):
         new_wallet_stake = _subtensor_mock.get_total_stake_for_coldkey(mock_wallet.coldkey.ss58_address)
 
         # Check that the delegate stake increased by 10 TAO
-        self.assertTrue(new_delegate_stake == old_delegate_stake + bittensor.Balance.from_tao(10.0))
+        self.assertAlmostEqual(new_delegate_stake.tao, old_delegate_stake.tao + 10.0, delta=1e-6)
 
-        # Check that the wallet stake decreased by 10 TAO
-        self.assertTrue(new_wallet_stake == old_wallet_stake - bittensor.Balance.from_tao(10.0))
+        # Check that the wallet stake increased by 10 TAO
+        self.assertAlmostEqual(new_wallet_stake.tao, old_wallet_stake.tao + 10.0, delta=1e-6)
+
+        new_balance = _subtensor_mock.get_balance( mock_wallet.coldkey.ss58_address )
+        self.assertAlmostEqual(new_balance.tao, old_balance.tao - 10.0, delta=1e-6)
+
 
 if __name__ == '__main__':
     unittest.main()
