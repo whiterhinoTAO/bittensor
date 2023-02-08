@@ -1556,20 +1556,27 @@ class TestCLIWithNetworkUsingArgs(unittest.TestCase):
         Verify that the btcli run command does not reregister a not registered wallet
             if --wallet.reregister is False
         """
-        mock_wallet = generate_wallet()
-        with patch('bittensor.Wallet.__new__', return_value=mock_wallet): # Mock wallet creation. SHOULD NOT BE REGISTERED
-            with patch('bittensor.Subtensor.register', MagicMock(side_effect=Exception("shouldn't register during test"))):
-                with pytest.raises(SystemExit):
-                    cli = bittensor.cli(args=[
-                        'run',
-                        '--wallet.name', 'not_real_wallet',
-                        '--wallet.hotkey', 'not_real_hotkey',
-                        '--wallet._mock', 'True',
-                        '--subtensor.network', 'mock', # Mock network
-                        '--no_prompt',
-                        '--wallet.reregister', 'False' # Don't reregister
-                    ])
-                    cli.run()
+
+        # Mock wallet SHOULD NOT BE REGISTERED
+        mock_wallet = bittensor.wallet(_mock = True)
+        self.assertFalse(_subtensor_mock.is_hotkey_registered( 
+            hotkey_ss58 = mock_wallet.hotkey.ss58_address,
+            netuid = 1
+        ))
+        
+        with patch('bittensor.Subtensor.register', MagicMock(side_effect=Exception("shouldn't register during test"))):
+            with pytest.raises(SystemExit):
+                cli = bittensor.cli(args=[
+                    'run',
+                    '--netuid', '1',
+                    '--wallet.name', 'mock',
+                    '--wallet.hotkey', 'mock_hotkey',
+                    '--wallet._mock', 'True',
+                    '--subtensor.network', 'mock', # Mock network
+                    '--no_prompt',
+                    '--wallet.reregister', 'False' # Don't reregister
+                ])
+                cli.run()
 
     def test_run_synapse_all(self):
         """
