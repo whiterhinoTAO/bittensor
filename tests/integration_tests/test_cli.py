@@ -1445,8 +1445,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
                 coldkey_ss58 = mock_wallet.coldkey.ss58_address,
             )
 
-            self.assertGreater( new_stake, old_stake )
-            
+            self.assertGreater( new_stake, old_stake )      
    
     def test_metagraph( self ):    
         config = self.config
