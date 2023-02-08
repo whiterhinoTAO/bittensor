@@ -482,6 +482,8 @@ class server(torch.nn.Module):
 
         with torch.no_grad():
             tokens = self.token_remap(token_batch, std_tokenizer)
+            import pdb;
+            pdb.set_trace()
             return _forward(tokens)# no gradients
 
     def model_output_check(self, model_output: transformers.modeling_outputs.CausalLMOutputWithPast):
