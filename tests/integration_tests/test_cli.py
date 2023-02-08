@@ -1586,6 +1586,7 @@ class TestCLIWithNetworkUsingArgs(unittest.TestCase):
                 with pytest.raises(MockException):
                     cli = bittensor.cli(args=[
                         'run',
+                        '--subtensor.network', 'mock', # Mock network
                         '--wallet.name', 'mock',
                         '--wallet.hotkey', 'mock_hotkey',
                         '--wallet._mock', 'True',
