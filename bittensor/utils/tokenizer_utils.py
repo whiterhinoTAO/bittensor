@@ -968,6 +968,7 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
 
     val_probs = torch.zeros(batch_size).to(topk_probs.device)  # accumulate probabilities when first tokens match
     match_probs = torch.zeros(batch_size).to(topk_probs.device)  # accumulate probabilities when sub target matches phrase
+    logs = []
     for b in range(batch_size):
         target_phrase = target_phrases[b]
         if not isinstance(target_phrase, torch.Tensor):
@@ -978,7 +979,14 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
             val_probs[b] = n_topk_probs[b, match].sum()  # accumulate all matches
         else:  # no matches
             val_probs[b] = 0# n_floor_probs[b]  # assume match is in non-topk tokens with avg floor_prob
-
+        lol = {
+            "batch": b, 
+            "total_prob": total_probs[b].item(),
+            "token": topk_tokens[b, match, 0].tolist(), 
+            "topk_prob": topk_probs[b, match].tolist(), 
+            "n_topk_prob": n_topk_probs[b, match].tolist()
+        }
+        logs.append(lol)
         # === Integrate sub target matches ===
         check_len = min(max_len - 1, len(target_phrase))
         for c in range(1, check_len + 1):  # progressively increase sub target length
@@ -1001,6 +1009,8 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
     val_probs = torch.clamp(val_probs, 0, 1)  # [batch_size] ensure 0 <= total probability <= 1
     loss_val = - torch.log(val_probs + 1e-40)  # [batch_size] calculate cross entropy loss
 
+    if p:
+        print(loss_val, val_probs)
     old_match_probs = match_probs.clone()
     match_probs = torch.clamp(match_probs, 0, 1)  # [batch_size] ensure 0 <= total probability <= 1
     loss = - torch.log(match_probs + 1e-40)  # [batch_size] calculate cross entropy loss
@@ -1013,7 +1023,7 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
         if loss.numel() > 1:
             raise ValueError(f'phase_cross_entropy(): Expected reduction to scalar, obtained {loss.shape} instead.')
     
-    if p:
+    if False:
         topk_tensor_sorted = topk_tensor[0, : , :][topk_tensor[0, : , 0].sort(descending= True)[1]]
         print (
             '\nphrase cross entropy\n', topk_tensor_sorted[: 10, :], 
@@ -1028,7 +1038,7 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
             '\nmatch probs: ', old_match_probs,
             '\nloss ',loss
         )
-    return loss_val, loss
+    return loss_val, loss, (-torch.log(val_probs + 1e-40), logs)
 
 
 def check_tokenizer_equivalence(tokenizer_to_check: PreTrainedTokenizerBase,
