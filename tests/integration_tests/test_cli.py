@@ -32,7 +32,40 @@ from substrateinterface.base import Keypair
 from tests.helpers import CLOSE_IN_VALUE
 
 
-class TestCliNoNetwork(unittest.TestCase):
+_subtensor_mock: Mock_Subtensor = None
+
+def setUpModule():
+    global _subtensor_mock
+    # Start a mock instance of subtensor.
+    _subtensor_mock = bittensor.subtensor( network = 'mock' )
+
+    # create a mock subnet
+    created_subnet, err = _subtensor_mock.sudo_add_network( netuid = 1, tempo = 99, modality = 0 )
+    assert err == None
+
+    # Make registration difficulty 0. Instant registration.
+    set_diff, err = _subtensor_mock.sudo_set_difficulty( netuid = 1, difficulty = 0 )
+    assert err == None
+
+def tearDownModule() -> None:
+    # Kill the mock instance of subtensor.
+    _subtensor_mock.optionally_kill_owned_mock_instance()
+
+def generate_wallet(coldkey : 'Keypair' = None, hotkey: 'Keypair' = None):
+    wallet = bittensor.wallet(_mock=True).create()
+
+    if not coldkey:
+        coldkey = Keypair.create_from_mnemonic(Keypair.generate_mnemonic())
+    if not hotkey:
+        hotkey = Keypair.create_from_mnemonic(Keypair.generate_mnemonic())
+
+    wallet.set_coldkey(coldkey, encrypt=False, overwrite=True)
+    wallet.set_coldkeypub(coldkey, encrypt=False, overwrite=True)    
+    wallet.set_hotkey(hotkey, encrypt=False, overwrite=True)
+
+    return wallet
+
+class TestCLINoNetwork(unittest.TestCase):
     _patched_subtensor = None
 
     @classmethod
@@ -49,7 +82,7 @@ class TestCliNoNetwork(unittest.TestCase):
         cls._patched_subtensor.stop()
 
     def setUp(self):
-        self._config = TestCliNoNetwork.construct_config()
+        self._config = TestCLINoNetwork.construct_config()
     
     @property
     def config(self):
@@ -265,30 +298,10 @@ class TestCliNoNetwork(unittest.TestCase):
         # Verify that cli is printing the help message for 
         assert 'overview' in help_out
         assert 'run' in help_out
-
-class TestCliWithNetwork(unittest.TestCase):
-    _subtensor_mock: Mock_Subtensor = None
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        # Start a mock instance of subtensor.
-        cls._subtensor_mock = bittensor.subtensor( network = 'mock' )
-
-        # create a mock subnet
-        created_subnet, err = cls._subtensor_mock.sudo_add_network( netuid = 1, tempo = 99, modality = 0 )
-        assert err == None
-
-        # Make registration difficulty 0. Instant registration.
-        set_diff, err = cls._subtensor_mock.sudo_set_difficulty( netuid = 1, difficulty = 0 )
-        assert err == None
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        # Kill the mock instance of subtensor.
-        cls._subtensor_mock.optionally_kill_owned_mock_instance()
-
+    
+class TestCLIWithNetworkAndConfig(unittest.TestCase):
     def setUp(self):
-        self._config = TestCliWithNetwork.construct_config()
+        self._config = TestCLIWithNetworkAndConfig.construct_config()
     
     @property
     def config(self):
@@ -310,21 +323,6 @@ class TestCliWithNetwork(unittest.TestCase):
         bittensor.dataset.add_defaults( defaults )
         
         return defaults
-
-    @staticmethod
-    def generate_wallet(coldkey : 'Keypair' = None, hotkey: 'Keypair' = None):
-        wallet = bittensor.wallet(_mock=True).create()
-
-        if not coldkey:
-            coldkey = Keypair.create_from_mnemonic(Keypair.generate_mnemonic())
-        if not hotkey:
-            hotkey = Keypair.create_from_mnemonic(Keypair.generate_mnemonic())
-
-        wallet.set_coldkey(coldkey, encrypt=False, overwrite=True)
-        wallet.set_coldkeypub(coldkey, encrypt=False, overwrite=True)    
-        wallet.set_hotkey(hotkey, encrypt=False, overwrite=True)
-
-        return wallet
 
     def test_overview( self ):
         # Mock IO for wallet
@@ -1417,8 +1415,7 @@ class TestCliWithNetwork(unittest.TestCase):
             registered = subtensor.is_hotkey_registered_on_subnet( hotkey_ss58 = mock_wallet.hotkey.ss58_address, netuid = 1 )
 
             self.assertTrue( registered )
-
-            
+      
     def test_stake( self ):
         config = self.config
         config.no_prompt = True
@@ -1429,9 +1426,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.use_password = False
         config.model = "core_server"
 
-
         subtensor = bittensor.subtensor(config)
-
 
         mock_wallet = self.generate_wallet()
         with patch('bittensor.wallet', return_value=mock_wallet) as mock_create_wallet:
@@ -1552,7 +1547,8 @@ class TestCliWithNetwork(unittest.TestCase):
                         cli.run()
 
                     assert cli.config.subtensor.register.cuda.use_cuda == False
-class TestCLIUsingArgs(unittest.TestCase):
+
+class TestCLIWithNetworkUsingArgs(unittest.TestCase):
     """
     Test the CLI by passing args directly to the bittensor.cli factory
     """
