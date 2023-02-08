@@ -267,7 +267,7 @@ class SubnetInfo:
             blocks_since_epoch = json['blocks_since_last_step'],
             tempo = json['tempo'],
             modality = json['network_modality'],
-            connection_requirements= json['network_connect'],
+            connection_requirements = { str(subnet): req for subnet, req in json['network_connect'] },
             emission_value= json['emission_values'],
         )
     
