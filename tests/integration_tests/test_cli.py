@@ -1615,5 +1615,60 @@ class TestCLIWithNetworkUsingArgs(unittest.TestCase):
         ])
         cli.run()
 
+    def test_delegate(self):
+        """
+        Test delegate add command
+        """
+        mock_wallet = generate_wallet()
+        delegate_wallet = generate_wallet()
+
+        # register the wallet
+        registered = _subtensor_mock.register(mock_wallet, netuid = 1, wait_for_finalization=True)
+        self.assertTrue(registered)
+        self.assertTrue(_subtensor_mock.is_hotkey_registered_on_subnet(mock_wallet.hotkey.ss58_address, netuid = 1 ))
+
+        # register the delegate wallet
+        registered = _subtensor_mock.register(delegate_wallet, netuid = 1, wait_for_finalization=True)
+        self.assertTrue(registered)
+        self.assertTrue(_subtensor_mock.is_hotkey_registered_on_subnet(delegate_wallet.hotkey.ss58_address, netuid = 1 ))
+
+        # make the delegate a delegate
+        _subtensor_mock.nominate(delegate_wallet, wait_for_finalization=True)
+        self.assertTrue(_subtensor_mock.is_hotkey_delegate( delegate_wallet.hotkey.ss58_address ))
+
+        # Give the wallet some TAO
+        _subtensor_mock.sudo_force_set_balance(
+            ss58_address=mock_wallet.coldkey.ss58_address,
+            balance = bittensor.Balance.from_tao( 20.0 )
+        )
+
+        # Check delegate stake
+        old_delegate_stake = _subtensor_mock.get_total_stake_for_hotkey(delegate_wallet.hotkey.ss58_address)
+
+        # Check wallet stake
+        old_wallet_stake = _subtensor_mock.get_total_stake_for_coldkey(mock_wallet.coldkey.ss58_address)
+
+        with patch('bittensor.Wallet.__new__', return_value=mock_wallet): # Mock wallet creation. SHOULD NOT BE REGISTERED
+            cli = bittensor.cli(args=[
+                'delegate',
+                '--subtensor.network', 'mock', # Mock network
+                '--wallet.name', 'mock',
+                '--delegate_ss58key', delegate_wallet.hotkey.ss58_address,
+                '--amount', '10.0', # Delegate 10 TAO
+            ])
+            cli.run()
+
+        # Check delegate stake
+        new_delegate_stake = _subtensor_mock.get_total_stake_for_hotkey(delegate_wallet.hotkey.ss58_address)
+
+        # Check wallet stake
+        new_wallet_stake = _subtensor_mock.get_total_stake_for_coldkey(mock_wallet.coldkey.ss58_address)
+
+        # Check that the delegate stake increased by 10 TAO
+        self.assertTrue(new_delegate_stake == old_delegate_stake + bittensor.Balance.from_tao(10.0))
+
+        # Check that the wallet stake decreased by 10 TAO
+        self.assertTrue(new_wallet_stake == old_wallet_stake - bittensor.Balance.from_tao(10.0))
+
 if __name__ == '__main__':
     unittest.main()
