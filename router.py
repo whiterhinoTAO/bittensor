@@ -222,8 +222,6 @@ class Nucleus(nn.Module):
         losses = torch.tensor([self.cal_loss(inputs, r[0], self.config.nucleus.validation_len)[0] for r in response_success])
         
         print('check num uids and losses', len(uids), len(response_success), len(losses))
-        print(losses.sort()[0])
-        print(losses.sort()[1])
         top_mix_loss = {}
         for i in range(1, min(11, len(response_success)), 2):
             top_mix_response = self.mix_response( [response_success[idx] for idx in losses.sort()[1][:i]], torch.ones(i) / i)
@@ -376,7 +374,7 @@ while True:
     if len(uids) == 0:
         uids = target_uids[torch.randperm(len(target_uids))]
 
-    stats, success = step( uids )
+    stats, success = step( uids[:config.nucleus.n_queried] )
     uids = uids[config.nucleus.n_queried:]
         
     # Apply step.
