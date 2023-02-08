@@ -62,6 +62,7 @@ class TestCliNoNetwork(unittest.TestCase):
         defaults.netuid = 1
         bittensor.subtensor.add_defaults( defaults )
         defaults.subtensor.network = 'mock'
+        defaults.no_version_checking = True
         bittensor.dendrite.add_defaults( defaults )
         bittensor.axon.add_defaults( defaults )
         bittensor.wallet.add_defaults( defaults )
@@ -103,7 +104,7 @@ class TestCliNoNetwork(unittest.TestCase):
         config.use_password = False
         config.no_prompt = True
         config.overwrite_coldkey = True
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -119,7 +120,7 @@ class TestCliNoNetwork(unittest.TestCase):
         config.use_password = False
         config.no_prompt = True
         config.overwrite_hotkey = True
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -137,7 +138,7 @@ class TestCliNoNetwork(unittest.TestCase):
         config.use_password = False
         config.no_prompt = True
         config.overwrite_coldkey = True
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -151,7 +152,7 @@ class TestCliNoNetwork(unittest.TestCase):
         config.use_password = False
         config.no_prompt = True
         config.overwrite_coldkeypub = True
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -168,7 +169,7 @@ class TestCliNoNetwork(unittest.TestCase):
         config.use_password = False
         config.no_prompt = True
         config.overwrite_hotkey = True
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -210,7 +211,7 @@ class TestCliNoNetwork(unittest.TestCase):
             config.wallet.name = 'mock_wallet'
             config.no_prompt = True
             config.command = "list"
-            config.no_version_checking = False
+            
 
             cli = bittensor.cli(config)
             with patch('os.walk', side_effect=[iter(
@@ -232,7 +233,7 @@ class TestCliNoNetwork(unittest.TestCase):
             config.wallet.path = '/tmp/test_cli_test_list_no_wallet'
             config.no_prompt = True
             config.command = "list"
-            config.no_version_checking = False
+            
 
             cli = bittensor.cli(config)
             # This shouldn't raise an error anymore
@@ -339,7 +340,6 @@ class TestCliWithNetwork(unittest.TestCase):
             config.no_cache = True  # Don't use neuron cache
             config.no_prompt = True
             config.all = False
-            config.no_version_checking = False
 
             cli = bittensor.cli(config)
             with patch('os.walk', return_value=iter(
@@ -366,7 +366,7 @@ class TestCliWithNetwork(unittest.TestCase):
             config.command = "overview"
             config.no_prompt = True
             config.all = False
-            config.no_version_checking = False
+            
 
             cli = bittensor.cli(config)
             cli.run()
@@ -377,7 +377,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.no_prompt = True
         config.hotkeys = ['some_hotkey']
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -387,7 +387,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.command = "overview"
         config.no_prompt = True
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -398,7 +398,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.no_prompt = True
         config.wallet.sort_by = "rank"
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -409,7 +409,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.no_prompt = True
         config.wallet.sort_by = "totallynotmatchingcolumnname"
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -419,7 +419,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.command = "overview"
         config.no_prompt = True
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -430,7 +430,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.wallet.sort_order = "desc" # Set descending sort order
         config.no_prompt = True
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -441,7 +441,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.wallet.sort_order = "nowaythisshouldmatchanyorderingchoice" 
         config.no_prompt = True
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -452,7 +452,7 @@ class TestCliWithNetwork(unittest.TestCase):
         # Don't specify sort_order in config
         config.no_prompt = True
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -463,7 +463,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.width = 100
         config.no_prompt = True
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -474,7 +474,7 @@ class TestCliWithNetwork(unittest.TestCase):
         # Don't specify width in config
         config.no_prompt = True
         config.all = False
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -483,7 +483,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config = self.config
         config.command = "overview"
         config.no_prompt = True
-        config.no_version_checking = False
+        
 
         config.all = True
         cli = bittensor.cli(config)
@@ -500,7 +500,7 @@ class TestCliWithNetwork(unittest.TestCase):
         ]   
         config.all_hotkey = False
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_coldkey = "" # Not None
 
@@ -575,7 +575,7 @@ class TestCliWithNetwork(unittest.TestCase):
         # Notice wallet.hotkeys not specified
         config.all_hotkey = True
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_coldkey = "" # Not None
 
@@ -625,7 +625,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.hotkeys = ["hk1"] # Exclude hk1
         config.all_hotkey = True
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_coldkey = "" # Not None
 
@@ -678,7 +678,7 @@ class TestCliWithNetwork(unittest.TestCase):
         ]   
         config.all_hotkey = False
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_coldkey = "" # Not None
 
@@ -753,7 +753,7 @@ class TestCliWithNetwork(unittest.TestCase):
         ]   
         config.all_hotkey = False
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_coldkey = "" # Not None
 
@@ -835,7 +835,7 @@ class TestCliWithNetwork(unittest.TestCase):
         ]   
         config.all_hotkey = False
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_coldkey = "" # Not None
 
@@ -900,7 +900,7 @@ class TestCliWithNetwork(unittest.TestCase):
         # Notice wallet.hotkeys is not specified
         config.all_hotkey = True
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_hotkeys = ['hk0', 'hk1', 'hk2']
 
@@ -947,7 +947,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.wallet.name = "fake_wallet"
         config.hotkeys = ['hk1'] # exclude hk1
         config.all_hotkey = True
-        config.no_version_checking = False
+        
 
         # Notice no max_stake specified
 
@@ -1001,7 +1001,7 @@ class TestCliWithNetwork(unittest.TestCase):
         ]   
         config.all_hotkey = False
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_balance = bittensor.Balance(15.0 * 3) # Enough to stake 15.0 on each hotkey
 
@@ -1080,7 +1080,7 @@ class TestCliWithNetwork(unittest.TestCase):
             'hk0', 'hk1', 'hk2'
         ]   
         config.all_hotkey = False
-        config.no_version_checking = False
+        
 
         # Notice no max_stake specified
 
@@ -1168,7 +1168,7 @@ class TestCliWithNetwork(unittest.TestCase):
         ]   
         config.all_hotkey = False
         # Notice no max_stake specified
-        config.no_version_checking = False
+        
 
         mock_balance = bittensor.Balance(15.0) # Enough to stake 15.0 on one hotkey
 
@@ -1245,7 +1245,7 @@ class TestCliWithNetwork(unittest.TestCase):
             'hk0'
         ]   
         config.all_hotkey = False
-        config.no_version_checking = False
+        
 
         # Notice no max_stake specified
 
@@ -1333,7 +1333,7 @@ class TestCliWithNetwork(unittest.TestCase):
             'hk0'
         ]   
         config.all_hotkey = False
-        config.no_version_checking = False
+        
 
         # Notice no max_stake specified
 
@@ -1458,7 +1458,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.wallet.name = "metagraph_testwallet"
         config.command = "metagraph"
         config.no_prompt = True
-        config.no_version_checking = False
+        
 
         cli = bittensor.cli(config)
         cli.run()
@@ -1472,7 +1472,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.weights = [0.25, 0.25, 0.25, 0.25]
         config.n_words = 12
         config.use_password = False
-        config.no_version_checking = False
+        
 
 
         config.overwrite_hotkey = True
@@ -1495,7 +1495,7 @@ class TestCliWithNetwork(unittest.TestCase):
         config.use_password = False
         config.overwrite_coldkey = True
         config.overwrite_hotkey = True
-        config.no_version_checking = False
+        
 
         # First create a new coldkey
         config.command = "new_coldkey"
