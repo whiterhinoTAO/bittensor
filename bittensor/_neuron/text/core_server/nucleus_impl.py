@@ -230,7 +230,7 @@ class server(torch.nn.Module):
         to_text_batch, from_offsets_batch, to_offsets_batch, pad_offsets_batch = result
 
         tokens = self.tokenizer(to_text_batch, padding=True, truncation=True, max_length=token_batch.size(1), return_tensors='pt',
-                                add_special_tokens=False)  # assume tokenizer.padding_side = 'left'
+                                add_special_tokens=False) # assume tokenizer.padding_side = 'left'
 
         if return_offsets_mapping:  # get offsets_mapping in tokenization to delineate token segment positions
             server_tokens = self.tokenizer(to_text_batch, return_offsets_mapping=True, add_special_tokens=False)
@@ -461,20 +461,20 @@ class server(torch.nn.Module):
                     _model_output.logits = _model_output.logits.to('cpu')
                 self.model_output_check(_model_output)
 
-            #original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids'].to('cpu')).detach().item()
+            original_loss = self.get_loss_fct(_model_output.logits, tokens['input_ids'].to('cpu')).detach().item()
 
-            #message = f'Loss:{original_loss}'
+            message = f'Loss:{original_loss}'
 
-            #_model_output.loss = original_loss
+            _model_output.loss = original_loss
 
             # model_output.logits: [batch_size, sequence_len, server_vocab_size]
-            #last_logits = _model_output.logits[:, -1, :].detach()  # [batch_size] server prediction of continuation, right-aligned
+            last_logits = _model_output.logits[:, -1, :].detach()  # [batch_size] server prediction of continuation, right-aligned
             
             # Select topk tokenizer logits and retokenize with std_tokenizer,
             # then compact new token phrases and probabilities into 1-D tensor
-            #topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
+            topk_tensor = topk_token_phrases(last_logits, self.tokenizer, topk=topk)  # [batch_size, (topk + 1), max_len]
 
-            return _model_output
+            return message, _model_output, topk_tensor
 
         if self.config.neuron.remote_train:
             tokens = self.token_remap(token_batch, std_tokenizer)
@@ -482,8 +482,6 @@ class server(torch.nn.Module):
 
         with torch.no_grad():
             tokens = self.token_remap(token_batch, std_tokenizer)
-            import pdb;
-            pdb.set_trace()
             return _forward(tokens)# no gradients
 
     def model_output_check(self, model_output: transformers.modeling_outputs.CausalLMOutputWithPast):
