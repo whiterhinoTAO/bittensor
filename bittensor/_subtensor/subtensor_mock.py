@@ -314,3 +314,30 @@ class Mock_Subtensor(subtensor_impl.Subtensor):
                 return True, None
             else:
                 return False, response.error_message
+            
+    def sudo_register(self, netuid: int, hotkey: str, coldkey: str, stake: int = 0, balance: int = 0) -> Tuple[bool, Optional[str]]:
+        r""" Registers a neuron to the subnet using sudo.
+        """
+        with self.substrate as substrate:
+            call = substrate.compose_call(
+                    call_module='Paratensor',
+                    call_function='sudo_register',
+                    call_params = {
+                        'netuid': netuid,
+                        'hotkey': hotkey,
+                        'coldkey': coldkey,
+                        'stake': stake,
+                        'balance': balance
+                    }
+                )
+
+            wrapped_call = self.wrap_sudo(call)
+
+            extrinsic = substrate.create_signed_extrinsic( call = wrapped_call, keypair = self.sudo_keypair )
+            response = substrate.submit_extrinsic( extrinsic, wait_for_inclusion = True, wait_for_finalization = True )
+
+            response.process_events()
+            if response.is_success:
+                return True, None
+            else:
+                return False, response.error_message
