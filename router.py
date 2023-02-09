@@ -21,6 +21,7 @@ from bittensor._neuron.text.core_server.nucleus_impl import server
 from bittensor.utils.tokenizer_utils import phrase_cross_entropy
 import numpy as np
 import pandas as pd
+import time
 
 import cProfile, pstats, io
 from pstats import SortKey
@@ -95,6 +96,7 @@ class Nucleus(nn.Module):
         parser.add_argument('--nucleus.n_queried', type=int, default=100, help='''The number of endpoints we query each step.''')
         parser.add_argument('--nucleus.device', type=str, help='miner default training device cpu/cuda', default=("cuda" if torch.cuda.is_available() else "cpu"))
         parser.add_argument('--nucleus.validation_len', type=int, help='the number of tokens to validate', default=8 )
+        parser.add_argument('--nucleus.sim_network_size', type=int, help='the number of uids to validate', default=200 )
 
     @classmethod
     def config ( cls ):
@@ -119,14 +121,14 @@ class Nucleus(nn.Module):
 
         for seq in range(batch_size):
             r_batch = response[seq, : -1, :] # [seq, tokens, prob]  
-            r_batch_sorted = r_batch[r_batch[:, 0].sort(descending = False)[1]]
-            index = r_batch_sorted[:, 1].long().to(self.config.nucleus.device)
-            prob = r_batch_sorted[:, 0].to(self.config.nucleus.device) 
-            
-            # r_batch_sorted = r_batch[r_batch[:, 0].sort(descending = False)[1]]
-            # index = r_batch[:, 1].long()
-            # prob = r_batch[:, 0]
-            response_sort[seq, index, 0] = prob.to(self.config.nucleus.device)
+            index = r_batch[:, 1].long().to(self.config.nucleus.device)
+            prob = r_batch[:, 0].to(self.config.nucleus.device)
+            # unique_labels, labels_count = index.unique(return_counts=True)
+
+            response_sort[seq, :, 0] = response_sort[seq, :, 0].scatter_add(0, index, prob) # to(self.config.nucleus.device)
+            # div = torch.ones(bittensor.__vocab_size__, dtype=torch.long).to(self.config.nucleus.device)
+            # div[unique_labels] = labels_count
+            # response_sort[seq, :, 0] /= div
 
         return response_sort
 
@@ -231,34 +233,21 @@ class Nucleus(nn.Module):
             print('loss: ', loss_top_mix)
             top_mix_loss[f'loss/top_mix_{i}'] = loss_top_mix
 
-        for i in range(1, min(11, len(response_success)), 2):       
-            org_response = response_success[losses.sort()[1][i]]
-            org_response_sorted = self.sort_response_by_token(org_response[0])
-            top_mix_response = self.mix_response([org_response], torch.ones(1))
-            top_uid = [uid_success[losses.sort()[1][i]]]
-            print(f'===== loss diff{i} ======\n', top_uid)
-            loss_org, check1 = self.cal_loss(inputs, org_response[0], self.config.nucleus.validation_len, p = False)
-            loss_org_sorted, check2 = self.cal_loss(inputs, org_response_sorted, self.config.nucleus.validation_len, p = False)
-            loss_top_mix, _ = self.cal_loss(inputs, top_mix_response, self.config.nucleus.validation_len, p = False)
-            print('loss: ', losses.sort()[0][i], loss_org, loss_org_sorted, loss_top_mix)
-            
-            for i, diff in enumerate(check2[0] - check1[0]):
-                if diff > 0.05:
-                    print(check1[1][i])
-                    print(check2[1][i])
+        # for i in range(1, min(11, len(response_success)), 2):       
         #     org_response = response_success[losses.sort()[1][i]]
         #     org_response_sorted = self.sort_response_by_token(org_response[0])
-        #     org_response_sorted_2 = self.sort_response_by_token(org_response[0])
-        #     top_mix_response_sorted = self.sort_response_by_token(top_mix_response)
+        #     top_mix_response = self.mix_response([org_response], torch.ones(1))
+        #     top_uid = [uid_success[losses.sort()[1][i]]]
+        #     print(f'===== loss diff{i} ======\n', top_uid)
+        #     loss_org, check1 = self.cal_loss(inputs, org_response[0], self.config.nucleus.validation_len, p = False)
+        #     loss_org_sorted, check2 = self.cal_loss(inputs, org_response_sorted, self.config.nucleus.validation_len, p = False)
+        #     loss_top_mix, _ = self.cal_loss(inputs, top_mix_response, self.config.nucleus.validation_len, p = False)
+        #     print('loss: ', losses.sort()[0][i], loss_org, loss_org_sorted, loss_top_mix)
             
-        #     print('control prob diff', org_response_sorted[:, :, 0] - org_response_sorted_2[:, :, 0]) 
-        #     print('control token diff', org_response_sorted[:, :, 1] - org_response_sorted_2[:, :, 1]) 
-        #     print('prob diff', org_response_sorted[:, :, 0] - top_mix_response_sorted[:, :, 0]) 
-        #     print('token diff', org_response_sorted[:, :, 1] - top_mix_response_sorted[:, :, 1]) 
-        #     print('self prob diff', top_mix_response_sorted[:, :, 0] - top_mix_response_sorted[:, :, 0]) 
-        #     print('self token diff', top_mix_response_sorted[:, :, 1] - top_mix_response_sorted[:, :, 1]) 
-
-            # top_mix_loss[f'loss/top_mix_{i}'] = loss_top_mix
+        #     for i, diff in enumerate(check2[0] - check1[0]):
+        #         if diff > 0.05:
+        #             print(check1[1][i])
+        #             print(check2[1][i])
         
         stats = {
             'loss/min': losses.min(),
@@ -274,7 +263,7 @@ class Nucleus(nn.Module):
         }
         if 3566 in uids.tolist() and return_ops_gptj[0] == 1:
             gptj_response = self.mix_response( responses_gptj , torch.ones(1))
-            stats['loss/gptj'] = self.cal_loss(inputs, gptj_response, self.config.nucleus.validation_len)
+            stats['loss/gptj'] = self.cal_loss(inputs, gptj_response, self.config.nucleus.validation_len)[0]
         
         stats = {**stats, **top_mix_loss}
         stats = {**stats}
@@ -315,7 +304,13 @@ print (config)
 # Sync graph and load power wallet.
 bittensor.logging( config = config )
 dataset = bittensor.dataset( config = config )
-subtensor = bittensor.subtensor( config = config )
+got_sub = False
+while not got_sub:
+    try:
+        subtensor = bittensor.subtensor( config = config )
+        got_sub = True
+    except:
+        time.sleep(1)
 graph = bittensor.metagraph( subtensor = subtensor ).sync()
 wallet = bittensor.wallet( config = config )
 dendrite = bittensor.dendrite ( config = config, wallet = wallet)
@@ -365,7 +360,7 @@ def step(uids):
 
 avg_loss_history = []
 
-target_uids = graph.I.sort(descending = True)[1][torch.tensor(range(0, 4000, 20))]
+target_uids = graph.I.sort(descending = True)[1][torch.tensor(range(0, 4000, int(4000/config.nucleus.sim_network_size)))]
 target_uids = torch.cat([target_uids, torch.tensor([3566])])
 uids = torch.tensor([])
 step_count = 0
