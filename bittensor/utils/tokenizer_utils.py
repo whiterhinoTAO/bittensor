@@ -982,6 +982,7 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
         lol = {
             "batch": b, 
             "total_prob": total_probs[b].item(),
+            "match": torch.nonzero(match).tolist(),
             "token": topk_tokens[b, match, 0].tolist(), 
             "topk_prob": topk_probs[b, match].tolist(), 
             "n_topk_prob": n_topk_probs[b, match].tolist()
