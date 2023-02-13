@@ -85,6 +85,8 @@ class Nucleus(nn.Module):
             ),
             config.nucleus.nlayers
         )
+        
+        torch.nn.init.xavier_uniform(self.gates.weight)
     
     @classmethod
     def add_args( cls, parser ):
@@ -150,7 +152,7 @@ class Nucleus(nn.Module):
             # floor_prob = (1 - sum(mixed_batch_topk[:, 0])) / (bittensor.__vocab_size__ - topk)
             # mixed_response[batch, :topk, :] = mixed_batch_topk
             # mixed_response[batch, topk:, :] = torch.zeros_like(mixed_response[batch, topk:, :])
-            # mixed_response[batch, -1, :] = torch.tensor([[floor_prob, -1]])
+            # mixed_response[batch, -1, :] = torch.tensor([[floor_prob, -1]])/
             mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
 
         # return reduced_mixed_response
@@ -269,7 +271,7 @@ class Nucleus(nn.Module):
         stats = {**stats}
         
         # Return.
-        return stats, successes, routing_score, [] #losses
+        return stats, uids[successes], routing_score, losses
     
     
 ##############################
@@ -342,21 +344,20 @@ next(dataset)
 start_time = time.time()
 io_1 = psutil.net_io_counters()
 start_bytes_sent, start_bytes_recv = io_1.bytes_sent, io_1.bytes_recv
-success_results = []
+uids_success_history = []
 scores_history = []
-avg_loss_history = []
+losses_history = []
 table_data = [] 
 def step(uids):
     inputs = next(dataset)
-    stats, success, scores, losses = model( uids, inputs, dendrite )
+    stats, uids_success, scores, losses = model( uids, inputs, dendrite )
     if stats['loss/routing'] == stats['loss/routing'] and stats['loss/routing'] < 8: #true if not nan 
         stats['loss/routing'].backward()
         print('backward!')
-    success_results.append(success)
+    uids_success_history.append(uids_success)
     scores_history.append(scores.detach())
-    return stats, success
-
-
+    losses_history.append(losses)
+    return stats, uids_success
 
 avg_loss_history = []
 
@@ -376,19 +377,7 @@ while True:
     clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
     optimizer.zero_grad()
-    
-    # for k, v in step_stats.items(): 
-    #     if k not in stats.keys():
-    #         stats[k] = []
-    #     if v == v:
-    #         stats[k].append(v)
-    
-    # for k, v in stats.items():
-    #     if len(v) > 0:
-    #         stats[k] = sum(v)/len(v)
-    #         if hasattr(stats[k], 'item'):
-    #             stats[k] = stats[k].item()
-    
+     
     if stats['loss/routing'] == stats['loss/routing'] and stats['loss/routing'] < 8:
         avg_loss_history.append( stats['loss/routing'] )
     else:
@@ -408,12 +397,15 @@ while True:
             else:
                 scores_log['score/' + str(k)] = v.item()
 
-        stats['stat/success'] = sum(success) / len(success)
-        stats['stat/num_success'] = sum(success) 
+        stats['stat/num_success'] = len(success) 
         print(stats)
         wandb.log( {**stats, **scores_log}, step=step_count)
         step_count += 1
-
+    torch.save({
+        'uids': uids_success_history,
+        'scores': scores_history,
+        'losses': losses_history,
+    }, f"{config.wandb.name}_losses_score_history.pt")
 # Measure state after.
 io_2 = psutil.net_io_counters()
 total_bytes_sent, total_bytes_recved = io_2.bytes_sent - start_bytes_sent, io_2.bytes_recv - start_bytes_recv
