@@ -56,6 +56,9 @@ class ValidatorLogger:
             ['sSynD', 'synergy_loss_diff', '{:.2f}', 'bright_blue'],  # Shapley pairwise synergy over sequence loss (loss difference)
             ['vSynD', 'synergy_loss_diff_val', '{:.2f}', 'bright_blue'],  # Shapley pairwise synergy over validation loss (loss difference)
             ['nSynD', 'synergy_loss_diff_nxt', '{:.2f}', 'bright_blue'],  # Shapley pairwise synergy over phrase validation loss (loss difference) [TextCausalLMNext]
+            ['RSyn', 'router_synergy', '{:.2f}', 'green'],  # Shapley pairwise synergy over phrase validation loss (loss difference) [TextCausalLMNext]
+            ['vRSyn', 'router_synergy_val', '{:.2f}', 'green'],  # Shapley pairwise synergy over phrase validation loss (loss difference) [TextCausalLMNext]
+            ['nRSyn', 'router_synergy_nxt', '{:.2f}', 'green'],  # Shapley pairwise synergy over phrase validation loss (loss difference) [TextCausalLMNext]
         ]
         # console_width (:obj:`int`, `required`):
         #     Config console width for table print.
@@ -207,8 +210,7 @@ class ValidatorLogger:
         # === Gather columns and rows ===
         if mark_uids is None:
             mark_uids = list()
-        stats_keys = [set(k for k in stat)
-                    for stat in stats.values() if sort_col in stat]  # all available stats keys with sort_col
+        stats_keys = [set(k for k in stat) for stat in stats.values() if sort_col in stat]  # all available stats keys with sort_col
 
         if len(stats_keys) == 0:
             return  # nothing to print

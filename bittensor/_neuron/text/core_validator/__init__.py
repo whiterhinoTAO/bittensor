@@ -736,28 +736,37 @@ class nucleus( torch.nn.Module ):
         self.pad_token = tokenizer(tokenizer.pad_token)['input_ids'][0]
 
         # Token embeddings project int64 tokens onto representations.
-        self.token_embedding = torch.nn.Embedding( bittensor.__vocab_size__,  bittensor.__network_dim__ )
+        self.token_embedding = torch.nn.Embedding( 
+            bittensor.__vocab_size__,  
+            bittensor.__network_dim__ 
+        )
+        
+        # Positional Encoding
+        self.local_pos_encoder = PositionalEncoding(
+            bittensor.__network_dim__, 
+            self.config.nucleus.dropout
+        )
+        
+        # SGMOE Gates: Instantiating the gates per expert.
+        self.gates = torch.nn.Linear( 
+            bittensor.__network_dim__, 
+            self.max_n, 
+            bias=True 
+        ).to( self.device )
         
         # Routing encoder, projects token embeddings onto context for routing inputs.
-        self.routing_encoder_layers = TransformerEncoderLayer( bittensor.__network_dim__, config.nucleus.nhead, config.nucleus.nhid, config.nucleus.dropout, batch_first=True)
-        self.routing_encoder = TransformerEncoder( self.routing_encoder_layers, 1 )
-
-        # Encoder projects response representations onto hidden units.
-        self.encoder_layers = TransformerEncoderLayer( bittensor.__network_dim__, config.nucleus.nhead, config.nucleus.nhid, config.nucleus.dropout, batch_first=True)
-        self.encoder = TransformerEncoder( self.encoder_layers, config.nucleus.nlayers )
-
-        # Decoder which projects hidden unit representations on to the token dimension.
-        self.decoder = torch.nn.Linear( bittensor.__network_dim__, bittensor.__vocab_size__ , bias=False)
-
-        # Positional Encoding
-        self.local_pos_encoder = PositionalEncoding( bittensor.__network_dim__, self.config.nucleus.dropout )
+        self.routing_encoder_layers = TransformerEncoderLayer( 
+            bittensor.__network_dim__, 
+            config.nucleus.nhead, 
+            config.nucleus.nhid, 
+            config.nucleus.dropout, 
+            batch_first=True
+        )
+        self.routing_encoder = TransformerEncoder( self.routing_encoder_layers, 2 )
 
         # Crosss entropy loss for NTP.    
         self.loss_fct = torch.nn.CrossEntropyLoss()
     
-        # SGMOE Gates: Instantiating the gates per expert.
-        self.gates = torch.nn.Linear( bittensor.__network_dim__, self.max_n, bias=True ).to( self.device )
-
         self.sigmoid = torch.nn.Sigmoid()
 
         self.reset_weights()
@@ -791,16 +800,14 @@ class nucleus( torch.nn.Module ):
         """
         # === Resets all the weights using xavier initialization. ===
         torch.nn.init.xavier_uniform_ ( self.token_embedding.weight )
-        torch.nn.init.xavier_uniform_ ( self.decoder.weight )
-        torch.nn.init.xavier_uniform_( self.gates.weight )
+        torch.nn.init.constant_( self.gates.weight, 1 )
         def init_xavier( component ):
             try:
                 torch.nn.init.xavier_uniform_( component.weight )
             except: pass
         self.routing_encoder.apply( init_xavier )
-        self.encoder.apply( init_xavier )
-        torch.nn.init.xavier_uniform_( self.gates.weight )
-    
+
+
     def forward(
             self,
             inputs: torch.FloatTensor,
@@ -843,8 +850,7 @@ class nucleus( torch.nn.Module ):
         # This prevents cheating and forward-looking when predicting each token in the sequence.
         # src_mask: (torch.FloatTensor) attention mask adds -inf to positions not allowed to attend
         # src_mask.shape = [sequence_len, sequence_len]
-        src_mask = torch.triu(torch.ones(embedding.size(1), embedding.size(1)) * float('-inf'), diagonal=1)
-        src_mask = src_mask.to(self.device)
+        src_mask = torch.triu(torch.ones(embedding.size(1), embedding.size(1)) * float('-inf'), diagonal=1).to(self.device)
 
         # === Apply the positional encoding to help select endpoints ===
         # The positional encoder provides information based on the relative postion of each token
@@ -864,7 +870,7 @@ class nucleus( torch.nn.Module ):
         # routing_score.shape = [metagraph.n]
         # The gates act over the last embedding of the routing_context.
         routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
-
+        print('routing_score', routing_score)
         # Ensure number of queried neurons does not exceed metagraph.n
         num_endpoints = min([self.config.nucleus.topk, metagraph.n])
 
@@ -872,7 +878,7 @@ class nucleus( torch.nn.Module ):
         # Persist object variable self.permute_uids across forward calls.
         # Reset to new permutation of all UIDs once empty.
         if len(self.permute_uids) == 0:  # no more UIDs to query
-            self.permute_uids = torch.randperm(metagraph.n)  # reset to new permutation of all UIDs
+            self.permute_uids = torch.randperm(500)  # reset to new permutation of all UIDs
 
         # === Randomly select num_endpoints UIDs ===
         random_uids = self.permute_uids[:num_endpoints]  # newest selection of UIDs to query
@@ -941,7 +947,8 @@ class nucleus( torch.nn.Module ):
             'scaling_law_power': self.config.nucleus.scaling_law_power, 
             'synergy_scaling_law_power': self.config.nucleus.synergy_scaling_law_power,
             'vlogger': self.vlogger,
-            'logging': self.config.logging.debug or self.config.logging.trace
+            'logging': self.config.logging.debug or self.config.logging.trace,
+            'device': self.device,
         }
 
         loss = torch.tensor(0.).to(self.device)  # to accumulate neuron_loss and routing_loss over synapses
@@ -1099,7 +1106,8 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
                      times: List[torch.FloatTensor], routing_score: torch.FloatTensor,
                      inputs: torch.FloatTensor, validation_len: int, loss_fct: Callable,                     
                      scaling_law_power: float, synergy_scaling_law_power: float, vlogger:ValidatorLogger,
-                     logits_divergence_penalty: float,logging, synapse: 'bittensor.TextCausalLMNext' = None, index_s: int = 0
+                     logits_divergence_penalty: float,logging, synapse: 'bittensor.TextCausalLMNext' = None, index_s: int = 0, device: torch.cuda.device = 'cpu',
+
                      ) -> Tuple[torch.FloatTensor, Dict]:
     r"""
     Calculate Shapley values and neuron response validation measure statistics, given TextCausalLMNext synapse responses.
@@ -1161,6 +1169,10 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
                                     torch.exp(-second['losses_nxt'])) / 2 + 1e-40).mean()
 
         return measured_loss
+    
+    def _router_synergy(response):
+        _losses_val, _losses = phrase_cross_entropy(inputs_nxt, response, reduce=True)
+        return _losses_val
 
     shapley_start_time = time.time()
     loss, stats, unsuccessful = shapley_base(uids, query_responses, return_ops, times, routing_score,
@@ -1179,6 +1191,10 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
     logger.info(f'{str(synapse)} \t| Shapley synergy values (power={synergy_scaling_law_power:.1f}) '
                 f'<dim>[{time.time() - synergy_start_time:.3g}s]</dim>')
 
+    router_synergy_start_time = time.time()
+    boosted_params = router_synergy(stats, uids, inputs,  _router_synergy, '_nxt', query_responses, return_ops, routing_score, device)
+    logger.info(f'{str(synapse)} \t| Router synergy values (power={boosted_params:.1f}) ' f'<dim>[{time.time() - router_synergy_start_time:.3g}s]</dim>')
+    
     # === Shapley value combination ===
     # Combine base values with synergy approximation to get final Shapley values.
     for s in stats.values():
@@ -1288,7 +1304,6 @@ def shapley_base(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
 
     return neuron_loss + routing_loss, stats, unsuccessful
 
-
 def logits_divergence(stats: Dict, uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]],
                       return_ops: List[torch.LongTensor], times: List[torch.FloatTensor],
                       index_s: int = 0, ext: str = None):
@@ -1387,7 +1402,6 @@ def logits_divergence(stats: Dict, uids: torch.Tensor, query_responses: List[Lis
                 except Exception as e:
                     logger.warning(f'Synapse {index_s} error (logits_divergence)\t| UID {_uid}: {e}')
 
-
 def shapley_synergy(stats: Dict, synergy: Callable, ext: str, target: torch.Tensor = None, scaling_law_power: float = 0.5):
     r"""
     Calculates Shapley synergy for coalition size 2, measured performance above expected performance.
@@ -1408,6 +1422,7 @@ def shapley_synergy(stats: Dict, synergy: Callable, ext: str, target: torch.Tens
             syn_loss_diff (:obj:`Dict`, `required`):
                 Dictionary table of pairwise synergies as loss reductions, with direct loss on diagonal.
     """
+
     # === Shapley synergy approximation ===
     # Shapley values - second level - coalition size 2
     # Synergy = measured performance above expected performance
@@ -1453,6 +1468,63 @@ def shapley_synergy(stats: Dict, synergy: Callable, ext: str, target: torch.Tens
 
     return syn_loss_diff
 
+def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_loss: Callable, ext: str, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor], routing_score: torch.FloatTensor, device: torch.cuda.device):
+    
+    successes = [ op.item() == 1 for op in return_ops]
+    topk_routing_scores = routing_score[uids]
+    response_success = [(r[0],) for r, op in list(zip(query_responses, return_ops)) if op == 1]
+    normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
+
+    mixed_response = mix_response(response_success, normalized_topk_routing_scores, device)
+    averaged_response = mix_response(response_success, torch.ones_like(normalized_topk_routing_scores) / len(normalized_topk_routing_scores), device)
+        
+    loss_routing = cal_loss(mixed_response)
+    loss_routing_baseline = cal_loss(averaged_response)
+    
+    boosted_params = scaling_law_loss_to_params(loss_routing) - scaling_law_loss_to_params(loss_routing_baseline)
+    boosted_params = torch.clamp(boosted_params, 0)
+    print(boosted_params)
+    # powered down number of params, e.g. dynamic range 3 → 6 nats for scaling_law_power=0.5
+    # pow_measured_params = torch.pow(measured_params, scaling_law_power)
+    # pow_expected_params = torch.pow(expected_params, scaling_law_power)
+
+    for uid, score in zip(uids, normalized_topk_routing_scores):
+        print(uid, score, boosted_params * score )
+        stats[uid.item()]['router_synergy' + ext] = boosted_params * score 
+    
+    return boosted_params
+
+def sort_response_by_token(response, batch_size = None, all_logits = None, device = 'cpu'):
+    if batch_size == None:
+        batch_size = response.shape[0]
+    if all_logits == None:
+        all_logits = torch.tensor(list(range(bittensor.__vocab_size__)))
+        
+    response_sort = torch.zeros(batch_size, bittensor.__vocab_size__ , 2).to(device)
+    response_sort[:, :, 1] = all_logits.repeat(batch_size, 1)
+
+    for seq in range(batch_size):
+        r_batch = response[seq, : -1, :].to(device)
+        index = r_batch[:, 1].long()
+        prob = r_batch[:, 0]
+        response_sort[seq, :, 0] = response_sort[seq, :, 0].scatter_add(0, index, prob) # to(self.config.nucleus.device)
+
+    return response_sort
+
+def mix_response(response_success, normalized_topk_routing_scores, device):
+    batch_size = response_success[0][0].shape[0]
+    mixed_response = torch.zeros(batch_size, bittensor.__vocab_size__ + 1  , 2).to(device)
+    all_logits = torch.tensor(list(range(bittensor.__vocab_size__)))
+    mixed_response[:, : -1, 1] = all_logits.repeat(batch_size, 1)
+
+    for r, w in list(zip(response_success, normalized_topk_routing_scores)):
+        response_sorted = sort_response_by_token(r[0], batch_size, all_logits, device)
+        mixed_response[:, :-1, 0] += w * response_sorted[:, :, 0].to(device)
+
+    for batch in range(batch_size):
+        mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
+
+    return mixed_response
 
 def format_predictions(uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]],
                        return_ops: List[torch.LongTensor], inputs: torch.FloatTensor,
