@@ -29,7 +29,7 @@ import substrateinterface
 from bittensor._subtensor.subtensor_mock import mock_subtensor, Mock_Subtensor
 from bittensor.utils.balance import Balance
 from substrateinterface.base import Keypair
-from tests.helpers import CLOSE_IN_VALUE
+from tests.helpers import CLOSE_IN_VALUE, get_mock_hotkey
 
 
 _subtensor_mock: Mock_Subtensor = None
@@ -279,13 +279,13 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(0),
                 get_stake = MagicMock(
                     return_value = mock_stakes[config.hotkeys[0]]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 ),
-
                 _coldkey = mock_coldkey,
                 coldkey =  MagicMock(
                             return_value=mock_coldkey
@@ -295,13 +295,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -354,13 +355,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in list(mock_stakes.keys())
+            ) for idx, hk in enumerate(list(mock_stakes.keys()))
         ]
 
         mock_wallets[0]._coldkey = mock_coldkey
@@ -404,13 +406,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in list(mock_stakes.keys())
+            ) for idx, hk in enumerate(list(mock_stakes.keys()))
         ]
 
         mock_wallets[0]._coldkey = mock_coldkey
@@ -457,6 +460,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(0),
                 get_stake = MagicMock(
                     return_value = mock_stakes[config.hotkeys[0]]
                 ),
@@ -473,13 +477,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -532,6 +537,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(0),
                 get_stake = MagicMock(
                     return_value = mock_stakes[config.hotkeys[0]]
                 ),
@@ -548,13 +554,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -610,6 +617,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(0),
                 is_registered = MagicMock(
                     return_value = True
                 ),
@@ -623,10 +631,11 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -677,10 +686,11 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in mock_hotkeys
+            ) for idx, hk in enumerate(mock_hotkeys)
         ]
 
         mock_wallets[0]._coldkey = mock_coldkey
@@ -726,10 +736,11 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in mock_hotkeys
+            ) for idx, hk in enumerate(mock_hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -782,6 +793,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(0),
                 get_stake = MagicMock(
                     return_value = mock_stakes[config.hotkeys[0]]
                 ),
@@ -798,13 +810,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -863,6 +876,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(0),
                 get_stake = MagicMock(
                     return_value = mock_stakes[config.hotkeys[0]]
                 ),
@@ -879,13 +893,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -947,6 +962,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(0),
                 get_stake = MagicMock(
                     return_value = mock_stakes[config.hotkeys[0]]
                 ),
@@ -963,13 +979,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -1026,6 +1043,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(0),
                 get_stake = MagicMock(
                     return_value = mock_stakes[config.hotkeys[0]]
                 ),
@@ -1042,13 +1060,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -1114,6 +1133,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = config.hotkeys[0],
+                hotkey = get_mock_hotkey(config.hotkeys[0]),
                 get_stake = MagicMock(
                     return_value = mock_stakes[config.hotkeys[0]]
                 ),
@@ -1130,13 +1150,14 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             SimpleNamespace(
                 name = config.wallet.name,
                 hotkey_str = hk,
+                hotkey = get_mock_hotkey(idx),
                 get_stake = MagicMock(
                     return_value = mock_stakes[hk]
                 ),
                 is_registered = MagicMock(
                     return_value = True
                 )
-            ) for hk in config.hotkeys
+            ) for idx, hk in enumerate(config.hotkeys)
         ]
 
         # The 0th wallet is created twice during unstake
@@ -1170,7 +1191,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
         config.subtensor.register.update_interval = 50_000
         config.no_prompt = True
 
-        mock_wallet = self.generate_wallet()
+        mock_wallet = generate_wallet()
         
         with patch('bittensor.wallet', return_value=mock_wallet) as mock_create_wallet:
             cli = bittensor.cli(config)
@@ -1194,7 +1215,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
 
         subtensor = bittensor.subtensor(config)
 
-        mock_wallet = self.generate_wallet()
+        mock_wallet = generate_wallet()
         with patch('bittensor.wallet', return_value=mock_wallet) as mock_create_wallet:
             
             old_stake = subtensor.get_stake_for_coldkey_and_hotkey(
