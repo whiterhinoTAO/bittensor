@@ -314,7 +314,7 @@ class neuron:
 
             # === Start forward requests ===
             self.metagraph_sync()
-            self.nucleus.target_uids = self.metagraph.I.sort()[1][torch.tensor(range(0, 4000, 80))]
+            self.nucleus.target_uids = self.metagraph.I.sort()[1][torch.tensor(range(0, 4000, int(4000/self.config.nucleus.topk)))]
             
             # === Run ===
             # Iterates through epochs.
@@ -1529,10 +1529,10 @@ def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_lo
         )
         stats[uid.item()]['router_synergy' + ext] = boosted_params * score 
 
-    penalty = (abs(normalized_topk_routing_scores - normalized_topk_routing_scores.mean()) ** 0.5 ).sum()
+    penalty = (abs(normalized_topk_routing_scores - normalized_topk_routing_scores.mean()) ** 2 ).sum()
     
     print('loss_routing, penalty', loss_routing, penalty)
-    return loss_routing + 0.5*penalty, boosted_params
+    return loss_routing + 0.5 * penalty, boosted_params
 
 def sort_response_by_token(response, batch_size = None, all_logits = None, device = 'cpu'):
     if batch_size == None:
