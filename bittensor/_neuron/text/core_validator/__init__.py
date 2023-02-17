@@ -182,7 +182,7 @@ class neuron:
     @classmethod
     def add_args( cls, parser ):
         parser.add_argument('--neuron.name', type=str, help='Trials for this miner go in miner.root / (wallet_cold - wallet_hot) / miner.name ', default='core_validator')
-        parser.add_argument('--neuron.learning_rate', type=float, help='Training initial learning rate.', default=0.1 )
+        parser.add_argument('--neuron.learning_rate', type=float, help='Training initial learning rate.', default= 0.1)
         parser.add_argument('--neuron.momentum', type=float, help='optimizer momentum.', default=0.8 )
         parser.add_argument('--neuron.blocks_per_epoch', type=int, help='Blocks per epoch, -1 value means we use the chain value.', default = -1 )
         parser.add_argument('--neuron.epochs_until_reset', type=int, help='Number of epochs before weights are reset.', default = -1 )
@@ -314,6 +314,7 @@ class neuron:
 
             # === Start forward requests ===
             self.metagraph_sync()
+            self.nucleus.target_uids = self.metagraph.I.sort()[1][torch.tensor(range(0, 4000, 80))]
             
             # === Run ===
             # Iterates through epochs.
@@ -613,6 +614,9 @@ class neuron:
                 else:
                     stats.setdefault(key, _stats[key])
 
+            if 'routing_score' in _stats:
+                stats['routing_score'] = _stats['routing_score']
+
             # === Extra stats computation ===
             # Compute values on EMA stats, such as the scaling law on EMA loss.
             # Required for values that need to be computed on longer-term stats.
@@ -771,6 +775,13 @@ class nucleus( torch.nn.Module ):
 
         self.reset_weights()
 
+        self.routing_score_history = []        
+
+    def save_routing_score(self, routing_score):
+        print('routing_score', routing_score)
+        self.routing_score_history.append(routing_score)
+        torch.save(self.routing_score_history, f'{self.config.neuron.full_path}/routing_score.torch')
+
     @classmethod
     def add_args( cls, parser ):
         parser.add_argument('--nucleus.topk', type=int, help='the number of peers queried during each remote forward call', default = 20 )
@@ -800,7 +811,7 @@ class nucleus( torch.nn.Module ):
         """
         # === Resets all the weights using xavier initialization. ===
         torch.nn.init.xavier_uniform_ ( self.token_embedding.weight )
-        torch.nn.init.constant_( self.gates.weight, 1 )
+        torch.nn.init.constant_( self.gates.weight, 0.01 )
         def init_xavier( component ):
             try:
                 torch.nn.init.xavier_uniform_( component.weight )
@@ -870,7 +881,8 @@ class nucleus( torch.nn.Module ):
         # routing_score.shape = [metagraph.n]
         # The gates act over the last embedding of the routing_context.
         routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
-        print('routing_score', routing_score)
+        self.save_routing_score(routing_score)
+
         # Ensure number of queried neurons does not exceed metagraph.n
         num_endpoints = min([self.config.nucleus.topk, metagraph.n])
 
@@ -878,7 +890,7 @@ class nucleus( torch.nn.Module ):
         # Persist object variable self.permute_uids across forward calls.
         # Reset to new permutation of all UIDs once empty.
         if len(self.permute_uids) == 0:  # no more UIDs to query
-            self.permute_uids = torch.randperm(500)  # reset to new permutation of all UIDs
+            self.permute_uids = self.target_uids[torch.randperm(len(self.target_uids))]  # reset to new permutation of all UIDs
 
         # === Randomly select num_endpoints UIDs ===
         random_uids = self.permute_uids[:num_endpoints]  # newest selection of UIDs to query
@@ -949,6 +961,7 @@ class nucleus( torch.nn.Module ):
             'vlogger': self.vlogger,
             'logging': self.config.logging.debug or self.config.logging.trace,
             'device': self.device,
+            'path': self.config.neuron.full_path 
         }
 
         loss = torch.tensor(0.).to(self.device)  # to accumulate neuron_loss and routing_loss over synapses
@@ -966,13 +979,14 @@ class nucleus( torch.nn.Module ):
 
         return loss, neuron_stats
 
+routing_loss_history = []
+
 def scaling_law_loss_to_params(loss):
     r""" (OpenAI scaling laws) Kaplan, Jared, et al. "Scaling laws for neural language models." arXiv:2001.08361 (2020)
     """
     num_params = torch.exp(torch.log(torch.tensor(8.8e13).to(loss.device)) -
                            torch.log(torch.clamp(loss, 1.69)) / 0.076)  # loss lower bound 1.69 is entropy of natural text
     return num_params
-
 
 def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor],
                  times: List[torch.FloatTensor], routing_score: torch.FloatTensor,
@@ -1101,13 +1115,12 @@ def textcausallm(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
 
     return loss, stats
 
-
 def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor],
                      times: List[torch.FloatTensor], routing_score: torch.FloatTensor,
                      inputs: torch.FloatTensor, validation_len: int, loss_fct: Callable,                     
                      scaling_law_power: float, synergy_scaling_law_power: float, vlogger:ValidatorLogger,
                      logits_divergence_penalty: float,logging, synapse: 'bittensor.TextCausalLMNext' = None, index_s: int = 0, device: torch.cuda.device = 'cpu',
-
+                     path: str = '~'
                      ) -> Tuple[torch.FloatTensor, Dict]:
     r"""
     Calculate Shapley values and neuron response validation measure statistics, given TextCausalLMNext synapse responses.
@@ -1192,7 +1205,17 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
                 f'<dim>[{time.time() - synergy_start_time:.3g}s]</dim>')
 
     router_synergy_start_time = time.time()
-    boosted_params = router_synergy(stats, uids, inputs,  _router_synergy, '_nxt', query_responses, return_ops, routing_score, device)
+    routing_loss, boosted_params = router_synergy(
+        stats, 
+        uids, 
+        inputs,  
+        _router_synergy, 
+        '_nxt', 
+        query_responses, 
+        return_ops, 
+        routing_score, 
+        device,
+        path)
     logger.info(f'{str(synapse)} \t| Router synergy values (power={boosted_params:.1f}) ' f'<dim>[{time.time() - router_synergy_start_time:.3g}s]</dim>')
     
     # === Shapley value combination ===
@@ -1223,8 +1246,7 @@ def textcausallmnext(uids: torch.Tensor, query_responses: List[List[torch.FloatT
     # Prints the return codes and response times of unsuccessful responses
     unsuccess(str(synapse), unsuccessful)
 
-    return loss, stats
-
+    return loss + routing_loss, stats
 
 def shapley_base(uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor],
                  times: List[torch.FloatTensor], routing_score: torch.FloatTensor,
@@ -1302,7 +1324,7 @@ def shapley_base(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
                            'routing_score': routing_score[_uid]}
             unsuccessful += [(_uid, return_ops[index][index_s], times[index][index_s])]
 
-    return neuron_loss + routing_loss, stats, unsuccessful
+    return neuron_loss, stats, unsuccessful
 
 def logits_divergence(stats: Dict, uids: torch.Tensor, query_responses: List[List[torch.FloatTensor]],
                       return_ops: List[torch.LongTensor], times: List[torch.FloatTensor],
@@ -1468,10 +1490,12 @@ def shapley_synergy(stats: Dict, synergy: Callable, ext: str, target: torch.Tens
 
     return syn_loss_diff
 
-def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_loss: Callable, ext: str, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor], routing_score: torch.FloatTensor, device: torch.cuda.device):
+def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_loss: Callable, ext: str, query_responses: List[List[torch.FloatTensor]], return_ops: List[torch.LongTensor], routing_score: torch.FloatTensor, device: torch.cuda.device, path: str):
     
     successes = [ op.item() == 1 for op in return_ops]
+    
     topk_routing_scores = routing_score[uids]
+    
     response_success = [(r[0],) for r, op in list(zip(query_responses, return_ops)) if op == 1]
     normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
 
@@ -1483,16 +1507,32 @@ def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_lo
     
     boosted_params = scaling_law_loss_to_params(loss_routing) - scaling_law_loss_to_params(loss_routing_baseline)
     boosted_params = torch.clamp(boosted_params, 0)
-    print(boosted_params)
+    
+    print('boost', boosted_params, scaling_law_loss_to_params(loss_routing), scaling_law_loss_to_params(loss_routing_baseline))
+    print('routing loss, baseline loss', loss_routing, loss_routing_baseline)
+    print('routing score', routing_score)
+    print('normalized topk routing scores', normalized_topk_routing_scores)
+
+    routing_loss_history.append((loss_routing.item(), loss_routing_baseline.item()))
+    torch.save(routing_loss_history, f'{path}/routing_loss.pt')
+
     # powered down number of params, e.g. dynamic range 3 → 6 nats for scaling_law_power=0.5
     # pow_measured_params = torch.pow(measured_params, scaling_law_power)
     # pow_expected_params = torch.pow(expected_params, scaling_law_power)
 
-    for uid, score in zip(uids, normalized_topk_routing_scores):
-        print(uid, score, boosted_params * score )
+    for uid, score, r in zip(uids, normalized_topk_routing_scores, response_success):
+        print(
+            uid.item(), 
+            '\tw', round((score).item(), 4), 
+            'w*boosted', round((boosted_params * score).item(), 4), 
+            'loss',round((cal_loss(r[0])).item(),4)
+        )
         stats[uid.item()]['router_synergy' + ext] = boosted_params * score 
+
+    penalty = (abs(normalized_topk_routing_scores - normalized_topk_routing_scores.mean()) ** 0.5 ).sum()
     
-    return boosted_params
+    print('loss_routing, penalty', loss_routing, penalty)
+    return loss_routing + 0.5*penalty, boosted_params
 
 def sort_response_by_token(response, batch_size = None, all_logits = None, device = 'cpu'):
     if batch_size == None:
@@ -1567,7 +1607,6 @@ def format_predictions(uids: torch.Tensor, query_responses: List[List[torch.Floa
         batch_predictions += [(task, predictions)]
 
     return batch_predictions
-
 
 def unsuccess(_name, _unsuccessful):
     r""" Prints the return codes and response times of unsuccessful responses
