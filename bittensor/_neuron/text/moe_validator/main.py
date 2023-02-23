@@ -24,4 +24,4 @@ Example:
 import bittensor
 if __name__ == "__main__":
     bittensor.utils.version_checking()
-    bittensor.neurons.core_validator.neuron().run()
+    bittensor.neurons.moe_validator.neuron().run()

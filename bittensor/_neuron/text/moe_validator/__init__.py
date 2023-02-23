@@ -29,7 +29,6 @@ import torch
 import os
 import wandb
 import math
-import random
 import pandas
 import traceback
 from rich import print
@@ -38,12 +37,12 @@ from rich.style import Style
 from rich.table import Table
 from rich.errors import MarkupError
 from rich.traceback import install
-from typing import List, Tuple, Callable, Dict, Any, Union, Set
+from typing import List, Tuple, Callable, Dict, Any, Union
 
-from ..neuron_utilities import ThreadQueue, PositionalEncoding, calc_loss_fct
+from ..neuron_utilities import PositionalEncoding, calc_loss_fct
 from bittensor.utils.tokenizer_utils import phrase_cross_entropy, topk_tokens_to_vocab_size, prune_tokens
+from cortex.models.mixtures import BTMixtureModel
 
-from torch.nn.functional import kl_div
 from torch.nn.utils import clip_grad_norm_
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from loguru import logger
@@ -63,6 +62,7 @@ neuron_stats_columns = [
     ['mUpd', 'updates_shapley_values_min', '{}', 'bright_yellow'],  # number of exponential moving average updates to mShap
     ['nTime', 'response_time_nxt', '{:.2f}', 'yellow'],  # response time to TextCausalLMNext forward requests [TextCausalLMNext]
     ['sTime', 'response_time', '{:.2f}', 'yellow'],  # response time to TextCausalLM forward requests
+    ['hTime', 'response_time_hs', '{:.2f}', 'yellow'],  # response time to TextLastHiddenState forward requests
     ['Route', 'routing_score', '{:.3f}', 'grey30'],  # validator routing score (higher preferred)
     ['Weight', 'weight', '{:.5f}', 'green'],  # weight set on substrate (each epoch)
     ['nShap!', 'shapley_values_nxt!', '{:.0f}', 'magenta'],  # Shapley value (=vBase+vSyn) for phrase validation (zeroing) [TextCausalLMNext]
@@ -89,6 +89,9 @@ neuron_stats_columns = [
     ['sSynD', 'synergy_loss_diff', '{:.2f}', 'bright_blue'],  # Shapley pairwise synergy over sequence loss (loss difference)
     ['vSynD', 'synergy_loss_diff_val', '{:.2f}', 'bright_blue'],  # Shapley pairwise synergy over validation loss (loss difference)
     ['nSynD', 'synergy_loss_diff_nxt', '{:.2f}', 'bright_blue'],  # Shapley pairwise synergy over phrase validation loss (loss difference) [TextCausalLMNext]
+    ['hGate', 'moe_gate_score', '{:.5f}', 'magenta'],
+    ['hGate!', 'moe_gate_score!', '{:.5f}', 'magenta'],
+    # Shapley pairwise synergy over phrase validation loss (loss difference) [TextCausalLMNext]
 ]
 
 
@@ -166,10 +169,20 @@ class neuron:
         self.metagraph = bittensor.metagraph ( config = self.config, subtensor = self.subtensor ) if metagraph == None else metagraph
         self.dendrite = bittensor.dendrite ( config = self.config, wallet = self.wallet, max_active_receptors = 0 ) if dendrite == None else dendrite # Dendrite should not store receptor in validator.
         self.axon = bittensor.axon ( config = self.config, wallet = self.wallet ) if axon == None else axon
-        self.device = torch.device ( device = self.config.neuron.device )    
-        self.nucleus = nucleus ( config = self.config, device = self.device, subtensor = self.subtensor ).to( self.device )
-        self.dataset = (bittensor.dataset(config=self.config, batch_size=self.subtensor.validator_batch_size,
-                                          block_size=self.subtensor.validator_sequence_length + self.config.neuron.validation_len + self.subtensor.prune_len)
+        self.device = torch.device ( device = self.config.neuron.device )
+
+        # Temporarily use cached metagraph for development
+        try:
+            self.metagraph.load()
+        except:
+            self.metagraph.sync().save()
+        if self.subtensor.block - self.metagraph.block.item() > 1:
+            self.metagraph.sync().save()
+
+        self.nucleus = nucleus ( config = self.config, device = self.device,
+                                 metagraph=self.metagraph, wallet=self.wallet).to( self.device )
+        self.dataset = (bittensor.dataset(config=self.config, batch_size=4,
+                                          block_size=64 + self.config.neuron.validation_len + self.subtensor.prune_len)
                         if dataset is None else dataset)
         self.optimizer = torch.optim.SGD(
             self.nucleus.parameters(), lr=self.config.neuron.learning_rate, momentum=self.config.neuron.momentum
@@ -186,14 +199,9 @@ class neuron:
         self.alpha = 0.1  # EMA coefficient in [0, 1], higher alpha discounts older observations faster
 
 
-        if self.config.neuron.validation_synapse == 'TextCausalLMNext':
-            self.weight_key = 'shapley_values_nxt'  # stat key + ! to calculate neuron weights with
-            # stat keys to duplicate (['key']->['key!']) and push zero to its EMA if neuron non-responsive
-            self.synapse_keys = ['shapley_values_nxt']
-        else:
-            self.weight_key = 'shapley_values_min'  # stat key + ! to calculate neuron weights with
-            # stat keys to duplicate (['key']->['key!']) and push zero to its EMA if neuron non-responsive
-            self.synapse_keys = ['shapley_values_min']
+        self.weight_key = "moe_gate_score"
+        self.response_key = "responded_hs"
+        self.synapse_keys = ['moe_gate_score']
 
         # === Prometheus stats ===
         # Turn this off by passing the --prometheus.off flag
@@ -421,9 +429,9 @@ class neuron:
         self.prometheus_gauges.labels("scaling_law_power").set( self.config.nucleus.scaling_law_power )
         self.prometheus_gauges.labels("synergy_scaling_law_power").set( self.config.nucleus.synergy_scaling_law_power )
 
-        # === Update dataset size ===
-        if (batch_size != self.dataset.batch_size) or (sequence_length + validation_len + prune_len != self.dataset.block_size):
-            self.dataset.set_data_size(batch_size, sequence_length + validation_len + prune_len)
+        # # === Update dataset size ===
+        # if (batch_size != self.dataset.batch_size) or (sequence_length + validation_len + prune_len != self.dataset.block_size):
+        #     self.dataset.set_data_size(batch_size, sequence_length + validation_len + prune_len)
 
         # === Logs ===
         if self.config.using_wandb:
@@ -463,7 +471,8 @@ class neuron:
             # === Forward ===
             # Forwards inputs through the network and returns the loss
             # and endpoint scores using shapely approximation of salience.
-            loss, stats = self.nucleus( next(self.dataset) , self.metagraph, self.dendrite )
+            inputs = next(self.dataset)
+            loss, stats = self.nucleus( inputs , self.metagraph )
             self.prometheus_gauges.labels("loss").set( loss.item() )
 
             # === Backward ===
@@ -594,12 +603,13 @@ class neuron:
               f'min:[bold]{sample_weights.min().item():.4g}[/bold] [/white] '
               f'\[{max_weight_limit:.4g} allowed]')
 
-        self.subtensor.set_weights(
-            uids=sample_uids.detach().to('cpu'),
-            weights=sample_weights.detach().to('cpu'),
-            wallet=self.wallet,
-            wait_for_finalization=self.config.neuron.wait_for_finalization,
-        )
+        # Disable for development reasons, cause we test our code on nakamoto now.
+        #self.subtensor.set_weights(
+            #uids=sample_uids.detach().to('cpu'),
+            #weights=sample_weights.detach().to('cpu'),
+            #wallet=self.wallet,
+            #wait_for_finalization=self.config.neuron.wait_for_finalization,
+        #)
 
         # === Wandb Logs ===
         # Optionally send validator logs to wandb.
@@ -672,26 +682,6 @@ class neuron:
                 else:
                     stats.setdefault(key, _stats[key])
 
-            # === Extra stats computation ===
-            # Compute values on EMA stats, such as the scaling law on EMA loss.
-            # Required for values that need to be computed on longer-term stats.
-            extra_stats = {}
-            if 'loss_nxt' in _stats and 'loss_nxt' in stats:  # elif neuron not responsive then omit
-                # estimate the effective number of model parameters from EMA loss
-                _num_params = scaling_law_loss_to_params(torch.tensor(stats['loss_nxt']))
-
-                # powered down number of params, e.g. dynamic range 3 → 6 nats for scaling_law_power=0.5
-                _pow_num_params = torch.pow(_num_params, self.config.nucleus.scaling_law_power)
-
-                extra_stats.update({'est_params_nxt': _num_params.item(), 'base_params_nxt': _pow_num_params.item()})
-
-                if 'synergy_nxt' in stats:
-                    extra_stats['shapley_values_nxt'] = extra_stats['base_params_nxt'] + stats['synergy_nxt']
-
-                if 'logits_excess_nxt' in stats:
-                    # penalize by logits divergence excess
-                    extra_stats['shapley_values_nxt'] /= 1 + self.config.nucleus.logits_divergence * stats['logits_excess_nxt']
-
             # === EMA zeroing update ===
             # Push zero into EMA for synapse_keys to exponentially decay weighting keys if neuron non-responsive
             if 'updates!' in stats:
@@ -699,15 +689,13 @@ class neuron:
             else:
                 stats.setdefault('updates!', 1)  # number of EMA zeroing updates init to zero
 
+            extra_stats = {}
             for key in self.synapse_keys:
                 zkey = key + '!'  # zeroing key
                 stats.setdefault(zkey, 0.)  # initialize zkey val to zero to gradually increase with observations
-                if key in _stats and not math.isnan(_stats[key]):
+                if key in _stats and not math.isnan(_stats[key]) and _stats[self.response_key] is True:
                     responsive_uids += [_uid]
                     stats[zkey] = (1 - self.alpha) * stats[zkey] + self.alpha * _stats[key]
-                elif key in extra_stats and not math.isnan(extra_stats[key]):
-                    responsive_uids += [_uid]
-                    stats[zkey] = (1 - self.alpha) * stats[zkey] + self.alpha * extra_stats[key]
                 else:
                     stats[zkey] = (1 - self.alpha) * stats[zkey]  # + self.alpha * 0
 
@@ -821,61 +809,29 @@ class neuron:
 class nucleus( torch.nn.Module ):
     """ Nucleus class which holds the validator model.
     """
-    def __init__( self, config, device, subtensor ):
+    def __init__( self, config, device, metagraph, wallet):
         super(nucleus, self).__init__()
         self.config = config
 
-        self.config.nucleus.scaling_law_power = subtensor.scaling_law_power if self.config.nucleus.scaling_law_power == -1 else self.config.nucleus.scaling_law_power
-        self.config.nucleus.synergy_scaling_law_power = subtensor.synergy_scaling_law_power if self.config.nucleus.synergy_scaling_law_power == -1 else self.config.nucleus.synergy_scaling_law_power
-        self.config.nucleus.logits_divergence = subtensor.logits_divergence if self.config.nucleus.logits_divergence == -1 else self.config.nucleus.logits_divergence
+        all_endpoint_hotkeys = [ep.hotkey for ep in metagraph.sync().endpoint_objs]
+
+        self.moe = BTMixtureModel(
+            expert_names = all_endpoint_hotkeys,
+            wallet=wallet,
+            metagraph=metagraph,
+            topk = None,
+            encoding_dimension=1024, # TODO: Add to config
+            log_queries = False,
+            device = config.neuron.device,
+        )
 
         self.device = device
-        self.max_n = subtensor.max_n
         self.permute_uids = []  # iterable of next UIDs to query, reset to permuted UIDs when empty
 
-        tokenizer = bittensor.tokenizer()
-        self.pad_token = tokenizer(tokenizer.pad_token)['input_ids'][0]
-
-        # Token embeddings project int64 tokens onto representations.
-        self.token_embedding = torch.nn.Embedding( bittensor.__vocab_size__,  bittensor.__network_dim__ )
-        
-        # Routing encoder, projects token embeddings onto context for routing inputs.
-        self.routing_encoder_layers = TransformerEncoderLayer( bittensor.__network_dim__, config.nucleus.nhead, config.nucleus.nhid, config.nucleus.dropout, batch_first=True)
-        self.routing_encoder = TransformerEncoder( self.routing_encoder_layers, 1 )
-
-        # Encoder projects response representations onto hidden units.
-        self.encoder_layers = TransformerEncoderLayer( bittensor.__network_dim__, config.nucleus.nhead, config.nucleus.nhid, config.nucleus.dropout, batch_first=True)
-        self.encoder = TransformerEncoder( self.encoder_layers, config.nucleus.nlayers )
-
-        # Decoder which projects hidden unit representations on to the token dimension.
-        self.decoder = torch.nn.Linear( bittensor.__network_dim__, bittensor.__vocab_size__ , bias=False)
-
-        # Positional Encoding
-        self.local_pos_encoder = PositionalEncoding( bittensor.__network_dim__, self.config.nucleus.dropout )
-
-        # Crosss entropy loss for NTP.    
-        self.loss_fct = torch.nn.CrossEntropyLoss()
-    
-        # SGMOE Gates: Instantiating the gates per expert.
-        self.gates = torch.nn.Linear( bittensor.__network_dim__, self.max_n, bias=True ).to( self.device )
-
-        self.sigmoid = torch.nn.Sigmoid()
-
-        self.reset_weights()
 
     @classmethod
     def add_args( cls, parser ):
         parser.add_argument('--nucleus.topk', type=int, help='the number of peers queried during each remote forward call', default = 20 )
-        parser.add_argument('--nucleus.nhid', type=int, help='the dimension of the feedforward network model in nn.TransformerEncoder', default=200 )
-        parser.add_argument('--nucleus.nhead', type=int, help='the number of heads in the multiheadattention models', default = 2 )
-        parser.add_argument('--nucleus.nlayers', type=int, help='the number of nn.TransformerEncoderLayer in nn.TransformerEncoder', default=2 )
-        parser.add_argument('--nucleus.dropout', type=float, help='the dropout value', default=0.2)
-        parser.add_argument('--nucleus.importance', type=float, help='hyperparameter for the importance loss', default=3)
-        parser.add_argument('--nucleus.noise_multiplier', type=float, help='Standard deviation multipler on weights', default=2 )
-        parser.add_argument('--nucleus.no_dendrite_backward', action='store_true', help='Pass backward request to the server side or not', default=False )
-        parser.add_argument('--nucleus.scaling_law_power', type=float, help='Power for modified scaling law, powered down to improve dynamic range, e.g. 3 → 6 nats for 0.5. (default value: -1, pulling from subtensor directly)', default=-1)
-        parser.add_argument('--nucleus.synergy_scaling_law_power', type=float, help='Power for synergy modified scaling law, powered down to improve dynamic range, e.g. 3 → 6 nats for 0.5. (default value: -1, pulling from subtensor directly)', default=-1)
-        parser.add_argument('--nucleus.logits_divergence', type=float, help=' the divergence value for logit anomaly detection (default value: -1, pulling from subtensor directly)', default=-1)
 
     @classmethod
     def config ( cls ):
@@ -887,26 +843,10 @@ class nucleus( torch.nn.Module ):
     def check_config( cls, config: 'bittensor.Config' ):
         pass
 
-    def reset_weights ( self ):
-        r""" Resets the validator weights.
-        """
-        # === Resets all the weights using xavier initialization. ===
-        torch.nn.init.xavier_uniform_ ( self.token_embedding.weight )
-        torch.nn.init.xavier_uniform_ ( self.decoder.weight )
-        torch.nn.init.xavier_uniform_( self.gates.weight )
-        def init_xavier( component ):
-            try:
-                torch.nn.init.xavier_uniform_( component.weight )
-            except: pass
-        self.routing_encoder.apply( init_xavier )
-        self.encoder.apply( init_xavier )
-        torch.nn.init.xavier_uniform_( self.gates.weight )
-    
     def forward(
             self,
             inputs: torch.FloatTensor,
             metagraph: 'bittensor.Metagraph',
-            dendrite: 'bittensor.Dendrite',
     ):
         r"""
         Forward validator pass. Selects endpoints to query and validate, calculates routing_score and Shapley values
@@ -916,8 +856,6 @@ class nucleus( torch.nn.Module ):
                     Tensor inputs to distribute to neurons using query context.
                 metagraph (bittensor.Metagraph):
                     Metagraph object used to query network information.
-                dendrite (bittensor.Dendrite):
-                    Dendrite RPC client used to make network queries.
             Returns:
                 loss (:obj:`torch.FloatTensor`):
                     Loss for training validator nucleus and dendrite backward to endpoints.
@@ -930,41 +868,6 @@ class nucleus( torch.nn.Module ):
         prune_len = self.config.neuron.prune_len  # Number of tokens to prune from each validation input sequence
         inputs = prune_tokens(inputs.to(self.device), prune_len=prune_len, margin=val_len+3)  # prune input sequence without last validation tokens [batch_size, sequence_len]
         inputs_seq = inputs[..., :-val_len]  # sequence without validation tokens [batch_size, sequence_len]
-
-        # === Create the local context used to select endpoints ===
-        # The context tensor returns a hidden unit representation for the text inputs
-        # this context can be used as input to the gates in the next step.
-        # embedding: retrieve learned representation vectors for input vocabulary tokens.
-        # inputs.shape = [batch_size, sequence_len]
-        # embedding.shape = [batch_size, sequence_len, bittensor.__network_dim__]
-        embedding = self.token_embedding(inputs_seq) * math.sqrt(bittensor.__network_dim__)
-
-        # === Create an attention mask ===
-        # The attention mask will mask out parts of the context
-        # This prevents cheating and forward-looking when predicting each token in the sequence.
-        # src_mask: (torch.FloatTensor) attention mask adds -inf to positions not allowed to attend
-        # src_mask.shape = [sequence_len, sequence_len]
-        src_mask = torch.triu(torch.ones(embedding.size(1), embedding.size(1)) * float('-inf'), diagonal=1)
-        src_mask = src_mask.to(self.device)
-
-        # === Apply the positional encoding to help select endpoints ===
-        # The positional encoder provides information based on the relative postion of each token
-        # embedding.shape = [batch_size, sequence_len, bittensor.__network_dim__]
-        # pos_embedding: (torch.FloatTensor) positional encoded embedding.
-        # pos_embedding.shape = [batch_size, sequence_len, bittensor.__network_dim__]
-        pos_embedding = self.local_pos_encoder(embedding)
-
-        # routing_context: (torch.FloatTensor): context tensor which is used to select endpoints.
-        # routing_context.shape = [ batch size, __network_dim__ ]
-        routing_context = self.routing_encoder(pos_embedding, mask=src_mask)
-
-        # === Get gate values for UIDs. ===
-        # We iterate over each of the network UIDs and compute a querying score for each
-        # using the gating function. This returns a score per endpoint per example.
-        # routing_score: (torch.FloatTensor): score per example, per endpoint.
-        # routing_score.shape = [metagraph.n]
-        # The gates act over the last embedding of the routing_context.
-        routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
 
         # Ensure number of queried neurons does not exceed metagraph.n
         num_endpoints = min([self.config.nucleus.topk, metagraph.n])
@@ -983,72 +886,15 @@ class nucleus( torch.nn.Module ):
         # We index into the metagraph's endpoints and return a list of the filtered set of endpoints we wish to query.
         # random_endpoints: List[bittensor.endpoints]: endpoint information for filtered uids.
         # len(neurons) == self.config.nucleus.topk
-        random_endpoints = [metagraph.endpoints[uid] for uid in random_uids]
-        num_endpoints = len(random_endpoints)  # in case len(self.permute_uids) < num_endpoints during random_uids select
+        random_hotkeys = [metagraph.endpoint_objs[uid].hotkey for uid in random_uids]
+        num_endpoints = len(random_hotkeys)  # in case len(self.permute_uids) < num_endpoints during random_uids select
+
+        mix_out = self.moe(inputs=inputs_seq, allowed_experts=random_hotkeys)
 
         logger.info(f'Forward \t| Routing forward <dim>[{time.time() - start_time:.3g}s]</dim>')
         logger.info(f'Dendrite \t| Request {num_endpoints} x {list(inputs_seq.shape)} (prune_len={prune_len})')
-        request_start_time = time.time()
 
-        # === Define which synapse we want to use ===
-        # The synapse defines the task we are sending to the neurons
-        # synapses: List[bittensor.synapse]: synapse information
-        # TODO: WORK IN PROGRESS, prototype
-        if self.config.neuron.validation_synapse == 'TextCausalLMNext':
-            synapses = [(bittensor.synapse.TextCausalLMNext(), textcausallmnext)]
-        else: 
-            synapses = [(bittensor.synapse.TextCausalLM(), textcausallm)]
-
-        # === Query the endpoints ===
-        # Makes the dendrite call into the network returning the representations
-        # for each of the endpoints. The return ops can be used to filter weights and outputs.
-        # query_responses: (List[torch.float64]): responses from each endpoint.
-        # query_responses.shape = self.config.nucleus.topk * num_synapses * [batch_size, sequence_len, synapse_dim]
-        # return_ops: (torch.int64): Return ops.
-        # return_ops.shape = self.config.nucleus.topk * [num_synapses]
-        query_responses, return_ops, times = dendrite.text(
-            endpoints=random_endpoints,
-            inputs=inputs_seq,
-            synapses=[syn for syn, _ in synapses],
-            timeout=bittensor.__blocktime__
-        )
-
-        if self.config.nucleus.no_dendrite_backward:
-            query_responses = [[syn.detach().to(self.device) for syn in res] for res in query_responses]
-            return_ops = [ops.detach().to(self.device) for ops in return_ops]
-            times = [t.detach().to(self.device) for t in times]
-
-        # Send responses to device. This is required to ensure we move the responses
-        # Onto the correct device.
-        for responses in query_responses:
-            for response in responses:
-                response.to(self.device)
-
-        logger.info(f'Dendrite \t| Request {num_endpoints} x {list(inputs_seq.shape)} '
-                    f'<dim>[{time.time() - request_start_time:.3g}s]</dim>')
-
-        # === Prepare validation parameter set ===
-        console_width = self.config.get('width', None)  # console width for rich table displays of synapse measures
-        validation_params = (random_uids, query_responses, return_ops, times, routing_score,
-                             inputs, val_len, self.loss_fct,
-                             self.config.nucleus.scaling_law_power, self.config.nucleus.synergy_scaling_law_power,
-                             self.config.nucleus.logits_divergence,
-                             console_width, self.config.logging.debug or self.config.logging.trace)
-
-        loss = torch.tensor(0.).to(self.device)  # to accumulate neuron_loss and routing_loss over synapses
-        neuron_stats = {}  # to gather neuron synapse validation measures and statistics
-
-        # === Validate synapse responses ===
-        # Iterate over all queried synapses and validate responses
-        for i, (synapse, validate_func) in enumerate(synapses):
-            _loss, stats = validate_func(*validation_params, synapse=synapse, index_s=i)  # validate individual synapse
-            loss += _loss  # add neuron_loss and routing_loss
-
-            for _uid, _stats in stats.items():
-                neuron_stats.setdefault(_uid, {})
-                neuron_stats[_uid].update(_stats)  # gather neuron synapse validation measures and statistics
-
-        return loss, neuron_stats
+        return mix_out.loss, mix_out.stats
 
 
 def scaling_law_loss_to_params(loss):
