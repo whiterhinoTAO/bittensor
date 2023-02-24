@@ -23,11 +23,7 @@ import nest_asyncio
 nest_asyncio.apply()
 
 # Bittensor code and protocol version.
-<<<<<<< HEAD
-__version__ = '3.6.3'
-=======
 __version__ = '4.0.0'
->>>>>>> 80780f6f5e5c890cfac6747cf98066d30b815a00
 version_split = __version__.split(".")
 __version_as_int__ = (100 * int(version_split[0])) + (10 * int(version_split[1])) + (1 * int(version_split[2]))
 __new_signature_version__ = 400
