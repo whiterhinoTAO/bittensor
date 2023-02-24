@@ -249,11 +249,6 @@ class TextLastHiddenState (Synapse):
             return torch.zeros( ( forward_request_tensor.size(0), forward_request_tensor.size(1), bittensor.__network_dim__ ), dtype=torch.float32)
         except:
             return torch.tensor([])
-<<<<<<< HEAD
-            
-=======
-
->>>>>>> 80780f6f5e5c890cfac6747cf98066d30b815a00
     def nill_backward_response_tensor( self, forward_request_tensor: torch.Tensor ) -> torch.Tensor:
         """ Returns a zeroed tensor used as response to a dendrite backward call when the call fails.
         """
