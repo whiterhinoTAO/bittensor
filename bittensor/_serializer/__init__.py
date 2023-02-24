@@ -20,7 +20,6 @@
 import torch
 import numpy as np
 import bittensor
-from typing import Tuple, List, Union, Optional
 
 from . import serializer_impl
 
@@ -71,6 +70,8 @@ class serializer:
             return serializer_impl.TwoClippedUINT8Serializer()
         elif serializer_impl == bittensor.proto.Serializer.ONENORMUINT8:
             return serializer_impl.OneNormUINT8Serializer
+        elif serializer_impl == bittensor.proto.Serializer.HalfSerializer:
+            return serializer_impl.HalfSerializer
         else:
             raise bittensor.serializer.NoSerializerForEnum("No known serialzier for proto type {}".format(serializer_type))
 

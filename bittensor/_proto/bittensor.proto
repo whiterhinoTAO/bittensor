@@ -59,7 +59,7 @@ message Neuron {
 
 // TensorMessage
 // Contains a payload of 1 or more serialized tensors and their definitions.
-// Also contains information to identity and verify the sender. 
+// Also contains information to identify and verify the sender. 
 // Protocol for bittensor-hivemind message passing.
 // SIZE: 136 bytes + (tensor_size)
 message TensorMessage {
@@ -321,6 +321,7 @@ enum Serializer {
 	2CLIPPEDUINT8 = 4; // Clipped -2, +2 uint8 serializer.
 	1NORMUINT8 = 5; // 1 Norm unit8 serializer.
 	PNUINT1 = 6; // PositiveNegativeUINT1Serializer
+	HALF = 7; // HALFSerializer (float16)
 }
 
 // TensorType: [REQUIRED] The tensor type, for use between multipl frameworks.
