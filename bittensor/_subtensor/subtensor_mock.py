@@ -1,3 +1,20 @@
+# The MIT License (MIT)
+# Copyright © 2022 Opentensor Foundation
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated 
+# documentation files (the “Software”), to deal in the Software without restriction, including without limitation 
+# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, 
+# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of 
+# the Software.
+
+# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION 
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
+# DEALINGS IN THE SOFTWARE.
+
 from substrateinterface import SubstrateInterface
 import psutil
 import subprocess
@@ -24,18 +41,20 @@ __type_registery__ = {
                 ["modality", "u8"], 
                 ["hotkey", "AccountId"], 
                 ["coldkey", "AccountId"], 
-                ["active", "u32"],
+                ["active", "bool"],
                 ["last_update", "u64"],
-                ["priority", "u64"],
+                ["validator_permit", "bool"],
                 ["stake", "u64"],
-                ["rank", "u64"],
-                ["trust", "u64"],
-                ["consensus", "u64"],
-                ["incentive", "u64"],
-                ["dividends", "u64"],
+                ["rank", "u16"],
+                ["trust", "u16"],
+                ["consensus", "u16"],
+                # ["validator_trust", "u16"],
+                # ["weight_consensus", "u16"],
+                ["incentive", "u16"],
+                ["dividends", "u16"],
                 ["emission", "u64"],
-                ["bonds", "Vec<(u32, u64)>"],
-                ["weights", "Vec<(u32, u32)>"]
+                ["bonds", "Vec<(u16, u16)>"],
+                ["weights", "Vec<(u16, u16)>"]
             ]
         }
     }

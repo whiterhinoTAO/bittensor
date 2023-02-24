@@ -15,21 +15,9 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER 
 # DEALINGS IN THE SOFTWARE.
 
-import os
-import sys
-from typing import List, Union, Optional
-
-from cachetools import Cache
 
 import bittensor
-from bittensor.utils.balance import Balance
-from fuzzywuzzy import fuzz
-from rich import print
-from rich.prompt import Confirm
-from rich.table import Table
-from rich.tree import Tree
-from tqdm import tqdm
-
+from .commands import *
 
 class CLI:
     """
@@ -41,7 +29,12 @@ class CLI:
                 config (:obj:`bittensor.Config`, `required`): 
                     bittensor.cli.config()
         """
+<<<<<<< HEAD
         if config.get('no_version_checking') != None and not config.no_version_checking:
+=======
+        # (d)efaults to True if config.no_version_checking is not set.
+        if not config.get("no_version_checking", d=True):
+>>>>>>> 80780f6f5e5c890cfac6747cf98066d30b815a00
             try:
                 bittensor.utils.version_checking()
             except:
@@ -52,42 +45,43 @@ class CLI:
         """ Execute the command from config 
         """
         if self.config.command == "run":
-            self.run_miner ()
+            RunCommand.run( self )
         elif self.config.command == "transfer":
-            self.transfer ()
+            TransferCommand.run( self )
         elif self.config.command == "register":
-            self.register()
+            RegisterCommand.run( self )
         elif self.config.command == "unstake":
-            self.unstake()
+            UnStakeCommand.run( self )
         elif self.config.command == "stake":
-            self.stake()
+            StakeCommand.run( self )
         elif self.config.command == "overview":
-            self.overview()
+            OverviewCommand.run( self )
         elif self.config.command == "list":
-            self.list()
+            ListCommand.run( self )
         elif self.config.command == "new_coldkey":
-            self.create_new_coldkey()
+            NewColdkeyCommand.run( self )
         elif self.config.command == "new_hotkey":
-            self.create_new_hotkey()
+            NewHotkeyCommand.run( self )
         elif self.config.command == "regen_coldkey":
-            self.regen_coldkey()
+            RegenColdkeyCommand.run( self )
         elif self.config.command == "regen_coldkeypub":
-            self.regen_coldkeypub()
+            RegenColdkeypubCommand.run( self )
         elif self.config.command == "regen_hotkey":
-            self.regen_hotkey()
+            RegenHotkeyCommand.run( self )
         elif self.config.command == "metagraph":
-            self.metagraph()
+            MetagraphCommand.run( self )
         elif self.config.command == "weights":
-            self.weights()
+            WeightsCommand.run( self )
         elif self.config.command == "set_weights":
-            self.set_weights()
+            SetWeightsCommand.run( self )
         elif self.config.command == "inspect":
-            self.inspect()
+            InspectCommand.run( self )
         elif self.config.command == "query":
-            self.query()
+            QueryCommand.run( self )
         elif self.config.command == "help":
-            self.help()
+            HelpCommand.run( self )
         elif self.config.command == 'update':
+<<<<<<< HEAD
             self.update()
 
     def create_new_coldkey ( self ):
@@ -897,3 +891,17 @@ class CacheException(Exception):
     """
     Exception raised when the cache has an issue or should not be used.
     """
+=======
+            UpdateCommand.run( self )
+        elif self.config.command == 'nominate':
+            NominateCommand.run( self )
+        elif self.config.command == 'delegate':
+            DelegateStakeCommand.run( self )
+        elif self.config.command == 'undelegate':
+            DelegateUnstakeCommand.run( self )
+        elif self.config.command == 'list_delegates':
+            ListDelegatesCommand.run( self )
+        elif self.config.command == 'list_subnets':
+            ListSubnetsCommand.run( self )
+        
+>>>>>>> 80780f6f5e5c890cfac6747cf98066d30b815a00
