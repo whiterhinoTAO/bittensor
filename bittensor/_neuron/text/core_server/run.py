@@ -220,7 +220,7 @@ def serve(
             prometheus_counters.labels("blacklisted").inc()
             return True
     
-    def synapse_check(self, synapse, hotkey, inputs_x=None):
+    def synapse_check(synapse, hotkey, inputs_x=None):
         """
             Custom synapse function to protect certain synapse functions depending on the stake and weight.
             Certain synapses require more compute than others. For instance, TEXT_SEQ_2_SEQ requires a significantly
@@ -234,28 +234,28 @@ def serve(
 
         """
         ## Uid that sent the request
-        incoming_uid = self.metagraph.hotkeys.index(hotkey)
+        incoming_uid = metagraph.hotkeys.index(hotkey)
 
         if synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_LAST_HIDDEN_STATE:
-            if self.metagraph.S[incoming_uid] < self.config.neuron.lasthidden_stake:
+            if metagraph.S[incoming_uid] < config.neuron.lasthidden_stake:
                 return False
             
         elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM:
             batch_size, sequence_len  =  inputs_x[0].size()
-            if (self.metagraph.S[incoming_uid] < self.config.neuron.causallm_stake) \
-                or (batch_size > self.config.neuron.max_batch_size) \
-                or (sequence_len > self.config.neuron.max_sequence_len):
+            if (metagraph.S[incoming_uid] < config.neuron.causallm_stake) \
+                or (batch_size > config.neuron.max_batch_size) \
+                or (sequence_len > config.neuron.max_sequence_len):
                 return False
 
         elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_CAUSAL_LM_NEXT:
             batch_size, sequence_len  =  inputs_x[0].size()
-            if (self.metagraph.S[incoming_uid] < self.config.neuron.causallmnext_stake) \
-                or (batch_size > self.config.neuron.max_batch_size) \
-                or (sequence_len > self.config.neuron.max_sequence_len):
+            if (metagraph.S[incoming_uid] < config.neuron.causallmnext_stake) \
+                or (batch_size > config.neuron.max_batch_size) \
+                or (sequence_len > config.neuron.max_sequence_len):
                 return False
 
         elif synapse.synapse_type == bittensor.proto.Synapse.SynapseType.TEXT_SEQ_2_SEQ:
-            if (self.metagraph.S[incoming_uid] < self.config.neuron.seq2seq_stake) and (self.metagraph.S[incoming_uid,  self.uid]):
+            if (metagraph.S[incoming_uid] < config.neuron.seq2seq_stake) and (metagraph.S[incoming_uid,  uid]):
                 return False     
         else:
             return False
@@ -361,6 +361,8 @@ def serve(
     last_set_block = subtensor.get_current_block()
     blocks_per_epoch = subtensor.blocks_per_epoch if config.neuron.blocks_per_epoch == -1 else config.neuron.blocks_per_epoch
     blocks_per_set_weights = subtensor.blocks_per_epoch if config.neuron.blocks_per_set_weights == -1 else config.neuron.blocks_per_set_weights
+    config.neuron.max_batch_size = subtensor.validator_batch_size if config.neuron.max_batch_size == -1 else config.neuron.max_batch_size
+    config.neuron.max_sequence_len = subtensor.validator_sequence_length if config.neuron.max_sequence_len == -1 else config.neuron.max_sequence_len
 
     # --- Run Forever.
     while True:
