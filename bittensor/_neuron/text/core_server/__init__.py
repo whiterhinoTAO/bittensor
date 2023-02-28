@@ -114,6 +114,8 @@ class neuron:
 
         self.model = server(config = config)
         self.config = config
+        self.config.neuron.max_batch_size = subtensor.validator_batch_size(netuid=self.config.netuid) if self.config.neuron.max_batch_size == -1 else self.config.neuron.max_batch_size
+        self.config.neuron.max_sequence_len = subtensor.validator_sequence_length(netuid=self.config.netuid) if self.config.neuron.max_sequence_len == -1 else self.config.neuron.max_sequence_len
         self.config.to_prometheus()
 
         self.subtensor = subtensor
