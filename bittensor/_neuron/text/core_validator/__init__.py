@@ -37,6 +37,7 @@ from rich.console import Console
 from rich.traceback import install
 from typing import List, Tuple, Callable, Dict, Any, Union, Set
 
+from transformers import AutoModel,AutoTokenizer,AutoConfig, AutoModelForCausalLM, RobertaTokenizer
 from ..neuron_utilities import ThreadQueue, PositionalEncoding, calc_loss_fct
 from ..log_utilities import ValidatorLogger
 from bittensor.utils.tokenizer_utils import phrase_cross_entropy, topk_tokens_to_vocab_size, prune_tokens
@@ -128,10 +129,20 @@ class neuron:
         self.dendrite = bittensor.dendrite ( config = self.config, wallet = self.wallet, max_active_receptors = 0 ) if dendrite == None else dendrite # Dendrite should not store receptor in validator.
         self.axon = bittensor.axon ( config = self.config, wallet = self.wallet ) if axon == None else axon
         self.device = torch.device ( device = self.config.neuron.device )    
-        self.nucleus = nucleus ( config = self.config, device = self.device, subtensor = self.subtensor, vlogger = self.vlogger ).to( self.device )
-        self.dataset = (bittensor.dataset(config=self.config, batch_size=self.subtensor.validator_batch_size,
-                                          block_size=self.subtensor.validator_sequence_length + self.config.neuron.validation_len + self.subtensor.prune_len)
-                        if dataset is None else dataset)
+        self.nucleus = nucleus ( 
+                config = self.config, 
+                device = self.device, 
+                subtensor = self.subtensor, 
+                vlogger = self.vlogger, 
+                block_size=self.subtensor.validator_sequence_length + self.config.neuron.validation_len + self.subtensor.prune_len,
+            ).to( self.device )
+        self.dataset = (bittensor.dataset(
+                            config=self.config, 
+                            batch_size=self.subtensor.validator_batch_size, 
+                            block_size=self.subtensor.validator_sequence_length + self.config.neuron.validation_len + self.subtensor.prune_len,
+                            no_tokenizer = True
+                        ) if dataset is None else dataset)
+        
         self.optimizer = torch.optim.SGD(
             self.nucleus.parameters(), lr=self.config.neuron.learning_rate, momentum=self.config.neuron.momentum
         )
@@ -347,7 +358,7 @@ class neuron:
         # === Get params for epoch ===
         # Pulling the latest chain parameters.
         current_block = self.subtensor.block
-        batch_size = self.subtensor.validator_batch_size 
+        batch_size = 50 # self.subtensor.validator_batch_size 
         sequence_length = self.subtensor.validator_sequence_length
         validation_len = self.config.neuron.validation_len  # Number of tokens to holdout for phrase validation beyond sequence context
         # Number of tokens to prune for phrase validation beyond sequence context
@@ -724,10 +735,11 @@ class neuron:
 class nucleus( torch.nn.Module ):
     """ Nucleus class which holds the validator model.
     """
-    def __init__( self, config, device, subtensor, vlogger ):
+    def __init__( self, config, device, subtensor, vlogger, block_size):
         super(nucleus, self).__init__()
         self.config = config
         self.vlogger = vlogger
+        self.block_size = block_size
         self.config.nucleus.scaling_law_power = subtensor.scaling_law_power if self.config.nucleus.scaling_law_power == -1 else self.config.nucleus.scaling_law_power
         self.config.nucleus.synergy_scaling_law_power = subtensor.synergy_scaling_law_power if self.config.nucleus.synergy_scaling_law_power == -1 else self.config.nucleus.synergy_scaling_law_power
         self.config.nucleus.logits_divergence = subtensor.logits_divergence if self.config.nucleus.logits_divergence == -1 else self.config.nucleus.logits_divergence
@@ -736,37 +748,42 @@ class nucleus( torch.nn.Module ):
         self.max_n = subtensor.max_n
         self.permute_uids = []  # iterable of next UIDs to query, reset to permuted UIDs when empty
 
-        tokenizer = bittensor.tokenizer()
-        self.pad_token = tokenizer(tokenizer.pad_token)['input_ids'][0]
-
-        # Token embeddings project int64 tokens onto representations.
-        self.token_embedding = torch.nn.Embedding( 
-            bittensor.__vocab_size__,  
-            bittensor.__network_dim__ 
-        )
+        self.encoder_tokenizer = RobertaTokenizer.from_pretrained("roberta-base") 
+        self.bittensor_tokenizer = bittensor.tokenizer()
         
-        # Positional Encoding
-        self.local_pos_encoder = PositionalEncoding(
-            bittensor.__network_dim__, 
-            self.config.nucleus.dropout
-        )
+        self.encoder = AutoModelForCausalLM.from_pretrained('distilroberta-base')
+
+        # # Token embeddings project int64 tokens onto representations.
+        # self.token_embedding = torch.nn.Embedding( 
+        #     bittensor.__vocab_size__,  
+        #     bittensor.__network_dim__ 
+        # )
+        
+        # # Positional Encoding
+        # self.local_pos_encoder = PositionalEncoding(
+        #     bittensor.__network_dim__, 
+        #     self.config.nucleus.dropout
+        # )
         
         # SGMOE Gates: Instantiating the gates per expert.
         self.gates = torch.nn.Linear( 
-            bittensor.__network_dim__, 
+            self.encoder.config.hidden_size, 
             self.max_n, 
             bias=True 
         ).to( self.device )
         
         # Routing encoder, projects token embeddings onto context for routing inputs.
         self.routing_encoder_layers = TransformerEncoderLayer( 
-            bittensor.__network_dim__, 
+            self.encoder.config.hidden_size, 
             config.nucleus.nhead, 
             config.nucleus.nhid, 
             config.nucleus.dropout, 
             batch_first=True
         )
         self.routing_encoder = TransformerEncoder( self.routing_encoder_layers, 2 )
+        
+        self.activation = torch.nn.GELU()
+        self.layer_norm = torch.nn.LayerNorm(self.encoder.config.hidden_size)
 
         # Crosss entropy loss for NTP.    
         self.loss_fct = torch.nn.CrossEntropyLoss()
@@ -776,12 +793,18 @@ class nucleus( torch.nn.Module ):
         self.reset_weights()
 
         self.routing_score_history = []        
+        self.neuron_loss_history = []        
 
     def save_routing_score(self, routing_score):
         print('routing_score', routing_score)
         self.routing_score_history.append(routing_score)
         torch.save(self.routing_score_history, f'{self.config.neuron.full_path}/routing_score.torch')
 
+    def save_neuron_loss(self, neuron_loss):
+        print('routing_score', neuron_loss)
+        self.neuron_loss_history.append(neuron_loss)
+        torch.save(self.neuron_loss_history, f'{self.config.neuron.full_path}/neuron_loss.torch')
+    
     @classmethod
     def add_args( cls, parser ):
         parser.add_argument('--nucleus.topk', type=int, help='the number of peers queried during each remote forward call', default = 20 )
@@ -810,14 +833,21 @@ class nucleus( torch.nn.Module ):
         r""" Resets the validator weights.
         """
         # === Resets all the weights using xavier initialization. ===
-        torch.nn.init.xavier_uniform_ ( self.token_embedding.weight )
-        torch.nn.init.constant_( self.gates.weight, 0.01 )
+        # torch.nn.init.xavier_uniform_ ( self.token_embedding.weight )
+        torch.nn.init.constant_( self.gates.weight, 0 )
         def init_xavier( component ):
             try:
                 torch.nn.init.xavier_uniform_( component.weight )
             except: pass
         self.routing_encoder.apply( init_xavier )
 
+    def tokenize(self, text_batch, tokenizer):
+        tokens_batch = []
+        for text in text_batch:
+            tokens = tokenizer(text, padding=True, truncation=True)["input_ids"]
+            tokens_batch.append(torch.tensor(tokens, dtype=torch.long)[:self.block_size])
+        return torch.stack(tokens_batch)
+        
 
     def forward(
             self,
@@ -845,8 +875,11 @@ class nucleus( torch.nn.Module ):
 
         val_len = self.config.neuron.validation_len  # Number of tokens to holdout for phrase validation beyond sequence context
         prune_len = self.config.neuron.prune_len  # Number of tokens to prune from each validation input sequence
-        inputs = prune_tokens(inputs.to(self.device), prune_len=prune_len, margin=val_len+3)  # prune input sequence without last validation tokens [batch_size, sequence_len]
-        inputs_seq = inputs[..., :-val_len]  # sequence without validation tokens [batch_size, sequence_len]
+        bit_tokens = self.tokenize(inputs, self.bittensor_tokenizer)
+        bit_tokens = prune_tokens(bit_tokens.to(self.device), prune_len=prune_len, margin=val_len+3)  # prune input sequence without last validation tokens [batch_size, sequence_len]
+        bit_tokens_seq = bit_tokens[..., :-val_len]  # sequence without validation tokens [batch_size, sequence_len]
+        encoder_token_seq = self.tokenize(inputs, self.encoder_tokenizer)[..., :-val_len].to(self.device)
+        print('inputs inputss_seq shape', bit_tokens.shape, bit_tokens_seq.shape, encoder_token_seq.shape)
 
         # === Create the local context used to select endpoints ===
         # The context tensor returns a hidden unit representation for the text inputs
@@ -854,33 +887,42 @@ class nucleus( torch.nn.Module ):
         # embedding: retrieve learned representation vectors for input vocabulary tokens.
         # inputs.shape = [batch_size, sequence_len]
         # embedding.shape = [batch_size, sequence_len, bittensor.__network_dim__]
-        embedding = self.token_embedding(inputs_seq) * math.sqrt(bittensor.__network_dim__)
+        # embedding = self.token_embedding(inputs_seq) * math.sqrt(bittensor.__network_dim__)
 
         # === Create an attention mask ===
         # The attention mask will mask out parts of the context
         # This prevents cheating and forward-looking when predicting each token in the sequence.
         # src_mask: (torch.FloatTensor) attention mask adds -inf to positions not allowed to attend
         # src_mask.shape = [sequence_len, sequence_len]
-        src_mask = torch.triu(torch.ones(embedding.size(1), embedding.size(1)) * float('-inf'), diagonal=1).to(self.device)
 
         # === Apply the positional encoding to help select endpoints ===
         # The positional encoder provides information based on the relative postion of each token
         # embedding.shape = [batch_size, sequence_len, bittensor.__network_dim__]
         # pos_embedding: (torch.FloatTensor) positional encoded embedding.
         # pos_embedding.shape = [batch_size, sequence_len, bittensor.__network_dim__]
-        pos_embedding = self.local_pos_encoder(embedding)
+        # pos_embedding = self.local_pos_encoder(embedding)
+
+        with torch.no_grad():
+            embedding = self.encoder(encoder_token_seq, output_hidden_states = True).hidden_states[0]
+            embedding = self.layer_norm(self.activation(embedding))
+        
+        # src_mask = torch.triu(torch.ones(embedding.size(1), embedding.size(1)) * float('-inf'), diagonal=1).to(self.device)
 
         # routing_context: (torch.FloatTensor): context tensor which is used to select endpoints.
-        # routing_context.shape = [ batch size, __network_dim__ ]
-        routing_context = self.routing_encoder(pos_embedding, mask=src_mask)
-
+        # routing_context.shape = [ batch size, sequence_len,__network_dim__ ]
+        routing_context = self.routing_encoder(embedding)
+        routing_context = self.layer_norm(self.activation(routing_context))
+ 
         # === Get gate values for UIDs. ===
         # We iterate over each of the network UIDs and compute a querying score for each
         # using the gating function. This returns a score per endpoint per example.
         # routing_score: (torch.FloatTensor): score per example, per endpoint.
-        # routing_score.shape = [metagraph.n]
+        # routing_score.shape = [batch_size, metagraph.n]
+        # (averaged)routing_score.shape = [metagraph.n]
         # The gates act over the last embedding of the routing_context.
-        routing_score = torch.mean(self.sigmoid(self.gates(routing_context[:, -1, :])), dim=0)
+        # routing_score = self.gates(routing_context[:, -1, :])
+        routing_score = self.sigmoid(torch.mean(self.gates(routing_context), dim = 1))
+        # routing_score = torch.mean(routing_score, dim=0)
         self.save_routing_score(routing_score)
 
         # Ensure number of queried neurons does not exceed metagraph.n
@@ -904,7 +946,7 @@ class nucleus( torch.nn.Module ):
         num_endpoints = len(random_endpoints)  # in case len(self.permute_uids) < num_endpoints during random_uids select
 
         logger.info(f'Forward \t| Routing forward <dim>[{time.time() - start_time:.3g}s]</dim>')
-        logger.info(f'Dendrite \t| Request {num_endpoints} x {list(inputs_seq.shape)} (prune_len={prune_len})')
+        logger.info(f'Dendrite \t| Request {num_endpoints} x {list(bit_tokens_seq.shape)} (prune_len={prune_len})')
         request_start_time = time.time()
 
         # === Define which synapse we want to use ===
@@ -925,7 +967,7 @@ class nucleus( torch.nn.Module ):
         # return_ops.shape = self.config.nucleus.topk * [num_synapses]
         query_responses, return_ops, times = dendrite.text(
             endpoints=random_endpoints,
-            inputs=inputs_seq,
+            inputs=bit_tokens_seq,
             synapses=[syn for syn, _ in synapses],
             timeout=bittensor.__blocktime__
         )
@@ -941,7 +983,7 @@ class nucleus( torch.nn.Module ):
             for response in responses:
                 response.to(self.device)
 
-        logger.info(f'Dendrite \t| Request {num_endpoints} x {list(inputs_seq.shape)} '
+        logger.info(f'Dendrite \t| Request {num_endpoints} x {list(bit_tokens_seq.shape)} '
                     f'<dim>[{time.time() - request_start_time:.3g}s]</dim>')
 
         # === Prepare validation parameter set ===
@@ -952,7 +994,7 @@ class nucleus( torch.nn.Module ):
             'return_ops': return_ops, 
             'times': times, 
             'routing_score': routing_score,
-            'inputs': inputs, 
+            'inputs': bit_tokens, 
             'validation_len': val_len, 
             'loss_fct': self.loss_fct,
             'logits_divergence_penalty':self.config.nucleus.logits_divergence,
@@ -966,7 +1008,7 @@ class nucleus( torch.nn.Module ):
 
         loss = torch.tensor(0.).to(self.device)  # to accumulate neuron_loss and routing_loss over synapses
         neuron_stats = {}  # to gather neuron synapse validation measures and statistics
-
+        neuron_loss = {}
         # === Validate synapse responses ===
         # Iterate over all queried synapses and validate responses
         for i, (synapse, validate_func) in enumerate(synapses):
@@ -977,6 +1019,10 @@ class nucleus( torch.nn.Module ):
                 neuron_stats.setdefault(_uid, {})
                 neuron_stats[_uid].update(_stats)  # gather neuron synapse validation measures and statistics
 
+                if 'loss_nxt' in _stats:
+                    neuron_loss[_uid] = _stats['loss_nxt']
+        
+        self.save_neuron_loss(neuron_loss)
         return loss, neuron_stats
 
 routing_loss_history = []
@@ -1286,6 +1332,7 @@ def shapley_base(uids: torch.Tensor, query_responses: List[List[torch.FloatTenso
     unsuccessful = []
     neuron_loss = 0.  # neuron losses to accumulate to then backward() via dendrite
     routing_loss = 0.  # validator routing loss for local model update
+    routing_score = torch.mean(routing_score, dim = 0)
 
     # === Base parameter estimation ===
     # Shapley values - base level - coalition size 1
@@ -1494,13 +1541,15 @@ def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_lo
     
     successes = [ op.item() == 1 for op in return_ops]
     
-    topk_routing_scores = routing_score[uids]
-    
-    response_success = [(r[0],) for r, op in list(zip(query_responses, return_ops)) if op == 1]
-    normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
+    topk_routing_scores = routing_score[:, uids[successes]]
+    print('routing_score.shape', routing_score.shape) 
+    print('topk_routing_score.shape', topk_routing_scores.shape) 
 
-    mixed_response = mix_response(response_success, normalized_topk_routing_scores, device)
-    averaged_response = mix_response(response_success, torch.ones_like(normalized_topk_routing_scores) / len(normalized_topk_routing_scores), device)
+    response_success = [(r[0],) for r, op in list(zip(query_responses, return_ops)) if op == 1]
+    # normalized_topk_routing_scores = topk_routing_scores[successes]/topk_routing_scores[successes].sum()
+
+    mixed_response = mix_response(response_success, topk_routing_scores, device)
+    averaged_response = mix_response(response_success, torch.ones_like(topk_routing_scores) / len(topk_routing_scores[0]), device)
         
     loss_routing = cal_loss(mixed_response)
     loss_routing_baseline = cal_loss(averaged_response)
@@ -1511,7 +1560,7 @@ def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_lo
     print('boost', boosted_params, scaling_law_loss_to_params(loss_routing), scaling_law_loss_to_params(loss_routing_baseline))
     print('routing loss, baseline loss', loss_routing, loss_routing_baseline)
     print('routing score', routing_score)
-    print('normalized topk routing scores', normalized_topk_routing_scores)
+    # print('normalized topk routing scores', normalized_topk_routing_scores)
 
     routing_loss_history.append((loss_routing.item(), loss_routing_baseline.item()))
     torch.save(routing_loss_history, f'{path}/routing_loss.pt')
@@ -1520,6 +1569,9 @@ def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_lo
     # pow_measured_params = torch.pow(measured_params, scaling_law_power)
     # pow_expected_params = torch.pow(expected_params, scaling_law_power)
 
+    mean_topk_routing_scores = torch.mean(topk_routing_scores, dim = 0)
+    normalized_topk_routing_scores = mean_topk_routing_scores/ mean_topk_routing_scores.sum()
+    
     for uid, score, r in zip(uids, normalized_topk_routing_scores, response_success):
         print(
             uid.item(), 
@@ -1531,8 +1583,9 @@ def router_synergy(stats: Dict, uids: torch.Tensor, inputs: torch.Tensor, cal_lo
 
     penalty = (abs(normalized_topk_routing_scores - normalized_topk_routing_scores.mean()) ** 2 ).sum()
     
+    # penalty = 0
     print('loss_routing, penalty', loss_routing, penalty)
-    return loss_routing + 0.5 * penalty, boosted_params
+    return 3 - (loss_routing_baseline - loss_routing) + 0.5 * penalty, boosted_params
 
 def sort_response_by_token(response, batch_size = None, all_logits = None, device = 'cpu'):
     if batch_size == None:
@@ -1551,15 +1604,19 @@ def sort_response_by_token(response, batch_size = None, all_logits = None, devic
 
     return response_sort
 
-def mix_response(response_success, normalized_topk_routing_scores, device):
-    batch_size = response_success[0][0].shape[0]
+def mix_response(responses, routing_scores, device):
+    batch_size = responses[0][0].shape[0]
     mixed_response = torch.zeros(batch_size, bittensor.__vocab_size__ + 1  , 2).to(device)
     all_logits = torch.tensor(list(range(bittensor.__vocab_size__)))
     mixed_response[:, : -1, 1] = all_logits.repeat(batch_size, 1)
 
-    for r, w in list(zip(response_success, normalized_topk_routing_scores)):
+    # routing_scores /= routing_scores.sum(dim = 0)
+    # routing_scores_per_uid = routing_scores.T
+    routing_scores_per_uid = routing_scores.T / routing_scores.sum(dim = 1)
+
+    for r, w in list(zip(responses, routing_scores_per_uid)): # per uid, for all batches
         response_sorted = sort_response_by_token(r[0], batch_size, all_logits, device)
-        mixed_response[:, :-1, 0] += w * response_sorted[:, :, 0].to(device)
+        mixed_response[:, :-1, 0] += w.unsqueeze(1) * response_sorted[:, :, 0].to(device) # per uid, across all batches
 
     for batch in range(batch_size):
         mixed_response[batch, -1, :] = torch.tensor([[0, -1]])
