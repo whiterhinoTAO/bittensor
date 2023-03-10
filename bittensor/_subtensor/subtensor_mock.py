@@ -259,6 +259,9 @@ class Mock_Subtensor(subtensor_impl.Subtensor):
             extrinsic = substrate.create_signed_extrinsic( call = wrapped_call, keypair = self.sudo_keypair )
             response = substrate.submit_extrinsic( extrinsic, wait_for_inclusion = wait_for_inclusion, wait_for_finalization = wait_for_finalization )
 
+            if not wait_for_inclusion:
+                return True, None
+            
             response.process_events()
             if response.is_success:
                 return True, None
@@ -283,6 +286,9 @@ class Mock_Subtensor(subtensor_impl.Subtensor):
             extrinsic = substrate.create_signed_extrinsic( call = wrapped_call, keypair = self.sudo_keypair )
             response = substrate.submit_extrinsic( extrinsic, wait_for_inclusion = wait_for_inclusion, wait_for_finalization = wait_for_finalization )
 
+            if not wait_for_inclusion:
+                return True, None
+            
             response.process_events()
             if response.is_success:
                 return True, None
@@ -308,6 +314,9 @@ class Mock_Subtensor(subtensor_impl.Subtensor):
             extrinsic = substrate.create_signed_extrinsic( call = wrapped_call, keypair = self.sudo_keypair )
             response = substrate.submit_extrinsic( extrinsic, wait_for_inclusion = wait_for_inclusion, wait_for_finalization = wait_for_finalization )
 
+            if not wait_for_inclusion:
+                return True, None
+            
             response.process_events()
             if response.is_success:
                 return True, None
@@ -336,6 +345,10 @@ class Mock_Subtensor(subtensor_impl.Subtensor):
             response = substrate.submit_extrinsic( extrinsic, wait_for_inclusion = wait_for_inclusion, wait_for_finalization = wait_for_finalization )
 
             response.process_events()
+            
+            if not wait_for_inclusion:
+                return True, None
+            
             if response.is_success:
                 return True, None
             else:
