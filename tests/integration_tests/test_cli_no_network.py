@@ -21,6 +21,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 import pytest
 from copy import deepcopy
+from substrateinterface import Keypair
 
 from tests.helpers import MockConsole
 
@@ -99,10 +100,25 @@ class TestCLINoNetwork(unittest.TestCase):
         config.use_password = False
         config.no_prompt = True
         config.overwrite_coldkey = True
-        
 
-        cli = bittensor.cli(config)
-        cli.run()
+        test_mnemonic = Keypair.generate_mnemonic(12)
+
+        mock_console = MockConsole()
+        with patch('substrateinterface.Keypair.generate_mnemonic') as mock_generate_mnemonic:
+            mock_generate_mnemonic.return_value = test_mnemonic
+            cli = bittensor.cli(config)
+
+            with patch('bittensor.__console__', mock_console):
+                cli.run()
+
+            self.assertIsNotNone(mock_console.captured_print)
+            # Clean output
+            output_no_syntax = mock_console.remove_rich_syntax(mock_console.captured_print)
+
+            # Check that the mnemonic is in the output
+            self.assertIn(test_mnemonic, output_no_syntax)
+            # Verify the mnemonic regen command is in the output
+            self.assertIn(f"btcli regen_coldkey --mnemonic {test_mnemonic}", output_no_syntax)
 
     def test_new_hotkey( self ):
         config = self.config
@@ -117,8 +133,24 @@ class TestCLINoNetwork(unittest.TestCase):
         config.overwrite_hotkey = True
         
 
-        cli = bittensor.cli(config)
-        cli.run()
+        test_mnemonic = Keypair.generate_mnemonic(12)
+
+        mock_console = MockConsole()
+        with patch('substrateinterface.Keypair.generate_mnemonic') as mock_generate_mnemonic:
+            mock_generate_mnemonic.return_value = test_mnemonic
+            cli = bittensor.cli(config)
+
+            with patch('bittensor.__console__', mock_console):
+                cli.run()
+
+            self.assertIsNotNone(mock_console.captured_print)
+            # Clean output
+            output_no_syntax = mock_console.remove_rich_syntax(mock_console.captured_print)
+
+            # Check that the mnemonic is in the output
+            self.assertIn(test_mnemonic, output_no_syntax)
+            # Verify the mnemonic regen command is in the output
+            self.assertIn(f"btcli regen_hotkey --mnemonic {test_mnemonic}", output_no_syntax)
 
     def test_regen_coldkey( self ):
         config = self.config
@@ -127,30 +159,50 @@ class TestCLINoNetwork(unittest.TestCase):
         config.amount = 1
         config.dest = "no_prompt"
         config.model = "core_server"
-        config.mnemonic = "faculty decade seven jelly gospel axis next radio grain radio remain gentle"
         config.seed = None
+        config.json = None
+        config.json_password = None
         config.n_words = 12
         config.use_password = False
         config.no_prompt = True
         config.overwrite_coldkey = True
-        
 
+        test_mnemonic = "faculty decade seven jelly gospel axis next radio grain radio remain gentle"
+        config.mnemonic = test_mnemonic
+
+        mock_console = MockConsole()
         cli = bittensor.cli(config)
-        cli.run()
+
+        with patch('bittensor.__console__', mock_console):
+            cli.run()
+
+        self.assertIsNotNone(mock_console.captured_print)
+        # Clean output
+        output_no_syntax = mock_console.remove_rich_syntax(mock_console.captured_print)
+
+        # Check that the mnemonic is in the output
+        self.assertIn(test_mnemonic, output_no_syntax)
+        # Verify the mnemonic regen command is in the output
+        self.assertIn(f"btcli regen_coldkey --mnemonic {test_mnemonic}", output_no_syntax)
 
     def test_regen_coldkeypub( self ):
         config = self.config
         config.wallet.name = "regen_coldkeypub_testwallet"
         config.command = "regen_coldkeypub"
-        config.ss58_address = "5DD26kC2kxajmwfbbZmVmxhrY9VeeyR1Gpzy9i8wxLUg6zxm"
         config.public_key = None
         config.use_password = False
         config.no_prompt = True
         config.overwrite_coldkeypub = True
-        
 
+        test_ss58 = "5DD26kC2kxajmwfbbZmVmxhrY9VeeyR1Gpzy9i8wxLUg6zxm"
+        config.ss58_address = test_ss58
+        
         cli = bittensor.cli(config)
         cli.run()
+
+        # Check that the wallet exists
+        wallet = bittensor.wallet( name = config.wallet.name )
+        self.assertEqual(wallet.coldkeypub.ss58_address, test_ss58)
 
     def test_regen_hotkey( self ):
         config = self.config
@@ -158,16 +210,31 @@ class TestCLINoNetwork(unittest.TestCase):
         config.command = "regen_hotkey"
         config.amount = 1
         config.model = "core_server"
-        config.mnemonic = "faculty decade seven jelly gospel axis next radio grain radio remain gentle"
+        config.json = None
+        config.json_password = None
         config.seed = None
         config.n_words = 12
         config.use_password = False
         config.no_prompt = True
         config.overwrite_hotkey = True
-        
 
+        test_mnemonic = "faculty decade seven jelly gospel axis next radio grain radio remain gentle"
+        config.mnemonic = test_mnemonic
+        
+        mock_console = MockConsole()
         cli = bittensor.cli(config)
-        cli.run()
+
+        with patch('bittensor.__console__', mock_console):
+            cli.run()
+
+        self.assertIsNotNone(mock_console.captured_print)
+        # Clean output
+        output_no_syntax = mock_console.remove_rich_syntax(mock_console.captured_print)
+
+        # Check that the mnemonic is in the output
+        self.assertIn(test_mnemonic, output_no_syntax)
+        # Verify the mnemonic regen command is in the output
+        self.assertIn(f"btcli regen_hotkey --mnemonic {test_mnemonic}", output_no_syntax)
 
     def test_list( self ):
         mock_wallet = MagicMock(
