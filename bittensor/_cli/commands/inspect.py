@@ -109,23 +109,27 @@ class InspectCommand:
 
                     cold_balance = subtensor.get_balance( wallet.coldkeypub.ss58_address )
                     bittensor.__console__.print((
-                        "\n[bold white]{}[/bold white]:\n  [bold grey]{}[bold white]{}[/bold white]\n" + \
-                        "  {}[bold white]{}[/bold white]\n  {}{}\n  {}{}\n  {}{}\n  {}{}\n  {}{}[/bold grey]"
+                        "\n[bold white]{wallet}[/bold white]:\n" + \
+                        "  [bold grey]{coldkey_label}[bold white]{coldkey}[/bold white]\n" + \
+                        "  {hotkey_label}[bold white]{hotkey}[/bold white]\n  {subnets_label}{subnets}\n" + \
+                        "  {balance_label}{balance}\n" + \
+                        "  {stake_label}{stake}\n" + \
+                        "  {emission_label}{emission}[/bold grey]"
                     )
                     .format(
-                        wallet,
-                        "coldkey:".ljust(15),
-                        wallet.coldkeypub.ss58_address,
-                        "hotkey:".ljust(15),
-                        wallet.hotkey.ss58_address,
-                        "subnets:".ljust(15),
-                        subnets,
-                        "balance:".ljust(15),
-                        cold_balance.__rich__(),
-                        "stake:".ljust(15),
-                        stake.__rich__(),
-                        "emission:".ljust(15),
-                        emission.__rich_rao__(),
+                        wallet=wallet,
+                        coldkey_label="coldkey:".ljust(15),
+                        coldkey=wallet.coldkeypub.ss58_address,
+                        hotkey_label="hotkey:".ljust(15),
+                        hotkey=wallet.hotkey.ss58_address,
+                        subnets_label="subnets:".ljust(15),
+                        subnets=subnets,
+                        balance_label="balance:".ljust(15),
+                        balance=cold_balance.__rich__(),
+                        stake_label="stake:".ljust(15),
+                        stake=stake.__rich__(),
+                        emission_label="emission:".ljust(15),
+                        emission=emission.__rich_rao__()
                     ), highlight=True)
 
 
