@@ -22,6 +22,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from copy import deepcopy
 
+from tests.helpers import MockConsole
+
 import bittensor
 
 
@@ -168,8 +170,8 @@ class TestCLINoNetwork(unittest.TestCase):
         cli.run()
 
     def test_list( self ):
-        # Mock IO for wallet
-        with patch('bittensor.wallet', side_effect=[MagicMock(
+        mock_wallet = MagicMock(
+            spec = bittensor.Wallet,
             coldkeypub_file=MagicMock(
                 exists_on_device=MagicMock(
                     return_value=True # Wallet exists
@@ -182,9 +184,7 @@ class TestCLINoNetwork(unittest.TestCase):
                 ss58_address=bittensor.Keypair.create_from_mnemonic(
                         bittensor.Keypair.generate_mnemonic()
                 ).ss58_address
-            )
-        ),
-        MagicMock(
+            ),
             hotkey_file=MagicMock(
                 exists_on_device=MagicMock(
                     return_value=True # Wallet exists
@@ -198,22 +198,38 @@ class TestCLINoNetwork(unittest.TestCase):
                         bittensor.Keypair.generate_mnemonic()
                 ).ss58_address
             )
-        )]):
+        )
+        mock_wallet.name = "mock_wallet"
+        mock_wallet.path = "tmp/walletpath"
+        mock_wallet.hotkey_str = "mock_hotkey_str"
+        # Mock IO for wallet
+        with patch('bittensor.wallet', side_effect=[mock_wallet]):
             config = self.config
             config.wallet.path = 'tmp/walletpath'
             config.wallet.name = 'mock_wallet'
             config.no_prompt = True
             config.command = "list"
             
-
+        
             cli = bittensor.cli(config)
-            with patch('os.walk', side_effect=[iter(
-                    [('/tmp/walletpath', ['mock_wallet'], [])] # 1 wallet dir
-            ),
-            iter(
-                [('/tmp/walletpath/mock_wallet/hotkeys', [], ['hk0'])] # 1 hotkey file
-            )]):
-                cli.run()
+
+            mock_console = MockConsole()
+            with patch('bittensor.__console__', mock_console):
+                with patch('bittensor._cli.commands.list.get_coldkey_wallets_for_path', return_value=[mock_wallet]):
+                    with patch('bittensor._cli.commands.list.get_hotkey_wallets_for_wallet', return_value=[mock_wallet]):
+                        cli.run()
+
+                self.assertIsNotNone(mock_console.captured_print)
+
+                # clean output
+                output_no_syntax = mock_console.remove_rich_syntax(mock_console.captured_print)
+
+                # check output
+                self.assertIn('mock_wallet', output_no_syntax)
+                self.assertIn('hk0', output_no_syntax)
+                self.assertIn(mock_wallet.coldkeypub.ss58_address, output_no_syntax)
+                self.assertIn(mock_wallet.hotkey.ss58_address, output_no_syntax)
+
 
     def test_list_no_wallet( self ):
         # Mock IO for wallet
