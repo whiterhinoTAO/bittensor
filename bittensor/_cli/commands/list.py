@@ -18,54 +18,49 @@
 import os
 import argparse
 import bittensor
-from rich import print
 from rich.tree import Tree
-console = bittensor.__console__
+from .utils import get_coldkey_wallets_for_path, get_hotkey_wallets_for_wallet
 
 class ListCommand:
     @staticmethod
     def run (cli):
         r""" Lists wallets."""
-        try:
-            wallets = next(os.walk(os.path.expanduser(cli.config.wallet.path)))[1]
-        except StopIteration:
-            # No wallet files found.
-            wallets = []
+        all_coldkey_wallets = get_coldkey_wallets_for_path( cli.config.wallet.path )
+        if len(all_coldkey_wallets) == 0:
+            bittensor.__console__.print("[bold red]No wallets found.")
+            return
 
         root = Tree("Wallets")
-        for w_name in wallets:
-            wallet_for_name = bittensor.wallet( path = cli.config.wallet.path, name = w_name)
+        for coldkey_wallet in all_coldkey_wallets:
+            w_name = coldkey_wallet.name
             try:
-                if wallet_for_name.coldkeypub_file.exists_on_device() and not wallet_for_name.coldkeypub_file.is_encrypted():
-                    coldkeypub_str = wallet_for_name.coldkeypub.ss58_address
+                if coldkey_wallet.coldkeypub_file.exists_on_device() and not coldkey_wallet.coldkeypub_file.is_encrypted():
+                    coldkeypub_str = coldkey_wallet.coldkeypub.ss58_address
                 else:
                     coldkeypub_str = '?'
             except:
                 coldkeypub_str = '?'
 
             wallet_tree = root.add("\n[bold white]{} ({})".format(w_name, coldkeypub_str))
-            hotkeys_path = os.path.join(cli.config.wallet.path, w_name, 'hotkeys')
-            try:
-                hotkeys = next(os.walk(os.path.expanduser(hotkeys_path)))
-                if len( hotkeys ) > 1:
-                    for h_name in hotkeys[2]:
-                        hotkey_for_name = bittensor.wallet( path = cli.config.wallet.path, name = w_name, hotkey = h_name)
-                        try:
-                            if hotkey_for_name.hotkey_file.exists_on_device() and not hotkey_for_name.hotkey_file.is_encrypted():
-                                hotkey_str = hotkey_for_name.hotkey.ss58_address
-                            else:
-                                hotkey_str = '?'
-                        except:
-                            hotkey_str = '?'
-                        wallet_tree.add("[bold grey]{} ({})".format(h_name, hotkey_str))
-            except:
-                continue
 
-        if len(wallets) == 0:
+            hotkeys = get_hotkey_wallets_for_wallet(coldkey_wallet)
+            if len( hotkeys ) > 0:
+                for hotkey_wallet in hotkeys:
+                    h_name = hotkey_wallet.hotkey_str
+                    try:
+                        if hotkey_wallet.hotkey_file.exists_on_device() and not hotkey_wallet.hotkey_file.is_encrypted():
+                            hotkey_str = hotkey_wallet.hotkey.ss58_address
+                        else:
+                            hotkey_str = '?'
+                    except:
+                        hotkey_str = '?'
+                    wallet_tree.add("[bold grey]{} ({})".format(h_name, hotkey_str))
+
+        if len(all_coldkey_wallets) == 0:
             root.add("[bold red]No wallets found.")
 
         # Uses rich print to display the tree.
-        print(root)
+        bittensor.__console__.print(root)
 
     @staticmethod
     def check_config( config: 'bittensor.Config' ):
