@@ -231,22 +231,76 @@ class TestCLINoNetwork(unittest.TestCase):
                 self.assertIn(mock_wallet.hotkey.ss58_address, output_no_syntax)
 
 
-    def test_list_no_wallet( self ):
-        # Mock IO for wallet
-        with patch('bittensor.Wallet.coldkeypub_file', MagicMock(
-            exists_on_device=MagicMock(
-                return_value=False # Wallet doesn't exist
+    def test_list_no_hotkeys( self ):
+        mock_wallet = MagicMock(
+            spec = bittensor.Wallet,
+            coldkeypub_file=MagicMock(
+                exists_on_device=MagicMock(
+                    return_value=True # Wallet exists
+                ),
+                is_encrypted=MagicMock(
+                    return_value=False # Wallet is not encrypted
+                ),
+            ),
+            coldkeypub=MagicMock(
+                ss58_address=bittensor.Keypair.create_from_mnemonic(
+                        bittensor.Keypair.generate_mnemonic()
+                ).ss58_address
             )
-        )):
+        )
+        mock_wallet.name = "mock_wallet"
+        mock_wallet.path = "tmp/walletpath"
+        # Mock IO for wallet
+        with patch('bittensor.wallet', side_effect=[mock_wallet]):
             config = self.config
-            config.wallet.path = '/tmp/test_cli_test_list_no_wallet'
+            config.wallet.path = 'tmp/walletpath'
+            config.wallet.name = 'mock_wallet'
             config.no_prompt = True
             config.command = "list"
             
-
             cli = bittensor.cli(config)
-            # This shouldn't raise an error anymore
-            cli.run()
+
+            mock_console = MockConsole()
+            with patch('bittensor.__console__', mock_console):
+                with patch('bittensor._cli.commands.list.get_coldkey_wallets_for_path', return_value=[mock_wallet]): 
+                    with patch('bittensor._cli.commands.list.get_hotkey_wallets_for_wallet', return_value=[]): # No hotkeys
+                        cli.run()
+
+                self.assertIsNotNone(mock_console.captured_print)
+
+                # clean output
+                output_no_syntax = mock_console.remove_rich_syntax(mock_console.captured_print)
+
+                # check output
+                self.assertIn('mock_wallet', output_no_syntax)
+                self.assertIn(mock_wallet.coldkeypub.ss58_address, output_no_syntax)
+                self.assertNotIn('mock_hotkey_str', output_no_syntax)
+
+    def test_list_no_wallet( self ):
+        # Mock IO for wallet
+        config = self.config
+        config.wallet.path = 'tmp/walletpath'
+        config.wallet.name = 'mock_wallet'
+        config.no_prompt = True
+        config.command = "list"
+        
+        cli = bittensor.cli(config)
+
+        mock_console = MockConsole()
+        with patch('bittensor.__console__', mock_console):
+            with patch('bittensor._cli.commands.list.get_coldkey_wallets_for_path', return_value=[]):
+                cli.run()
+
+            self.assertIsNotNone(mock_console.captured_print)
+
+            # clean output
+            output_no_syntax = mock_console.remove_rich_syntax(mock_console.captured_print)
+
+            # check output
+            self.assertNotIn('mock_wallet', output_no_syntax)
+            self.assertNotIn('mock_hotkey_str', output_no_syntax)
+            # Expect error message
+            self.assertIn('No wallets found', output_no_syntax)
 
     def test_btcli_help(self):
         """
