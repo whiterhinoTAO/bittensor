@@ -1777,6 +1777,16 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             )
             self.assertTrue(success, err)
 
+        # Register mock wallets that do not have stake
+        for mock_wallet in [w for w in mock_wallets if w.name not in mock_stakes.keys()]:
+            success, err = _subtensor_mock.sudo_register(
+                netuid = 1,
+                hotkey = mock_wallet.hotkey.ss58_address,
+                coldkey = mock_wallet.coldkey.ss58_address,
+                wait_for_finalization=False
+            )
+            self.assertTrue(success, err)
+
         # Give each wallet some balance
         for idx, (wallet_name, balance_expected) in enumerate(mock_balances.items()):
             mock_wallet = [w for w in mock_wallets if w.name == wallet_name][0]
@@ -1807,8 +1817,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
         # Nominate the wallets
         for wallet in mock_wallets:
             success = _subtensor_mock.nominate(
-                hotkey = wallet.hotkey.ss58_address,
-                coldkey = wallet.coldkey.ss58_address
+                wallet = wallet,
             )
 
         cli = bittensor.cli(config)
@@ -1847,8 +1856,8 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
             
             # Check that each wallet is in the list
             for wallet in mock_wallets:
-                self.assertTrue(wallet.coldkeypub.ss58_address in output_no_syntax)
-                self.assertTrue(wallet.hotkey.ss58_address in output_no_syntax)
+                self.assertIn(wallet.coldkeypub.ss58_address, output_no_syntax)
+                self.assertIn(wallet.hotkey.ss58_address, output_no_syntax)
     
     def test_list_subnets( self ):
         config = self.config
@@ -1875,8 +1884,7 @@ class TestCLIWithNetworkAndConfig(unittest.TestCase):
         # Check tempo and modality
         for idx, subnet in enumerate(subnets):
             self.assertIn(str(subnet), output_no_syntax)
-            self.assertRegex(output_no_syntax, rf"{tempos[idx]}\s+{modalities[idx]}")
-        
+            self.assertRegex(output_no_syntax, rf"{tempos[idx]}\s+{modalities[idx]}")    
 
     def test_transfer( self ):
         config = self.config
