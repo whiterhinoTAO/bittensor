@@ -79,15 +79,15 @@ class wallet:
             )
 
         network = config.get('subtensor.network', bittensor.defaults.subtensor.network)
-        if network == 'finney':
-            return wallet_impl.Wallet(
+        if network == 'nakamoto':
+            return naka_wallet(
                 name = config.wallet.get('name', bittensor.defaults.wallet.name), 
                 hotkey = config.wallet.get('hotkey', bittensor.defaults.wallet.hotkey), 
                 path = config.wallet.path,
                 config = config
             )
-        elif network == 'nakamoto':
-            return naka_wallet(
+        else:
+            return wallet_impl.Wallet(
                 name = config.wallet.get('name', bittensor.defaults.wallet.name), 
                 hotkey = config.wallet.get('hotkey', bittensor.defaults.wallet.hotkey), 
                 path = config.wallet.path,
