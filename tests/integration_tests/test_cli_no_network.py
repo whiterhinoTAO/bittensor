@@ -78,6 +78,8 @@ class TestCLINoNetwork(unittest.TestCase):
         config.amount = 1
         config.mnemonic = "this is a mnemonic"
         config.seed = None
+        config.json = None
+        config.json_password = None
         config.uids = [1,2,3]
         config.weights = [0.25, 0.25, 0.25, 0.25]
         config.no_version_checking = True
