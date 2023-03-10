@@ -226,7 +226,7 @@ class TestCLINoNetwork(unittest.TestCase):
 
                 # check output
                 self.assertIn('mock_wallet', output_no_syntax)
-                self.assertIn('hk0', output_no_syntax)
+                self.assertIn('mock_hotkey_str', output_no_syntax)
                 self.assertIn(mock_wallet.coldkeypub.ss58_address, output_no_syntax)
                 self.assertIn(mock_wallet.hotkey.ss58_address, output_no_syntax)
 
