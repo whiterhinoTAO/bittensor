@@ -21,6 +21,8 @@ from scalecodec import ss58_encode
 from rich.console import Console
 from rich.text import Text
 
+import re
+
 from Crypto.Hash import keccak
 
 class CLOSE_IN_VALUE():
@@ -163,5 +165,11 @@ class MockConsole:
                 text
             ).plain
         ).plain
+
+        RE_TAGS = re.compile(
+            r"""((\\*)\[([a-z#/@][^[]*?)])""",
+            re.VERBOSE,
+        )
+        output_no_syntax = RE_TAGS.sub(r'\2', output_no_syntax)
 
         return output_no_syntax
