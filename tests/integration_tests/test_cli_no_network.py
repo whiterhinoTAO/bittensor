@@ -322,12 +322,19 @@ class TestCLINoNetwork(unittest.TestCase):
 
         # Expected help output even if parser isn't working well
         ## py3.6-3.9 or py3.10+
-        assert 'optional arguments' in help_out or 'options' in help_out
+        self.assertTrue('optional arguments' in help_out or 'options' in help_out, 'neither optional arguments nor options in help output')
         # Expected help output if all commands are listed
-        assert 'positional arguments' in help_out
-        # Verify that cli is printing the help message for 
-        assert 'overview' in help_out
-        assert 'run' in help_out
+        self.assertIn('positional arguments', help_out, 'positional arguments not in help output')
+        # Verify that cli is printing the help message for each command
+        commands = [
+            'run', 'help', 'list', 'query', 'stake', 'update', 'inspect',
+            'weights', 'unstake', 'overview', 'register', 'transfer', 'nominate',
+            'new_hotkey', 'metagraph', 'set_weights', 'new_coldkey', 'new_hotkey',
+            'list_subnets', 'regen_hotkey', 'regen_coldkey', 'delegate', 'undelegate',
+            'list_delegates', 'regen_coldkeypub'
+        ]
+        for command in commands:
+            self.assertIn(command, help_out, f'{command} not in help output')
 
     def test_register_cuda_use_cuda_flag(self):
             class ExitEarlyException(Exception):
