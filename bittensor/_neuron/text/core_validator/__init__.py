@@ -449,11 +449,11 @@ class neuron:
                time.time() - epoch_start_time < blocks_per_epoch * bittensor.__blocktime__):
 
             logger.info(f'Run epoch <yellow>{self.epoch}</yellow> | step <yellow>{epoch_steps}</yellow>'
-                        f'| block <dim>\[start]</dim> <dim cyan>{start_block}</dim cyan> < '
-                        f'<dim>\[current]</dim> <cyan>{self.subtensor.block}</cyan> < '
-                        f'<dim>\[end]</dim> <cyan>{start_block + blocks_per_epoch}</cyan>'
-                        f'| epoch duration <dim>\[elapsed]</dim> <yellow>{time.time() - epoch_start_time:.0f}</yellow> '
-                        f'< <dim>\[limit]</dim> <dim yellow>{blocks_per_epoch * bittensor.__blocktime__}</dim yellow> ')
+                        f'| block <dim>[start]</dim> <cyan>{start_block}</cyan> < '
+                        f'<dim>[current]</dim> <bright_cyan>{self.subtensor.block}</bright_cyan> < '
+                        f'<dim>[end]</dim> <cyan>{start_block + blocks_per_epoch}</cyan>'
+                        f'| epoch duration <dim>[elapsed]</dim> <bright_yellow>{time.time() - epoch_start_time:.0f}</bright_yellow> '
+                        f'< <dim>[limit]</dim> <yellow>{blocks_per_epoch * bittensor.__blocktime__}</yellow> ')
 
             start_time = time.time()
 
