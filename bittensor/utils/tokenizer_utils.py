@@ -1011,7 +1011,7 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
         if loss.numel() > 1:
             raise ValueError(f'phase_cross_entropy(): Expected reduction to scalar, obtained {loss.shape} instead.')
 
-    if loss_val.mean() > 1.5 or loss.mean() > 1.5:
+    if loss_val.mean() > 20 or loss.mean() > 20:
         print(f"""
         \n=====================================================\n
             floor_probs: \n{floor_probs} \n
