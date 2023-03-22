@@ -1011,6 +1011,30 @@ def phrase_cross_entropy(target_phrases: Union[List[List[int]], torch.Tensor],
         if loss.numel() > 1:
             raise ValueError(f'phase_cross_entropy(): Expected reduction to scalar, obtained {loss.shape} instead.')
 
+    if loss_val.mean() > 1.5 or loss.mean() > 1.5:
+        print(f"""
+        \n=====================================================\n
+            floor_probs: \n{floor_probs} \n
+            total_probs: \n{total_probs}\n
+            val_probs: \n{val_probs} \n
+            match_probs: \n{match_probs} \n
+            loss_val: \n{loss_val.mean(), loss_val} \n 
+            loss: \n{loss.mean(), loss}"
+        """)
+        for b in range(batch_size):
+            target_phrase = target_phrases[b]
+            if not isinstance(target_phrase, torch.Tensor):
+                target_phrase = torch.tensor(target_phrases[b])
+            if isinstance(target_phrase, torch.FloatTensor):
+                target_phrase = target_phrase.round().int()
+
+            match = (topk_tokens[b, :, 0] == target_phrase[0].item())  # bool where first tokens match (validation token)
+            if match.sum() > 0:
+                print(f'n_topk_probs, {b} :', n_topk_probs[b, match].sum(), match, sum(match), n_topk_probs[b, match]) # accumulate all matches
+            else:  # no matches
+                print(f'n_topk_probs (no match), {b} :', n_floor_probs[b])  # assume match is in non-topk tokens with avg floor_prob
+        print("\n=====================================================\n")
+    
     return loss_val, loss
 
 
